@@ -1,0 +1,13 @@
+[Unit]
+Description=Lightning Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash -c /usr/local/bin/lightning.sh
+Restart=on-failure
+User=root
+WorkingDirectory=/usr/local/bin
+
+[Install]
+WantedBy=multi-user.target
