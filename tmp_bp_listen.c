@@ -7,7 +7,7 @@
  *           one to listen, and one to respond over RS-485 / RS-422
  *           Two-thread serial handler:
  *            - Receiver thread parses and responds to commands
- *            - Sender thread periodically transmits data when active
+ *            - Sender thread periodically transmits data when active (Not implemented in this program)
  *           Commands supported:
  *           START, STOP, {F00RDD}, PWRSTATUS, SITE
  *           All replies (ACKs, responses, errors) are sent out on the serial port.
@@ -116,7 +116,7 @@ typedef enum {
 
 
 /*
- * Name:         get_baud_rate
+ * Name:         parse_command
  * Purpose:      Translates a received string to command enum.
  * Arguments:    buf: the string to translate to a command enum.
  *
