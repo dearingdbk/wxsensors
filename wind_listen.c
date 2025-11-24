@@ -38,6 +38,9 @@
 #include <linux/serial.h>
 #include <regex.h>
 #include <signal.h>
+#include <stdatomic.h>
+#include <stdarg.h>
+#include <time.h>
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
@@ -47,11 +50,22 @@
 FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
 // Shared state
-volatile bool continuous = false;
+/* volatile bool continuous = false;
 volatile bool terminate = false;
-volatile bool kill_flag = false;
-int serial_fd;
+volatile bool kill_flag = false;*/
+
+volatile sig_atomic_t continuous = 0;
+volatile sig_atomic_t terminate = 0;
+volatile sig_atomic_t kill_flag = 0;
+
+int serial_fd = -1;
 char site = 'A';
+
+/* Synchronization primitives */
+static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER; // protects serial writes
+static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
+
+
 
 /*
  * Name:         handle_signal
@@ -64,11 +78,12 @@ char site = 'A';
  * Assumptions:  Terminate is set to false.
  *
  * Bugs:         None known.
- * Notes:
+ * Notes:        Signal handler: must do async-safe ops only (set sig_atomic_t flags)
  */
 void handle_signal(int sig) {
-    terminate = true; // Sets the boolean var terminate to true, prompting the R & T threads to join.
-    kill_flag = true; // Sets the boolean var kill_flag to true, prompting the main loop to end.
+    (void)sig;
+    terminate = 1; // Sets the atmoic var terminate to true, prompting the R & T threads to join.
+    kill_flag = 1; // Sets the atomic var kill_flag to true, prompting the main loop to end.
 }
 
 
@@ -97,6 +112,50 @@ uint8_t check_sum(const char *str_to_chk) {
     }
     return checksum;
 }
+
+
+
+/* Thread-safe get_next_line: returns a heap-allocated copy (caller must free) */
+char *get_next_line_copy(void) {
+    char temp[MAX_LINE_LENGTH];
+
+    pthread_mutex_lock(&file_mutex);
+    if (!file_ptr) {
+        pthread_mutex_unlock(&file_mutex);
+        return NULL;
+    }
+
+    if (!fgets(temp, sizeof(temp), file_ptr)) {
+        /* EOF or error; rewind and try once */
+        rewind(file_ptr);
+        if (!fgets(temp, sizeof(temp), file_ptr)) {
+            pthread_mutex_unlock(&file_mutex);
+            return NULL; /* file empty or error */
+        }
+    }
+    pthread_mutex_unlock(&file_mutex);
+
+    /* Trim CR/LF safely */
+    temp[strcspn(temp, "\r\n")] = '\0';
+    return strdup(temp); /* caller frees, returns a copy of temp */
+}
+
+/* va_start is a C macro that initializes a variable argument list, which
+   is a list of arguments passed to a function that can have a variable
+   number of parameters. It must be called before any other variable argument
+   macros, such as va_arg, and requires two arguments: the va_list variable and
+   the name of the last fixed argument in the function's parameter list.*/
+/* Safe write helper: serializes all writes so they never interleave */
+static void safe_write_response(const char *fmt, ...) {
+    va_list var_arg;  // Declare a va_list variable
+    pthread_mutex_lock(&write_mutex);
+    va_start(var_arg, fmt); // Initialize var_arg with the last fixed argument 'fmt'
+    vdprintf(serial_fd, fmt, var_arg);
+    va_end(var_arg);
+    pthread_mutex_unlock(&write_mutex);
+}
+
+
 
 
 /*
@@ -188,53 +247,61 @@ CommandType parse_command(const char *buf) {
  * Notes:
  */
 void handle_command(CommandType cmd) {
-    const char* response = NULL;
-
+    // const char* response = NULL;
+    char *resp_copy = NULL;
     switch (cmd) {
         case CMD_START:
-            //running = true; // disable for now
-	    continuous = true;
-            printf("CMD: START -> Begin sending\n");
-            response = NULL;
+	    continuous = 1;
+            //response = NULL;
             break;
 
         case CMD_STOP:
             //running = false; // disable for now
-	    continuous = false;
+	    continuous = 0;
             // printf("CMD: STOP -> Stop sending\n");
-            response = NULL;
+            //response = NULL;
             break;
 
         case CMD_RDD:
-            response = get_next_line();
+            resp_copy = get_next_line_copy();
+            if (resp_copy) {
+                safe_write_response("%s\r\n", resp_copy);
+                free(resp_copy);
+            } else {
+                safe_write_response("ERR: Empty file\r\n");
+            }
             break;
 
         case CMD_PWRSTATUS:
             printf("CMD: PWRSTATUS -> Sending power info\n");
-            response = "PWRSTATUS: ON\r\n";
+            // response = "PWRSTATUS: ON\r\n";
             break;
 
         case CMD_SITE:
             printf("CMD: SITE -> Sending site info\n");
-            response = "A\r\n";
+            // response = "A\r\n";
             break;
 
         case CMD_POLL:
-            printf("CMD: SITE -> Sending site info\n");
-            response = get_next_line();
+            resp_copy = get_next_line_copy();
+            if (resp_copy) {
+                safe_write_response("%s\r\n", resp_copy);
+                free(resp_copy);
+            } else {
+                safe_write_response("ERR: Empty file\r\n");
+            }
             break;
-
         default:
             printf("CMD: Unknown command\n");
-            response = "ERR: Unknown command\r\n";
+            // response = "ERR: Unknown command\r\n";
             break;
     }
 
-    if (response) {
+    /*if (response) {
         if (dprintf(serial_fd, "%s\r\n", response) < 0) { // dprintf to print to serial device.
             perror("Write failed");
         }
-    }
+    }*/
 
 }
 
@@ -431,6 +498,7 @@ int open_serial_port(const char* portname, speed_t baud_rate) {
  * Notes:
  */
 void* receiver_thread(void* arg) {
+    (void)arg;
     char line[256];
     char buf[256];
     size_t len = 0;
@@ -438,20 +506,32 @@ void* receiver_thread(void* arg) {
     while (!terminate) {
         char c;
         int n = read(serial_fd, &c, 1);
-        if (n > 0) {
-	    if (c == '\r' || c == '\n') {
-                if (len > 0) {
+        if (n > 0)
+        {
+	    if (c == '\r' || c == '\n')
+            {
+                if (len > 0)
+                {
                     line[len] = '\0';
 		    handle_command(parse_command(line));
                     len = 0;
-                }
-            } else if (len < sizeof(line)-1) {
-                line[len++] = c;
-            }
+                } else
+                  { // empty line ignore
+                  }
+            } else
+              {
+                  if (len < sizeof(line)-1)
+                  {
+                    line[len++] = c;
+                  } else
+                    {
+                        len = 0;
+                    }
+              }
         } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
             perror("read");
         } else {
-            // no data available, avoid busy loop
+            // no data available n == 0, avoid busy loop
             usleep(10000);
         }
     }
@@ -474,17 +554,30 @@ void* receiver_thread(void* arg) {
  * Notes:
  */
 void* sender_thread(void* arg) {
-    const char* msg = "DATA: 12345";
+    // const char* msg = "DATA: 12345";
+    (void)arg;
+    struct timespec requested_time;
+    requested_time.tv_sec = 2;
+    requested_time.tv_nsec = 500000000; // 500 million nanoseconds
+
+struct timespec remaining_time;
+int result;
     while (!terminate) {
         if (continuous) {
-             //ssize_t written = write(serial_fd, msg, strlen(msg));
+             char *line = get_next_line_copy(); 
+             if (line) {
+                 safe_write_response("%s\r\n", line);
+                 free(line); // caller of get_next_line_copy() must free resource.
+             }
+             for (int i = 0; i < 20 && !terminate; ++i) usleep(100000); /* 2s total in 100ms quanta */
+             /*ssize_t written = write(serial_fd, msg, strlen(msg));
              //dprintf(serial_fd, "%s\r\n", msg);
              //if (written > 0)
                 //printf("Sent (%zd bytes): %s", written, msg);
             // else
                //  perror("Write failed");
             get_next_line();
-            usleep(2000000); // 2s
+            usleep(2000000); // 2s */
         } else {
             usleep(100000);
         }
