@@ -49,17 +49,14 @@
 
 FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
-// Shared state
-/* volatile bool continuous = false;
-volatile bool terminate = false;
-volatile bool kill_flag = false;*/
 
-volatile sig_atomic_t continuous = 0;
+// Shared state
+int continuous = 0;
 volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
 
 int serial_fd = -1;
-char site = 'A';
+// char site = 'A';
 
 /* Synchronization primitives */
 static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER; // protects serial writes
@@ -655,8 +652,8 @@ int main(int argc, char *argv[]) {
     speed_t baud = (argc >= 4) ? get_baud_rate(argv[3]) : BAUD_RATE;
 
     /* initialize mutexes (they are static-initialized above, but safe to call) */
-    pthread_mutex_init(&write_mutex, NULL);
-    pthread_mutex_init(&file_mutex, NULL);
+    //pthread_mutex_init(&write_mutex, NULL);
+    //pthread_mutex_init(&file_mutex, NULL);
 
     serial_fd = open_serial_port(device, baud);
 
