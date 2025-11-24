@@ -64,7 +64,8 @@ char site = 'A';
 /* Synchronization primitives */
 static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER; // protects serial writes
 static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
-
+static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  send_cond  = PTHREAD_COND_INITIALIZER;
 
 
 /*
@@ -251,13 +252,18 @@ void handle_command(CommandType cmd) {
     char *resp_copy = NULL;
     switch (cmd) {
         case CMD_START:
-	    continuous = 1;
+	    pthread_mutex_lock(&send_mutex);
+            continuous = 1; // enable continuous sending
+            pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
+            pthread_mutex_unlock(&send_mutex);
             //response = NULL;
             break;
 
         case CMD_STOP:
-            //running = false; // disable for now
-	    continuous = 0;
+            pthread_mutex_lock(&send_mutex);
+	    continuous = 0; // stops sender thread
+            pthread_cond_signal(&send_cond);   // Wake sender_thread to exit loop
+            pthread_mutex_unlock(&send_mutex);
             // printf("CMD: STOP -> Stop sending\n");
             //response = NULL;
             break;
@@ -557,19 +563,36 @@ void* sender_thread(void* arg) {
     // const char* msg = "DATA: 12345";
     (void)arg;
     struct timespec requested_time;
-    requested_time.tv_sec = 2;
-    requested_time.tv_nsec = 500000000; // 500 million nanoseconds
+    //requested_time.tv_nsec = 500000000; // 500 million nanoseconds
 
-struct timespec remaining_time;
-int result;
+    struct timespec remaining_time;
+    int result;
+
     while (!terminate) {
-        if (continuous) {
-             char *line = get_next_line_copy(); 
+        pthread_mutex_lock(&send_mutex);
+        // wait until either terminate is set or continuous becomes 1
+        while (!terminate && !continuous) {
+            pthread_cond_wait(&send_cond, &send_mutex);
+        }
+
+        if (terminate) {
+            pthread_mutex_unlock(&send_mutex);
+            break;
+        }
+
+        while (!terminate && continuous) {
+             char *line = get_next_line_copy();
              if (line) {
                  safe_write_response("%s\r\n", line);
                  free(line); // caller of get_next_line_copy() must free resource.
              }
-             for (int i = 0; i < 20 && !terminate; ++i) usleep(100000); /* 2s total in 100ms quanta */
+
+             clock_gettime(CLOCK_REALTIME, &requested_time);
+             requested_time.tv_sec += 2;
+             pthread_cond_timedwait(&send_cond, &send_mutex, &requested_time);
+
+
+             //for (int i = 0; i < 20 && !terminate; ++i) usleep(100000); /* 2s total in 100ms quanta */
              /*ssize_t written = write(serial_fd, msg, strlen(msg));
              //dprintf(serial_fd, "%s\r\n", msg);
              //if (written > 0)
@@ -578,9 +601,11 @@ int result;
                //  perror("Write failed");
             get_next_line();
             usleep(2000000); // 2s */
-        } else {
-            usleep(100000);
+
         }
+
+        pthread_mutex_unlock(&send_mutex);
+
     }
     return NULL;
 }
@@ -635,10 +660,10 @@ int main(int argc, char *argv[]) {
 
     serial_fd = open_serial_port(device, baud);
 
-    if (serial_fd < 0)
+    if (serial_fd < 0) {
         fclose(file_ptr);
         return 1;
-
+    }
     /* define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
        allowing our c program, to close its loop, join threads, and close our serial device. */
     struct sigaction sa;
@@ -671,13 +696,19 @@ int main(int argc, char *argv[]) {
         char input[8];
         if (fgets(input, sizeof(input), stdin)) {
             if (input[0] == 'q' || input[0] == 'Q' || kill_flag == 1) {
+                pthread_mutex_lock(&send_mutex);
                 terminate = 1;
                 kill_flag = 1;
+                pthread_cond_signal(&send_cond);  // wake sender_thread
+                pthread_mutex_unlock(&send_mutex);
 		break;
             }
         } else if (feof(stdin)) {  // keep an eye on the behaviour of this check.
+            pthread_mutex_lock(&send_mutex);
             terminate = 1;
             kill_flag = 1;
+            pthread_cond_signal(&send_cond);      // wake sender_thread
+            pthread_mutex_unlock(&send_mutex);
             break; // stdin closed
         } else {
             continue; // temp read error
