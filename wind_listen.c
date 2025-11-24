@@ -629,9 +629,14 @@ int main(int argc, char *argv[]) {
     // ternary statement to set BAUD_RATE if supplied in args or default
     speed_t baud = (argc >= 4) ? get_baud_rate(argv[3]) : BAUD_RATE;
 
+    /* initialize mutexes (they are static-initialized above, but safe to call) */
+    pthread_mutex_init(&write_mutex, NULL);
+    pthread_mutex_init(&file_mutex, NULL);
+
     serial_fd = open_serial_port(device, baud);
 
     if (serial_fd < 0)
+        fclose(file_ptr);
         return 1;
 
     /* define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
@@ -646,35 +651,43 @@ int main(int argc, char *argv[]) {
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
         perror("Failed to create receiver thread");
-        terminate = true;          // <- symmetrical, but not required
+        terminate = 1;          // <- symmetrical, but not required
         close(serial_fd);
+        fclose(file_ptr);
         return 1;
     }
 
     if (pthread_create(&send_thread, NULL, sender_thread, NULL) != 0) {
         perror("Failed to create sender thread");
-        terminate = true;          // <- needed because recv_thread is running
+        terminate = 1;          // <- needed because recv_thread is running
         pthread_join(recv_thread, NULL);
         close(serial_fd);
+        fclose(file_ptr);
         return 1;
     }
-    //pthread_create(&recv_thread, NULL, receiver_thread, NULL);
-    //pthread_create(&send_thread, NULL, sender_thread, NULL);
 
     printf("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {
         char input[8];
         if (fgets(input, sizeof(input), stdin)) {
-            if (input[0] == 'q' || input[0] == 'Q' || kill_flag == true) {
-                terminate = true;
+            if (input[0] == 'q' || input[0] == 'Q' || kill_flag == 1) {
+                terminate = 1;
+                kill_flag = 1;
 		break;
             }
+        } else if (feof(stdin)) {  // keep an eye on the behaviour of this check.
+            terminate = 1;
+            kill_flag = 1;
+            break; // stdin closed
+        } else {
+            continue; // temp read error
         }
     }
 
     pthread_join(recv_thread, NULL);
     pthread_join(send_thread, NULL);
     close(serial_fd);
+    fclose(file_ptr);
 
     printf("Program terminated.\n");
     return 0;
