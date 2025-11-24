@@ -9,11 +9,16 @@
  *            - Receiver thread parses and responds to commands
  *            - Sender thread periodically transmits data when active
  *           Commands supported:
- *           START, STOP, {F00RDD}, PWRSTATUS, SITE
+ *           ! - Enables continuous data sending from the wind sensor.
+ *           ? - Disables continuous data sending from the wind sensor, the sensor must be polled each time.
+ *           <A-Z> - Polls the specified site for data, where the letter provided 'A' is the site to pole.
+ *           *<Z> - Enables configuartion mode for site <Z> where the letter Z, is the site we want to configure.
+ * 	     & - request unit identifier, returns A-Z as configured
+ *           {F00RDD}, PWRSTATUS, SITE
  *           All replies (ACKs, responses, errors) are sent out on the serial port.
  *
- *	     use case ' tmp_bp_listen <file_location> <serial_port_location> <baud_rate> // The serial port currently must match /dev/ttyUSB[0-9]+
- * 	     use case ' tmp_bp_listen <file_location> // The serial port and baud rate will be set to  defaults /dev/ttyUSB0, and B9600
+ *	     use case ' wind_listen <file_location> <serial_port_location> <baud_rate> // The serial port currently must match /dev/ttyUSB[0-9]+
+ * 	     use case ' wind_listen <file_location> // The serial port and baud rate will be set to  defaults /dev/ttyUSB0, and B9600
  * Mods:
  *
  *
@@ -21,6 +26,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
@@ -41,15 +47,15 @@
 FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
 // Shared state
-volatile bool polled  = false;
+volatile bool continuous = false;
 volatile bool terminate = false;
 volatile bool kill_flag = false;
 int serial_fd;
-char site = 'A'
+char site = 'A';
 
 /*
- * Name:         handle_sigbal
- * Purpose:      Captures any kill signals, and sets volitile bool 'terminate' to true, allowing thw while loop to break, and threads to join.
+ * Name:         handle_signal
+ * Purpose:      Captures any kill signals, and sets volitile bool 'terminate' and 'kill_flag' to true, allowing thw while loop to break, and threads to join.
  * Arguments:    None
  *
  * Output:       None.
@@ -61,8 +67,35 @@ char site = 'A'
  * Notes:
  */
 void handle_signal(int sig) {
-    terminate = true;
-    kill_flag = true;
+    terminate = true; // Sets the boolean var terminate to true, prompting the R & T threads to join.
+    kill_flag = true; // Sets the boolean var kill_flag to true, prompting the main loop to end.
+}
+
+
+/*
+ * Name:         check_sum
+ * Purpose:      Takes a '\0' delimited string, and returns a checksum of the characters XOR.
+ * Arguments:    str_to_chk the string that checksum will be calculated for
+ *
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      returns an unsigned 8 bit integer of the checksum of str_to_chk.
+ * Assumptions:  Terminate is set to false.
+ *
+ * Bugs:         None known.
+ * Notes:        To print in HEX utilize dprintf(serial_fd, "%c%s%c%02X\r\n",2, str_to_chk, check_sum(str_to_chk)); 
+ */
+uint8_t check_sum(const char *str_to_chk) {
+
+    uint8_t checksum = 0;
+    if (str_to_chk == NULL) {
+        return 0;
+    }
+    while (*str_to_chk != '\0') {
+        checksum ^= (uint8_t)(*str_to_chk);
+        str_to_chk++;
+    }
+    return checksum;
 }
 
 
@@ -90,15 +123,14 @@ const char* get_next_line(void) {
 
     if (!fgets(line, sizeof(line), file_ptr)) {
         // Reached EOF or error
-        rewind(file_ptr);             // Go back to start
+        rewind(file_ptr);             // Go back to start of file
         if (!fgets(line, sizeof(line), file_ptr)) {
             // File empty
             return NULL;
         }
     }
 
-    // Remove trailing newline
-    line[strcspn(line, "\r\n")] = '\0';
+    line[strcspn(line, "\r\n")] = '\0'; // Remove trailing newline
     return line;
 }
 
@@ -130,13 +162,13 @@ typedef enum {
  * Bugs:         None known.
  * Notes:
  */
-CommandType parse_command(const char* buf) {
-    if (buf[0] == '?' && buf[1] == '\0')					return CMD_START;
-    if (buf[0] == '!' && buf[1] == '\0')					return CMD_STOP;
+CommandType parse_command(const char *buf) {
+    if (buf[0] == '!' && buf[1] == '\0')					return CMD_START;
+    if (buf[0] == '?' && buf[1] == '\0')					return CMD_STOP;
     if (buf[0] == '&' && buf[1] == '\0')					return CMD_SITE;
     if (buf[0] == '*' && buf[1] >= 'A' && buf[1] <= 'Z' && buf[2] =='\0') 	return CMD_CONFIG;
-    if (strstr(buf, "{F00RDD}"))   						return CMD_RDD;
-    if (strstr(buf, "PWRSTATUS"))  						return CMD_PWRSTATUS;
+    //if (strstr(buf, "{F00RDD}"))   						return CMD_RDD;
+    //if (strstr(buf, "PWRSTATUS"))  						return CMD_PWRSTATUS;
     if (buf && buf[0] >= 'A' && buf[0] <= 'Z' && buf[1] == '\0') 		return CMD_POLL;
     return CMD_UNKNOWN;
 }
@@ -161,14 +193,14 @@ void handle_command(CommandType cmd) {
     switch (cmd) {
         case CMD_START:
             //running = true; // disable for now
-	    polled = true;
+	    continuous = true;
             printf("CMD: START -> Begin sending\n");
             response = NULL;
             break;
 
         case CMD_STOP:
             //running = false; // disable for now
-	    polled = true;
+	    continuous = false;
             // printf("CMD: STOP -> Stop sending\n");
             response = NULL;
             break;
@@ -444,14 +476,15 @@ void* receiver_thread(void* arg) {
 void* sender_thread(void* arg) {
     const char* msg = "DATA: 12345";
     while (!terminate) {
-        if (running) {
-            ssize_t written = write(serial_fd, msg, strlen(msg));
-            // dprintf(serial_fd, "%s\r\n", msg);
-            if (written > 0)
-                printf("Sent (%zd bytes): %s", written, msg);
-            else
-                perror("Write failed");
-            usleep(1000000); // 1s
+        if (continuous) {
+             //ssize_t written = write(serial_fd, msg, strlen(msg));
+             //dprintf(serial_fd, "%s\r\n", msg);
+             //if (written > 0)
+                //printf("Sent (%zd bytes): %s", written, msg);
+            // else
+               //  perror("Write failed");
+            get_next_line();
+            usleep(2000000); // 2s
         } else {
             usleep(100000);
         }
