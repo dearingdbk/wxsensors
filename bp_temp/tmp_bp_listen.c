@@ -566,10 +566,10 @@ int main(int argc, char *argv[]) {
 
     serial_fd = open_serial_port(device, baud, mode);
 
-    if (serial_fd < 0)
+    if (serial_fd < 0) {
         fclose(file_ptr);
         return 1;
-
+    }
     /* define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
        allowing our c program, to close its loop, join threads, and close our serial device. */
     struct sigaction sa;
