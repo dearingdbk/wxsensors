@@ -1,3 +1,4 @@
+
 /*
  * File:     tmp_bp_listen.c
  * Author:   Bruce Dearing
@@ -210,10 +211,10 @@ typedef enum {
  */
 
 CommandType parse_command(const char* buf) {
-    if (strcmp(buf, "START"))      return CMD_START;
-    if (strcmp(buf, "STOP"))       return CMD_STOP;
-    if (strcmp(buf, "{F00RDD}"))   return CMD_RDD;
-    if (strcmp(buf, "SITE"))       return CMD_SITE;
+    if (strcmp(buf, "START") == 0)      return CMD_START;
+    if (strcmp(buf, "STOP") == 0)       return CMD_STOP;
+    if (strcmp(buf, "{F00RDD}") == 0)   return CMD_RDD;
+    if (strcmp(buf, "SITE") == 0)       return CMD_SITE;
     return CMD_UNKNOWN;
 }
 
@@ -566,6 +567,7 @@ int main(int argc, char *argv[]) {
     serial_fd = open_serial_port(device, baud, mode);
 
     if (serial_fd < 0)
+        fclose(file_ptr);
         return 1;
 
     /* define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
