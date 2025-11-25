@@ -17,8 +17,8 @@
  *           {F00RDD}, PWRSTATUS, SITE
  *           All replies (ACKs, responses, errors) are sent out on the serial port.
  *
- *	     use case ' wind_listen <file_location> <serial_port_location> <baud_rate> <RS422|RS485> // The serial port currently must match /dev/ttyUSB[0-9]+
- * 	     use case ' wind_listen <file_location> // The serial port, baud rate, and mode will be set to  defaults /dev/ttyUSB0, and B9600
+ *	     use case ' wind_listen <file_path> <serial_port_location> <baud_rate> <RS422|RS485> The serial port currently must match /dev/tty(S|USB)[0-9]+
+ * 	     use case ' wind_listen <file_path> // The serial port, baud rate, and mode will be set to  defaults /dev/ttyUSB0, and B9600
  * Mods:
  *
  *
@@ -56,7 +56,8 @@ volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
 
 int serial_fd = -1;
-// char site = 'A';
+char *site_config = "A0 B3 C1 E1 F1 G0000 H2 J1 K1 L1 M2 NA O1 P1 T1 U1 V1 X1 Z1";
+char site_id = 'A'
 
 /* Synchronization primitives */
 static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER; // protects serial writes
@@ -286,6 +287,7 @@ void handle_command(CommandType cmd) {
 
         case CMD_SITE:
             printf("CMD: SITE -> Sending site info\n");
+            safe_write_response("%c\r\n", site_id);
             break;
 
         case CMD_POLL:
