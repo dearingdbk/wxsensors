@@ -57,7 +57,7 @@ volatile sig_atomic_t kill_flag = 0;
 
 int serial_fd = -1;
 char *site_config = "A0 B3 C1 E1 F1 G0000 H2 J1 K1 L1 M2 NA O1 P1 T1 U1 V1 X1 Z1";
-char site_id = 'A'
+char site_id = 'A';
 
 /* Synchronization primitives */
 static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER; // protects serial writes
@@ -514,7 +514,7 @@ int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
     printf("RS-485 ioctl not supported — using RS-422 mode.\n");
 #endif
 
-    printf("Opened %s (RS-485 or RS-422, 8N1 @ baud)\n", portname);
+    printf("Opened %s (%s, 8N1 @ baud)\n", portname, (mode == SERIAL_RS485) ? "RS-485" : "RS-422");
     return fd;
 }
 

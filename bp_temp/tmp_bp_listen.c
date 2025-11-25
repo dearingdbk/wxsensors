@@ -2,18 +2,18 @@
  * File:     tmp_bp_listen.c
  * Author:   Bruce Dearing
  * Date:     17/11/2025
- * Version:  1.1
+ * Version:  1.2
  * Purpose:  Program to handle setting up a serial connection and two threads
  *           one to listen, and one to respond over RS-485 / RS-422
  *           Two-thread serial handler:
  *            - Receiver thread parses and responds to commands
  *            - Sender thread periodically transmits data when active (Not implemented in this program)
  *           Commands supported:
- *           START, STOP, {F00RDD}, PWRSTATUS, SITE
+ *           START, STOP, {F00RDD}, SITE
  *           All replies (ACKs, responses, errors) are sent out on the serial port.
  *
- *	     use case ' tmp_bp_listen <file_location> <serial_port_location> <baud_rate> // The serial port currently must match /dev/ttyUSB[0-9]+
- * 	     use case ' tmp_bp_listen <file_location> // The serial port and baud rate will be set to  defaults /dev/ttyUSB0, and B9600
+ * 	     use case ' tmp_bp_listen <file_path> // The serial port and baud rate will be set to  defaults /dev/ttyUSB0, and B9600
+ *           use case ' tmp_bp_listen <file_path> <serial_port_location> <baud_rate> <RS422|RS485> The serial port currently must match /dev/tty(S|USB)[0-9]+
  * Mods:
  *
  *
@@ -21,6 +21,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
@@ -32,6 +33,10 @@
 #include <linux/serial.h>
 #include <regex.h>
 #include <signal.h>
+#include <stdatomic.h>
+#include <stdarg.h>
+#include <time.h>
+
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
@@ -41,28 +46,73 @@
 FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
 // Shared state
-volatile bool running   = false;
-volatile bool terminate = false;
-volatile bool kill_flag = false;
-int serial_fd;
+volatile sig_atomic_t terminate = 0;
+volatile sig_atomic_t kill_flag = 0;
+volatile bool running = false;
+int serial_fd = -1;
+
+/* Synchronization primitives */
+static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER; // protects serial writes
+static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 
 
 /*
- * Name:         handle_sigbal
- * Purpose:      Captures any kill signals, and sets volitile bool 'terminate' to true, allowing thw while loop to break, and threads to join.
+ * Name:         handle_signal
+ * Purpose:      Captures any kill signals, and sets volitile atomic 'terminate' & 'kill_flag' to 1, allowing the while loop to break, and threads to join.
  * Arguments:    None
  *
  * Output:       None.
- * Modifies:     Changes terminate to true.
+ * Modifies:     Changes terminate to 1, and kill_flag to 1.
  * Returns:      None.
- * Assumptions:  Terminate is set to false.
+ * Assumptions:  Terminate is set to 0.
  *
  * Bugs:         None known.
  * Notes:
  */
 void handle_signal(int sig) {
-    terminate = true;
-    kill_flag = true;
+    terminate = 1;
+    kill_flag = 1;
+}
+
+
+
+/*
+ * Name:         get_next_line_copy
+ * Purpose:      Reads a line of a file, received from a file pointer, it then iterates that pointer to the next line, or if at the EOF
+ *               loops back to the beginning of the file. This version is a thread safe version of get_next_line.
+ * Arguments:    None.
+ *
+ * Output:       Error message, if the file is not open.
+ * Modifies:     None.
+ * Returns:      returns a heap-allocated copy of a line of text from a file MAX_LINE_LENGTH long or NULL.
+ * Assumptions:  The file is open, and the line read is less than MAX_LINE_LENGTH
+ *
+ * Bugs:         None known.
+ * Notes:        The caller of this function, must free(), the heap-allocated copy when done processing it.
+ *               i.e. if using char *line = get_next_line_copy(); in the same function, you must use 'free(line);'
+ */
+char *get_next_line_copy(void) {
+    char temp[MAX_LINE_LENGTH];
+
+    pthread_mutex_lock(&file_mutex);
+    if (!file_ptr) {
+        pthread_mutex_unlock(&file_mutex);
+        return NULL;
+    }
+
+    if (!fgets(temp, sizeof(temp), file_ptr)) {
+        /* EOF or error; rewind and try once */
+        rewind(file_ptr);
+        if (!fgets(temp, sizeof(temp), file_ptr)) {
+            pthread_mutex_unlock(&file_mutex);
+            return NULL; /* file empty or error */
+        }
+    }
+    pthread_mutex_unlock(&file_mutex);
+
+    /* Trim CR/LF safely */
+    temp[strcspn(temp, "\r\n")] = '\0';
+    return strdup(temp); /* caller must free, returns a copy of temp */
 }
 
 
@@ -103,6 +153,37 @@ const char* get_next_line(void) {
 }
 
 
+/*
+ * Name:         safe_write_response
+ * Purpose:      Serializes writes to the serial device to ensure, that all writes do not
+ *               interleave, and create errors.
+ * Arguments:    fmt -  the string representing the format you want the the function to print.
+ *               ... - a list of potential unfixed arguments, that can be supplied to the format string.
+ *               i.e. if you supplied safe_write_response("%s%c%d", string_var, char_var, decimal_var); it would
+ *               use vdprintf to print those variables in the format specified by fmt.
+ *
+ * Output:       Error message, if the file is not open.
+ * Modifies:     None.
+ * Returns:      None.
+ * Assumptions:  The file is open, and the line read is less than MAX_LINE_LENGTH
+ *
+ * Bugs:         None known.
+ * Notes:        va_start is a C macro that initializes a variable argument list, which
+                 is a list of arguments passed to a function that can have a variable
+   		 number of parameters. It must be called before any other variable argument
+   		 macros, such as va_arg, and requires two arguments: the va_list variable and
+   		 the name of the last fixed argument in the function's parameter list in our case fmt.
+ */
+static void safe_write_response(const char *fmt, ...) {
+    va_list var_arg;  // Declare a va_list variable
+    pthread_mutex_lock(&write_mutex);
+    va_start(var_arg, fmt); // Initialize var_arg with the last fixed argument 'fmt'
+    vdprintf(serial_fd, fmt, var_arg); // prints to serial device the variables provided, in the fmt provided.
+    va_end(var_arg);
+    pthread_mutex_unlock(&write_mutex);
+}
+
+
 // ---------------- Command handling ----------------
 
 typedef enum {
@@ -110,7 +191,6 @@ typedef enum {
     CMD_START,
     CMD_STOP,
     CMD_RDD,
-    CMD_PWRSTATUS,
     CMD_SITE
 } CommandType;
 
@@ -133,7 +213,6 @@ CommandType parse_command(const char* buf) {
     if (strstr(buf, "START"))      return CMD_START;
     if (strstr(buf, "STOP"))       return CMD_STOP;
     if (strstr(buf, "{F00RDD}"))   return CMD_RDD;
-    if (strstr(buf, "PWRSTATUS"))  return CMD_PWRSTATUS;
     if (strstr(buf, "SITE"))       return CMD_SITE;
     return CMD_UNKNOWN;
 }
@@ -153,47 +232,35 @@ CommandType parse_command(const char* buf) {
  * Notes:
  */
 void handle_command(CommandType cmd) {
-    const char* response = NULL;
+    char *resp_copy = NULL;
 
     switch (cmd) {
         case CMD_START:
             //running = true; // disable for now
-            printf("CMD: START -> Begin sending\n");
-            response = "ACK: START\r\n";
             break;
 
         case CMD_STOP:
             //running = false; // disable for now
-            printf("CMD: STOP -> Stop sending\n");
-            response = "ACK: STOP\r\n";
             break;
 
         case CMD_RDD:
-            response = get_next_line();
-            break;
-
-        case CMD_PWRSTATUS:
-            printf("CMD: PWRSTATUS -> Sending power info\n");
-            response = "PWRSTATUS: ON\r\n";
+            resp_copy = get_next_line_copy();
+            if (resp_copy) {
+                safe_write_response("%s\r\n", resp_copy);
+                free(resp_copy);
+            } else {
+                safe_write_response("ERR: Empty file\r\n");
+            }
             break;
 
         case CMD_SITE:
             printf("CMD: SITE -> Sending site info\n");
-            response = "SITE: 42A-NORTH\r\n";
             break;
 
         default:
             printf("CMD: Unknown command\n");
-            response = "ERR: Unknown command\r\n";
             break;
     }
-
-    if (response) {
-        if (dprintf(serial_fd, "%s\r\n", response) < 0) { // dprintf to print to serial device.
-            perror("Write failed");
-        }
-    }
-
 }
 
 /*
@@ -290,6 +357,36 @@ int is_valid_tty(const char *str) {
 
 // ---------------- Serial configuration ----------------
 
+
+
+typedef enum {
+    SERIAL_RS422,  // or RS-232 fallback
+    SERIAL_RS485
+} SerialMode;
+
+/*
+ * Name:         get_mode
+ * Purpose:      Checks if the given serial protocol is a standard value and returns its string name.
+ * Arguments:    mode: the stringvalue representing the serial protocol provided as an argument to main.
+ *
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      returns a string representing the correct serial protocol or RS485 as the default.
+ * Assumptions:  mode is a integer and is within the standard values
+ *
+ * Bugs:         None known.
+ * Notes:
+ */
+SerialMode get_mode(const char *mode) {
+    if (strcmp(mode, "RS422") == 0) {
+        return SERIAL_RS422;
+    } else if (strcmp(mode, "RS485") == 0) {
+        return SERIAL_RS485;
+    } else {
+        return SERIAL_RS485;
+    }
+}
+
 /*
  * Name:         open_serial_port
  * Purpose:      Takes a file descriptor to a serial device, and opens up an RS-485 or RS-422 connection
@@ -306,7 +403,7 @@ int is_valid_tty(const char *str) {
  * Bugs:         None known.
  * Notes:
  */
-int open_serial_port(const char* portname, speed_t baud_rate) {
+int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
 
     int fd = open(portname, O_RDWR | O_NOCTTY | O_SYNC);
     if (fd < 0) {
@@ -348,27 +445,30 @@ int open_serial_port(const char* portname, speed_t baud_rate) {
     }
 
 #ifdef TIOCSRS485
-    struct serial_rs485 rs485conf;
-    memset(&rs485conf, 0, sizeof(rs485conf));
+    if (mode == SERIAL_RS485) {
+        struct serial_rs485 rs485conf;
+        memset(&rs485conf, 0, sizeof(rs485conf));
 
-    rs485conf.flags |= SER_RS485_ENABLED;         // Enable RS-485
-    rs485conf.flags |= SER_RS485_RTS_ON_SEND;     // Drive RTS high while sending
-    rs485conf.flags |= SER_RS485_RTS_AFTER_SEND;  // Lower RTS after sending
+        rs485conf.flags |= SER_RS485_ENABLED;         // Enable RS-485
+        rs485conf.flags |= SER_RS485_RTS_ON_SEND;     // Drive RTS high while sending
+        rs485conf.flags |= SER_RS485_RTS_AFTER_SEND;  // Lower RTS after sending
+        rs485conf.delay_rts_before_send = 0;
+        rs485conf.delay_rts_after_send  = 0;
 
-    rs485conf.delay_rts_before_send = 0;
-    rs485conf.delay_rts_after_send  = 0;
-
-    if (ioctl(fd, TIOCSRS485, &rs485conf) < 0) {
-        perror("Warning: RS-485 mode not enabled (driver may not support)");
-        printf("Continuing in RS-422/RS-232 mode.\n");
+        if (ioctl(fd, TIOCSRS485, &rs485conf) < 0) {
+            perror("Warning: RS-485 mode not enabled (driver may not support)");
+            printf("Continuing in RS-422/RS-232 mode.\n");
+        } else {
+            printf("RS-485 half-duplex mode enabled via ioctl.\n");
+        }
     } else {
-        printf("RS-485 half-duplex mode enabled via ioctl.\n");
+        printf("RS-422 / RS-232 mode selected.\n");
     }
 #else
     printf("RS-485 ioctl not supported — using RS-422 mode.\n");
 #endif
 
-    printf("Opened %s (RS-485 or RS-422, 8N1 @ baud)\n", portname);
+    printf("Opened %s (%s, 8N1 @ baud)\n", portname, (mode == SERIAL_RS485) ? "RS-485" : "RS-422");
     return fd;
 }
 
@@ -389,8 +489,8 @@ int open_serial_port(const char* portname, speed_t baud_rate) {
  * Notes:
  */
 void* receiver_thread(void* arg) {
+    (void)arg;
     char line[256];
-    char buf[256];
     size_t len = 0;
 
     while (!terminate) {
@@ -405,7 +505,7 @@ void* receiver_thread(void* arg) {
                 }
             } else if (len < sizeof(line)-1) {
                 line[len++] = c;
-            }
+            } else len = 0;
         } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
             perror("read");
         } else {
@@ -430,7 +530,7 @@ void* receiver_thread(void* arg) {
  *
  * Bugs:         None known.
  * Notes:
- */
+ *
 void* sender_thread(void* arg) {
     const char* msg = "DATA: 12345";
     while (!terminate) {
@@ -447,7 +547,7 @@ void* sender_thread(void* arg) {
         }
     }
     return NULL;
-}
+}*/
 
 /*
  * Name:         Main
@@ -476,7 +576,7 @@ void* sender_thread(void* arg) {
 int main(int argc, char *argv[]) {
 
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <file_path>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
         return 1;
     }
 
@@ -493,7 +593,10 @@ int main(int argc, char *argv[]) {
     // ternary statement to set BAUD_RATE if supplied in args or default
     speed_t baud = (argc >= 4) ? get_baud_rate(argv[3]) : BAUD_RATE;
 
-    serial_fd = open_serial_port(device, baud);
+    // ternary statement to set Serial Protocol if supplied in args or default
+    SerialMode mode = (argc >=5) ? get_mode(argv[4]) : SERIAL_RS485; // returns RS485 by default.
+
+    serial_fd = open_serial_port(device, baud, mode);
 
     if (serial_fd < 0)
         return 1;
@@ -506,39 +609,30 @@ int main(int argc, char *argv[]) {
     sigaction(SIGINT, &sa, NULL);   // Ctrl-C
     sigaction(SIGTERM, &sa, NULL);  // kill, systemd, etc.
 
-    pthread_t recv_thread, send_thread;
+    pthread_t recv_thread;
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
         perror("Failed to create receiver thread");
-        terminate = true;          // <- symmetrical, but not required
+        terminate = 1;          // <- symmetrical, but not required
         close(serial_fd);
+        fclose(file_ptr);
         return 1;
     }
-
-    if (pthread_create(&send_thread, NULL, sender_thread, NULL) != 0) {
-        perror("Failed to create sender thread");
-        terminate = true;          // <- needed because recv_thread is running
-        pthread_join(recv_thread, NULL);
-        close(serial_fd);
-        return 1;
-    }
-    //pthread_create(&recv_thread, NULL, receiver_thread, NULL);
-    //pthread_create(&send_thread, NULL, sender_thread, NULL);
 
     printf("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {
         char input[8];
         if (fgets(input, sizeof(input), stdin)) {
-            if (input[0] == 'q' || input[0] == 'Q' || kill_flag == true) {
-                terminate = true;
+            if (input[0] == 'q' || input[0] == 'Q' || kill_flag == 1) {
+                terminate = 1;
 		break;
             }
         }
     }
 
     pthread_join(recv_thread, NULL);
-    pthread_join(send_thread, NULL);
     close(serial_fd);
+    fclose(file_ptr);
 
     printf("Program terminated.\n");
     return 0;
