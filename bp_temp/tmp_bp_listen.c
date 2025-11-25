@@ -210,10 +210,10 @@ typedef enum {
  */
 
 CommandType parse_command(const char* buf) {
-    if (strstr(buf, "START"))      return CMD_START;
-    if (strstr(buf, "STOP"))       return CMD_STOP;
-    if (strstr(buf, "{F00RDD}"))   return CMD_RDD;
-    if (strstr(buf, "SITE"))       return CMD_SITE;
+    if (strcmp(buf, "START"))      return CMD_START;
+    if (strcmp(buf, "STOP"))       return CMD_STOP;
+    if (strcmp(buf, "{F00RDD}"))   return CMD_RDD;
+    if (strcmp(buf, "SITE"))       return CMD_SITE;
     return CMD_UNKNOWN;
 }
 
@@ -515,39 +515,6 @@ void* receiver_thread(void* arg) {
     }
     return NULL;
 }
-
-/*
- * Name:         sender_thread
- * Purpose:      currently no purpose... On running=true it would send msg every 1 second.
- *               If a sensor at a later date requires continuous sending of data, in response to a START command for example
- *               we can use this thread to send that data, while still being able to listen using reciver thread.
- * Arguments:    arg: thread arguments.
- *
- * Output:       None.
- * Modifies:     None.
- * Returns:      NULL.
- * Assumptions:  serial port will have data, and that data will translate to a command.
- *
- * Bugs:         None known.
- * Notes:
- *
-void* sender_thread(void* arg) {
-    const char* msg = "DATA: 12345";
-    while (!terminate) {
-        if (running) {
-            ssize_t written = write(serial_fd, msg, strlen(msg));
-            // dprintf(serial_fd, "%s\r\n", msg);
-            if (written > 0)
-                printf("Sent (%zd bytes): %s", written, msg);
-            else
-                perror("Write failed");
-            usleep(1000000); // 1s
-        } else {
-            usleep(100000);
-        }
-    }
-    return NULL;
-}*/
 
 /*
  * Name:         Main
