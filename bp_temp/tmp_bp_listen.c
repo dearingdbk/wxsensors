@@ -406,7 +406,7 @@ SerialMode get_mode(const char *mode) {
  */
 int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
 
-    int fd = open(portname, O_RDWR | O_NOCTTY | O_SYNC);
+    int fd = open(portname, O_RDWR | O_NOCTTY | O_SYNC); // Potetnially remove 0_SYNC in the future 
     if (fd < 0) {
         perror("Error opening serial port");
         return -1;
@@ -422,9 +422,17 @@ int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
     // Set raw mode
     cfmakeraw(&tty);
 
-    // Set baud rate
-    cfsetospeed(&tty, baud_rate);
-    cfsetispeed(&tty, baud_rate);
+    // Set baud rates and check success
+    if (cfsetospeed(&tty, baud_rate) != 0) {
+        perror("cfsetospeed failed");
+        close(fd);
+        return -1;
+    }
+    if (cfsetispeed(&tty, baud_rate) != 0) {
+        perror("cfsetispeed failed");
+        close(fd);
+        return -1;
+    }
 
     // 8N1
     tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
@@ -468,8 +476,7 @@ int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
 #else
     printf("RS-485 ioctl not supported — using RS-422 mode.\n");
 #endif
-
-    printf("Opened %s (%s, 8N1 @ baud)\n", portname, (mode == SERIAL_RS485) ? "RS-485" : "RS-422");
+    printf("Opened %s (%s, 8N1 @ baud -> %u)\n", portname, (mode == SERIAL_RS485) ? "RS-485" : "RS-422");
     return fd;
 }
 
