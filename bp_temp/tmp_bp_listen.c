@@ -548,7 +548,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    file_path = argv[1];
+    file_path = argv[1]; // gets the supplied file path
 
     file_ptr = fopen(file_path, "r");
     if (!file_ptr) {
@@ -589,13 +589,17 @@ int main(int argc, char *argv[]) {
     }
 
     printf("Press 'q' + Enter to quit.\n");
-    while (!kill_flag) {
-        char input[8];
+    while (!kill_flag) { // Keep looping until the global kill_flag is set (user wants to quit or signal received)
+        char input[8];   // Buffer to store user input (up to 7 chars + null terminator)
+        // try to read a line from standard input (stdin)
         if (fgets(input, sizeof(input), stdin)) {
             if (input[0] == 'q' || input[0] == 'Q' || kill_flag == 1) {
                 terminate = 1;
 		break;
             }
+        } else { // fgets returned NULL: could be EOF or read error
+            if (feof(stdin)) { terminate = 1; kill_flag = 1; break; } // Check if end-of-file (EOF) was reached
+            if (ferror(stdin)) { clearerr(stdin); continue; }  // Check if a read error occurred, re-loop
         }
     }
 
