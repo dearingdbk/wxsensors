@@ -1,20 +1,38 @@
-
 /*
- * File:     tmp_bp_listen.c
+ * File:     barometric.c
  * Author:   Bruce Dearing
- * Date:     17/11/2025
- * Version:  1.2
+ * Date:     26/11/2025
+ * Version:  1.0
  * Purpose:  Program to handle setting up a serial connection and two threads
  *           one to listen, and one to respond over RS-485 / RS-422
  *           Two-thread serial handler:
  *            - Receiver thread parses and responds to commands
- *            - Sender thread periodically transmits data when active (Not implemented in this program)
+ *            - Sender thread periodically transmits data when active
+ *           Program emulates a weather sensor - Druck DSP8100
  *           Commands supported:
- *           START, STOP, {F00RDD}, SITE
+ *           R - Requests current pressure reading.
+ *           G - Request new pressure reading.
+ *           Z - Read raw data.
+ *           I - identify and setup information.
+ *           A - Set automatic transmission interval, also used to set if units are output as text.
+ * 	     N - Set device address.
+ *           Q - Pressure measurement speed.
+ *           U - Pressure Units.
+ *           C - Digital output calibration.
+ *           H - Set full-scale. - Disabled for sensor emulation.
+ *           M - User message.
+ *           O - Communication Settings
+ *           P - Change PIN.
+ *           S - Set offset. - Disabled for sensor emulation.
+ *           <CR> <CRLF> - Command Terminators.
+ *           <A|N|Q|U|C|H|M|O|P|S|E|L|T|V|W>,? Query the value of those fields.
+ *           *<A-Z> provides the reading and the units of measurement.
  *           All replies (ACKs, responses, errors) are sent out on the serial port.
- *
- * 	     use case ' tmp_bp_listen <file_path> // The serial port and baud rate will be set to  defaults /dev/ttyUSB0, and B9600
- *           use case ' tmp_bp_listen <file_path> <serial_port_location> <baud_rate> <RS422|RS485> The serial port currently must match /dev/tty(S|USB)[0-9]+
+ *           All incoming commands follow this format:
+ *           Direct Mode: <SPACE><Command>,<P1>,<P2>,...,<Pn><CR>
+ *           Addressed Mode: <SPACE><Address>:<Command>,<P1>,<P2>,...,<Pn><CR>
+ *	     use case ' barometric <file_path> <serial_port_location> <baud_rate> <RS422|RS485> The serial port currently must match /dev/tty(S|USB)[0-9]+
+ * 	     use case ' barometric <file_path> // The serial port, baud rate, and mode will be set to  defaults /dev/ttyUSB0, and B9600
  * Mods:
  *
  *
@@ -37,7 +55,7 @@
 #include <stdatomic.h>
 #include <stdarg.h>
 #include <time.h>
-
+#include "sensor_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
@@ -46,36 +64,100 @@
 
 FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
+
 // Shared state
+int continuous = 0;
 volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
-volatile bool running = false;
+
 int serial_fd = -1;
+// char *site_config = "A0 B3 C1 E1 F1 G0000 H2 J1 K1 L1 M2 NA O1 P1 T1 U1 V1 X1 Z1";
+char site_id = 'A';
+uint8_t address = 0;
+//char units_of_measure[25][50]; // Global array to hold the units of measurement available.
+//float coefficients[57]; // Global array to hold K coefficients of float values.
+int current_u_of_m = 0; // Global variable for the current units of measurement for the sensor, 0 (mbar) is the default.
+
+
+/*typedef struct {
+    char *unit_type[MAX_INPUT_STR];
+    char *serial_number[MAX_INPUT_STR];
+    char *style[MAX_INPUT_STR];
+    char *min_pressure[MAX_INPUT_STR];
+    char *max_pressure[MAX_INPUT_STR];
+    char *manufacture_date[MAX_INPUT_STR];
+    char *software_version[MAX_INPUT_STR];
+    int trans_interval[MAX_INPUT_STR];
+    char *units_sent[MAX_INPUT_STR];
+    int measurement_speed[MAX_INPUT_STR];
+    char *filter_factor[MAX_INPUT_STR];
+    char *filter_step[MAX_INPUT_STR];
+    char *user_message[MAX_INPUT_STR];
+    char *units[MAX_INPUT_STR];
+    char *pin_set[MAX_INPUT_STR];
+    char *user_zero[MAX_INPUT_STR];
+    char *user_fs[MAX_INPUT_STR];
+    char *sensor_sn[MAX_INPUT_STR];
+    char *internal_chksum[MAX_INPUT_STR];
+} bp_sensor; */
 
 /* Synchronization primitives */
 static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER; // protects serial writes
 static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
+static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  send_cond  = PTHREAD_COND_INITIALIZER;
+
+// These need to be freed upon exit.
+bp_sensor *sensor_one; // Global pointer to struct for Barometric sensor 1.
+bp_sensor *sensor_two; // Global pointer to struct for Barometric sensor 2.
+bp_sensor *sensor_three; // Global pointer to struct for Barometric sensor 3.
 
 
 /*
  * Name:         handle_signal
- * Purpose:      Captures any kill signals, and sets volitile atomic 'terminate' & 'kill_flag' to 1, allowing the while loop to break, and threads to join.
+ * Purpose:      Captures any kill signals, and sets volitile bool 'terminate' and 'kill_flag' to true, allowing thw while loop to break, and threads to join.
  * Arguments:    None
  *
  * Output:       None.
- * Modifies:     Changes terminate to 1, and kill_flag to 1.
+ * Modifies:     Changes terminate to true.
  * Returns:      None.
- * Assumptions:  Terminate is set to 0.
+ * Assumptions:  Terminate is set to false.
  *
  * Bugs:         None known.
- * Notes:
+ * Notes:        Signal handler: must do async-safe ops only (set sig_atomic_t flags)
  */
 void handle_signal(int sig) {
     (void)sig;
-    terminate = 1;
-    kill_flag = 1;
+    terminate = 1; // Sets the atmoic var terminate to true, prompting the R & T threads to join.
+    kill_flag = 1; // Sets the atomic var kill_flag to true, prompting the main loop to end.
 }
 
+
+/*
+ * Name:         check_sum
+ * Purpose:      Takes a '\0' delimited string, and returns a checksum of the characters XOR.
+ * Arguments:    str_to_chk the string that checksum will be calculated for
+ *
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      returns an unsigned 8 bit integer of the checksum of str_to_chk.
+ * Assumptions:  Terminate is set to false.
+ *
+ * Bugs:         None known.
+ * Notes:        To print in HEX utilize dprintf(serial_fd, "%c%s%c%02X\r\n",2, str_to_chk, check_sum(str_to_chk));
+ */
+uint8_t check_sum(const char *str_to_chk) {
+
+    uint8_t checksum = 0;
+    if (str_to_chk == NULL) {
+        return 0;
+    }
+    while (*str_to_chk != '\0') {
+        checksum ^= (uint8_t)(*str_to_chk);
+        str_to_chk++;
+    }
+    return checksum;
+}
 
 
 /*
@@ -117,44 +199,6 @@ char *get_next_line_copy(void) {
     return strdup(temp); /* caller must free, returns a copy of temp */
 }
 
-
-/*
- * Name:         get_next_line
- * Purpose:      Reads a line of a file, received from a file pointer, it then iterates that pointer to the next line, or if at the EOF
- *               loops back to the beginning of the file.
- * Arguments:    None.
- *
- * Output:       Error message, if the file is not open.
- * Modifies:     None.
- * Returns:      returns a line of text from a file MAX_LINE_LENGTH long or NULL.
- * Assumptions:  The file is open, and the line read is less than MAX_LINE_LENGTH
- *
- * Bugs:         None known.
- * Notes:
- */
-const char* get_next_line(void) {
-    static char line[MAX_LINE_LENGTH];
-
-    if (!file_ptr) {
-        fprintf(stderr, "File not opened!\n");
-        return NULL;
-    }
-
-    if (!fgets(line, sizeof(line), file_ptr)) {
-        // Reached EOF or error
-        rewind(file_ptr);             // Go back to start
-        if (!fgets(line, sizeof(line), file_ptr)) {
-            // File empty
-            return NULL;
-        }
-    }
-
-    // Remove trailing newline
-    line[strcspn(line, "\r\n")] = '\0';
-    return line;
-}
-
-
 /*
  * Name:         safe_write_response
  * Purpose:      Serializes writes to the serial device to ensure, that all writes do not
@@ -186,16 +230,54 @@ static void safe_write_response(const char *fmt, ...) {
 }
 
 
-// ---------------- Command handling ----------------
 
+/*
+ * Name:         get_next_line
+ * Purpose:      Reads a line of a file, received from a file pointer, it then iterates that pointer to the next line, or if at the EOF
+ *               loops back to the beginning of the file.
+ * Arguments:    None.
+ *
+ * Output:       Error message, if the file is not open.
+ * Modifies:     None.
+ * Returns:      returns a line of text from a file MAX_LINE_LENGTH long or NULL.
+ * Assumptions:  The file is open, and the line read is less than MAX_LINE_LENGTH
+ *
+ * Bugs:         None known.
+ * Notes:
+ */
+const char* get_next_line(void) {
+    static char line[MAX_LINE_LENGTH];
+
+    if (!file_ptr) {
+        fprintf(stderr, "File not opened!\n");
+        return NULL;
+    }
+
+    if (!fgets(line, sizeof(line), file_ptr)) {
+        // Reached EOF or error
+        rewind(file_ptr);             // Go back to start of file
+        if (!fgets(line, sizeof(line), file_ptr)) {
+            // File empty
+            return NULL;
+        }
+    }
+
+    line[strcspn(line, "\r\n")] = '\0'; // Remove trailing newline
+    return line;
+}
+
+
+// ---------------- Command handling ----------------
+/*
 typedef enum {
     CMD_UNKNOWN,
-    CMD_START,
-    CMD_STOP,
-    CMD_RDD,
-    CMD_SITE
+    CMD_START, // ! received from the terminal
+    CMD_STOP,  // ? received from the terminal
+    CMD_SITE,  // & recieved from the terminal
+    CMD_POLL,  // <A-Z> received from the terminal
+    CMD_CONFIG // *<A-Z> received from the terminal
 } CommandType;
-
+*/
 
 /*
  * Name:         parse_command
@@ -210,12 +292,12 @@ typedef enum {
  * Bugs:         None known.
  * Notes:
  */
-
-CommandType parse_command(const char* buf) {
-    if (strcmp(buf, "START") == 0)      return CMD_START;
-    if (strcmp(buf, "STOP") == 0)       return CMD_STOP;
-    if (strcmp(buf, "{F00RDD}") == 0)   return CMD_RDD;
-    if (strcmp(buf, "SITE") == 0)       return CMD_SITE;
+CommandType parse_command(const char *buf) {
+    if (buf[0] == '!' && buf[1] == '\0')					return CMD_START;
+    if (buf[0] == '?' && buf[1] == '\0')					return CMD_STOP;
+    if (buf[0] == '&' && buf[1] == '\0')					return CMD_SITE;
+    if (buf[0] == '*' && buf[1] >= 'A' && buf[1] <= 'Z' && buf[2] =='\0') 	return CMD_CONFIG;
+    if (buf && buf[0] >= 'A' && buf[0] <= 'Z' && buf[1] == '\0') 		return CMD_POLL;
     return CMD_UNKNOWN;
 }
 
@@ -235,34 +317,41 @@ CommandType parse_command(const char* buf) {
  */
 void handle_command(CommandType cmd) {
     char *resp_copy = NULL;
-
     switch (cmd) {
         case CMD_START:
-            //running = true; // disable for now
+	    pthread_mutex_lock(&send_mutex);
+            continuous = 1; // enable continuous sending
+            pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
+            pthread_mutex_unlock(&send_mutex);
             break;
 
         case CMD_STOP:
-            //running = false; // disable for now
+            pthread_mutex_lock(&send_mutex);
+	    continuous = 0; // disables continuous sending.
+            pthread_cond_signal(&send_cond);   // Wake sender_thread to exit loop
+            pthread_mutex_unlock(&send_mutex);
             break;
 
-        case CMD_RDD:
+        case CMD_SITE:
+            printf("CMD: SITE -> Sending site info\n");
+            safe_write_response("%c\r\n", site_id);
+            break;
+
+        case CMD_POLL:
             resp_copy = get_next_line_copy();
             if (resp_copy) {
-                safe_write_response("%s\r\n", resp_copy);
+                // prints <Start of Line ASCII 2>, the string of data read, <EOL ASCII 3>, Checksum of the line read
+                safe_write_response("%c%s%c%02X\r\n", 2, resp_copy, 3, check_sum(resp_copy));
                 free(resp_copy);
             } else {
                 safe_write_response("ERR: Empty file\r\n");
             }
             break;
-
-        case CMD_SITE:
-            printf("CMD: SITE -> Sending site info\n");
-            break;
-
         default:
             printf("CMD: Unknown command\n");
             break;
     }
+
 }
 
 /*
@@ -303,6 +392,7 @@ speed_t get_baud_rate(const char *baud_rate) {
         default: return BAUD_RATE; // Default value
     }
 }
+
 
 /*
  * Name:         is_valid_tty
@@ -360,21 +450,20 @@ int is_valid_tty(const char *str) {
 // ---------------- Serial configuration ----------------
 
 
-
 typedef enum {
     SERIAL_RS422,  // or RS-232 fallback
     SERIAL_RS485
 } SerialMode;
 
 /*
- * Name:         get_mode
- * Purpose:      Checks if the given serial protocol is a standard value and returns its string name.
- * Arguments:    mode: the stringvalue representing the serial protocol provided as an argument to main.
+ * Name:         get_baud_rate
+ * Purpose:      Checks if the given baud rate is a standard value and returns its string name.
+ * Arguments:    baud_rate: the integer value representing the baud rate provided as an argument to main.
  *
  * Output:       None.
  * Modifies:     None.
- * Returns:      returns a string representing the correct serial protocol or RS485 as the default.
- * Assumptions:  mode is a integer and is within the standard values
+ * Returns:      returns a string representing the correct baud rate or B9600 as the default.
+ * Assumptions:  baud_rate is a integer and is within the standard values
  *
  * Bugs:         None known.
  * Notes:
@@ -388,6 +477,8 @@ SerialMode get_mode(const char *mode) {
         return SERIAL_RS485;
     }
 }
+
+
 
 /*
  * Name:         open_serial_port
@@ -407,7 +498,7 @@ SerialMode get_mode(const char *mode) {
  */
 int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
 
-    int fd = open(portname, O_RDWR | O_NOCTTY | O_SYNC); // Potetnially remove 0_SYNC in the future 
+    int fd = open(portname, O_RDWR | O_NOCTTY | O_SYNC);
     if (fd < 0) {
         perror("Error opening serial port");
         return -1;
@@ -423,17 +514,9 @@ int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
     // Set raw mode
     cfmakeraw(&tty);
 
-    // Set baud rates and check success
-    if (cfsetospeed(&tty, baud_rate) != 0) {
-        perror("cfsetospeed failed");
-        close(fd);
-        return -1;
-    }
-    if (cfsetispeed(&tty, baud_rate) != 0) {
-        perror("cfsetispeed failed");
-        close(fd);
-        return -1;
-    }
+    // Set baud rate
+    cfsetospeed(&tty, baud_rate);
+    cfsetispeed(&tty, baud_rate);
 
     // 8N1
     tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
@@ -477,6 +560,7 @@ int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
 #else
     printf("RS-485 ioctl not supported — using RS-422 mode.\n");
 #endif
+
     printf("Opened %s (%s, 8N1 @ baud)\n", portname, (mode == SERIAL_RS485) ? "RS-485" : "RS-422");
     return fd;
 }
@@ -511,14 +595,19 @@ void* receiver_thread(void* arg) {
                     line[len] = '\0';
 		    handle_command(parse_command(line));
                     len = 0;
-                }
-            } else if (len < sizeof(line)-1) {
-                line[len++] = c;
-            } else len = 0;
+                } else { // empty line ignore
+                  }
+            } else {
+                  if (len < sizeof(line)-1) {
+                    line[len++] = c;
+                  } else {
+                        len = 0;
+                    }
+              }
         } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
             perror("read");
         } else {
-            // no data available, avoid busy loop
+            // no data available n == 0, avoid busy loop
             usleep(10000);
         }
     }
@@ -526,10 +615,60 @@ void* receiver_thread(void* arg) {
 }
 
 /*
+ * Name:         sender_thread
+ * Purpose:      On continuous == 1 and assuming terminate != 1 it will get the next line from a specified file, usinf
+ *               get_next_line_copy() and send that line to the serial device using safe_write_response() function every 2 seconds.
+ * Arguments:    arg: thread arguments.
+ *
+ * Output:       Error messages if encountered, prints to serial device.
+ * Modifies:     None.
+ * Returns:      NULL.
+ * Assumptions:  serial port will have data, and that data will translate to a command.
+ *
+ * Bugs:         None known.
+ * Notes:
+ */
+void* sender_thread(void* arg) {
+    (void)arg;
+    struct timespec requested_time;
+
+    while (!terminate) {
+        pthread_mutex_lock(&send_mutex);
+        // wait until either terminate is set or continuous becomes 1
+        while (!terminate && !continuous) {
+            pthread_cond_wait(&send_cond, &send_mutex);
+        }
+
+        if (terminate) {
+            pthread_mutex_unlock(&send_mutex);
+            break;
+        }
+
+        while (!terminate && continuous) {
+             char *line = get_next_line_copy();
+             if (line) {
+                 // prints <STX ASCII 2>, the string of data read, <ETX ASCII 3>, Checksum of the line read
+                 safe_write_response("%c%s%c%02X\r\n", 2, line, 3, check_sum(line));
+                 // safe_write_response("%s\r\n", line);
+                 free(line); // caller of get_next_line_copy() must free resource.
+             }
+
+             clock_gettime(CLOCK_REALTIME, &requested_time);
+             requested_time.tv_sec += 2;
+             pthread_cond_timedwait(&send_cond, &send_mutex, &requested_time);
+        }
+
+        pthread_mutex_unlock(&send_mutex);
+
+    }
+    return NULL;
+}
+
+/*
  * Name:         Main
- * Purpose:      Main funstion, which opens up serial port, and creates a receiver and transmit threads to listen, and respond to commands 
+ * Purpose:      Main funstion, which opens up serial port, and creates a receiver and transmit threads to listen, and respond to commands
  *               over that serial port. Can take two arguments or no arguments. If changing the serial device name and baud rate, you must supply both.
- *               i.e. tmp_bp_listen <serial_device> <baud_rate>
+ *               i.e. tmp_bp_listen <file_path> [serial_device] [baud_rate]
  *		 uses ternary statements to set either default values for SERIAL_PORT, and BAUD_RATE which are defined above.
  * 		 (condition) ? (value if true) : (value if false)
  *
@@ -551,12 +690,23 @@ void* receiver_thread(void* arg) {
 
 int main(int argc, char *argv[]) {
 
+    init_units();
+    init_sensor(&sensor_one);
+    init_sensor(&sensor_two);
+    init_sensor(&sensor_three);
+
+    for (int i = 0; i<25; i++) {
+    printf("%d  -  %s\r\n", i, units_of_measure[i]);
+
+    }
+
+    printf("Current Units are %s\n", sensor_one->units);
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
         return 1;
     }
 
-    file_path = argv[1]; // gets the supplied file path
+    file_path = argv[1];
 
     file_ptr = fopen(file_path, "r");
     if (!file_ptr) {
@@ -569,7 +719,6 @@ int main(int argc, char *argv[]) {
     // ternary statement to set BAUD_RATE if supplied in args or default
     speed_t baud = (argc >= 4) ? get_baud_rate(argv[3]) : BAUD_RATE;
 
-    // ternary statement to set Serial Protocol if supplied in args or default
     SerialMode mode = (argc >=5) ? get_mode(argv[4]) : SERIAL_RS485; // returns RS485 by default.
 
     serial_fd = open_serial_port(device, baud, mode);
@@ -586,7 +735,7 @@ int main(int argc, char *argv[]) {
     sigaction(SIGINT, &sa, NULL);   // Ctrl-C
     sigaction(SIGTERM, &sa, NULL);  // kill, systemd, etc.
 
-    pthread_t recv_thread;
+    pthread_t recv_thread, send_thread;
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
         perror("Failed to create receiver thread");
@@ -596,22 +745,41 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    if (pthread_create(&send_thread, NULL, sender_thread, NULL) != 0) {
+        perror("Failed to create sender thread");
+        terminate = 1;          // <- needed because recv_thread is running
+        pthread_join(recv_thread, NULL);
+        close(serial_fd);
+        fclose(file_ptr);
+        return 1;
+    }
+
     printf("Press 'q' + Enter to quit.\n");
-    while (!kill_flag) { // Keep looping until the global kill_flag is set (user wants to quit or signal received)
-        char input[8];   // Buffer to store user input (up to 7 chars + null terminator)
-        // try to read a line from standard input (stdin)
+    while (!kill_flag) {
+        char input[8];
         if (fgets(input, sizeof(input), stdin)) {
             if (input[0] == 'q' || input[0] == 'Q' || kill_flag == 1) {
+                pthread_mutex_lock(&send_mutex);
                 terminate = 1;
+                kill_flag = 1;
+                pthread_cond_signal(&send_cond);  // wake sender_thread
+                pthread_mutex_unlock(&send_mutex);
 		break;
             }
-        } else { // fgets returned NULL: could be EOF or read error
-            if (feof(stdin)) { terminate = 1; kill_flag = 1; break; } // Check if end-of-file (EOF) was reached
-            if (ferror(stdin)) { clearerr(stdin); continue; }  // Check if a read error occurred, re-loop
+        } else if (feof(stdin)) {  // keep an eye on the behaviour of this check.
+            pthread_mutex_lock(&send_mutex);
+            terminate = 1;
+            kill_flag = 1;
+            pthread_cond_signal(&send_cond);      // wake sender_thread
+            pthread_mutex_unlock(&send_mutex);
+            break; // stdin closed
+        } else {
+            continue; // temp read error
         }
     }
 
     pthread_join(recv_thread, NULL);
+    pthread_join(send_thread, NULL);
     close(serial_fd);
     fclose(file_ptr);
 
