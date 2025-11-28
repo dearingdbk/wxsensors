@@ -14,7 +14,7 @@
 
 #define MAX_INPUT_STR 256
 extern char units_of_measure[25][50];
-extern float coefficients[57];
+extern double coefficients[57];
 extern int current_u_of_m;
 
 typedef struct {

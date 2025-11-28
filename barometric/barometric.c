@@ -76,30 +76,8 @@ char site_id = 'A';
 uint8_t address = 0;
 //char units_of_measure[25][50]; // Global array to hold the units of measurement available.
 //float coefficients[57]; // Global array to hold K coefficients of float values.
-int current_u_of_m = 0; // Global variable for the current units of measurement for the sensor, 0 (mbar) is the default.
+int current_u_of_m = 6; // Global variable for the current units of measurement for the sensor, 6 (hPa) is the default.
 
-
-/*typedef struct {
-    char *unit_type[MAX_INPUT_STR];
-    char *serial_number[MAX_INPUT_STR];
-    char *style[MAX_INPUT_STR];
-    char *min_pressure[MAX_INPUT_STR];
-    char *max_pressure[MAX_INPUT_STR];
-    char *manufacture_date[MAX_INPUT_STR];
-    char *software_version[MAX_INPUT_STR];
-    int trans_interval[MAX_INPUT_STR];
-    char *units_sent[MAX_INPUT_STR];
-    int measurement_speed[MAX_INPUT_STR];
-    char *filter_factor[MAX_INPUT_STR];
-    char *filter_step[MAX_INPUT_STR];
-    char *user_message[MAX_INPUT_STR];
-    char *units[MAX_INPUT_STR];
-    char *pin_set[MAX_INPUT_STR];
-    char *user_zero[MAX_INPUT_STR];
-    char *user_fs[MAX_INPUT_STR];
-    char *sensor_sn[MAX_INPUT_STR];
-    char *internal_chksum[MAX_INPUT_STR];
-} bp_sensor; */
 
 /* Synchronization primitives */
 static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER; // protects serial writes
