@@ -28,7 +28,7 @@ typedef struct {
     int trans_interval;
     char units_sent[MAX_INPUT_STR];
     int measurement_speed;
-    char filter_factor[MAX_INPUT_STR];
+    int filter_factor;
     char filter_step[MAX_INPUT_STR];
     char user_message[MAX_INPUT_STR];
     char units[MAX_INPUT_STR];
