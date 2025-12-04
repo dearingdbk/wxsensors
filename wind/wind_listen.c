@@ -409,14 +409,14 @@ typedef enum {
 } SerialMode;
 
 /*
- * Name:         get_baud_rate
- * Purpose:      Checks if the given baud rate is a standard value and returns its string name.
- * Arguments:    baud_rate: the integer value representing the baud rate provided as an argument to main.
+ * Name:         get_mode
+ * Purpose:      Checks if the given serial protocol is a standard value and returns its enum name.
+ * Arguments:    mode: the string value representing the serial protocol provided as an argument to main.
  *
  * Output:       None.
  * Modifies:     None.
- * Returns:      returns a string representing the correct baud rate or B9600 as the default.
- * Assumptions:  baud_rate is a integer and is within the standard values
+ * Returns:      returns a string representing the correct serial protocol RS485 as the default.
+ * Assumptions:  None.
  *
  * Bugs:         None known.
  * Notes:

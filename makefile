@@ -3,6 +3,7 @@ CFLAGS = -Wall -Wextra -Iinclude
 
 SRC_DIR = ../wxsensors
 BIN_DIR = bin
+COMMON_SRC = common/serial_utils.c
 
 # Get all immediate subfolders of SRC_DIR that contain .c files
 FOLDERS := $(shell find $(SRC_DIR) -mindepth 1 -maxdepth 1 -type d -exec sh -c 'ls $$0/*.c >/dev/null 2>&1 && echo $$0' {} \;)
