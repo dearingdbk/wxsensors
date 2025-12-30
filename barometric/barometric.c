@@ -56,6 +56,7 @@
 #include <stdarg.h>
 #include <time.h>
 #include "sensor_utils.h"
+#include "serial_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
@@ -345,7 +346,7 @@ void handle_command(CommandType cmd) {
  * Bugs:         None known.
  * Notes:
  */
-speed_t get_baud_rate(const char *baud_rate) {
+/*speed_t get_baud_rate(const char *baud_rate) {
     int baud = atoi(baud_rate);
     switch (baud) {
         case 50: return B50;
@@ -369,7 +370,7 @@ speed_t get_baud_rate(const char *baud_rate) {
         case 921600: return B921600;
         default: return BAUD_RATE; // Default value
     }
-}
+}*/
 
 
 /*
@@ -392,7 +393,7 @@ speed_t get_baud_rate(const char *baud_rate) {
  * Bugs:         None known.
  * Notes:
  */
-int is_valid_tty(const char *str) {
+/*int is_valid_tty(const char *str) {
     regex_t regex;
     int reti;
     const char *pattern = "^/dev/tty(S|USB)[0-9]+$";
@@ -432,7 +433,7 @@ typedef enum {
     SERIAL_RS422,  // or RS-232 fallback
     SERIAL_RS485
 } SerialMode;
-
+*/
 /*
  * Name:         get_baud_rate
  * Purpose:      Checks if the given baud rate is a standard value and returns its string name.
@@ -446,7 +447,7 @@ typedef enum {
  * Bugs:         None known.
  * Notes:
  */
-SerialMode get_mode(const char *mode) {
+/*SerialMode get_mode(const char *mode) {
     if (strcmp(mode, "RS422") == 0) {
         return SERIAL_RS422;
     } else if (strcmp(mode, "RS485") == 0) {
@@ -454,7 +455,7 @@ SerialMode get_mode(const char *mode) {
     } else {
         return SERIAL_RS485;
     }
-}
+}*/
 
 
 
@@ -474,7 +475,7 @@ SerialMode get_mode(const char *mode) {
  * Bugs:         None known.
  * Notes:
  */
-int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
+/*int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
 
     int fd = open(portname, O_RDWR | O_NOCTTY | O_SYNC);
     if (fd < 0) {
@@ -541,7 +542,7 @@ int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
 
     printf("Opened %s (%s, 8N1 @ baud)\n", portname, (mode == SERIAL_RS485) ? "RS-485" : "RS-422");
     return fd;
-}
+}*/
 
 
 // ---------------- Threads ----------------

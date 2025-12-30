@@ -1,24 +1,30 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -Iinclude
-
+CFLAGS = -Wall -Wextra -Iinclude -MMD -MP
 SRC_DIR = ../wxsensors
 BIN_DIR = bin
-COMMON_SRC = common/serial_utils.c
+OBJ_DIR = obj
 
-# Get all immediate subfolders of SRC_DIR that contain .c files
-FOLDERS := $(shell find $(SRC_DIR) -mindepth 1 -maxdepth 1 -type d -exec sh -c 'ls $$0/*.c >/dev/null 2>&1 && echo $$0' {} \;)
+# Common sources and objects
+COMMON_SRC = $(wildcard common/*.c)
+COMMON_OBJ = $(patsubst common/%.c, $(OBJ_DIR)/%.o, $(COMMON_SRC))
 
-# Strip SRC_DIR prefix to get folder names
+# Get all immediate subfolders of SRC_DIR that contain .c files, excluding common
+FOLDERS := $(shell find $(SRC_DIR) -mindepth 1 -maxdepth 1 -type d ! -name 'common' -exec sh -c 'ls $$0/*.c >/dev/null 2>&1 && echo $$0' {} \;)
 FOLDER_NAMES := $(notdir $(FOLDERS))
-
-# Executable paths: bin/<folder>/<folder>
 EXES := $(addprefix $(BIN_DIR)/, $(addsuffix /%, $(FOLDER_NAMES)))
 
 # Default target
 all: $(EXES)
 
-# Build one executable per folder
-$(BIN_DIR)/%/%:
+# Build common object files first
+$(OBJ_DIR)/%.o: common/%.c | $(OBJ_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OBJ_DIR):
+	mkdir -p $(OBJ_DIR)
+
+# Build one executable per folder, linking common objects
+$(BIN_DIR)/%/%: $(COMMON_OBJ)
 	@folder_name=$*; \
 	src_folder=$(SRC_DIR)/$$folder_name; \
 	srcs=$$(find $$src_folder -maxdepth 1 -name "*.c"); \
@@ -27,10 +33,9 @@ $(BIN_DIR)/%/%:
 	else \
 		echo "Building $$folder_name ..."; \
 		mkdir -p $(BIN_DIR)/$$folder_name; \
-		$(CC) $(CFLAGS) $$srcs -o $(BIN_DIR)/$$folder_name/$$folder_name; \
+		$(CC) $(CFLAGS) $$srcs $(COMMON_OBJ) -o $(BIN_DIR)/$$folder_name/$$folder_name; \
 		echo "OK: built $(BIN_DIR)/$$folder_name/$$folder_name"; \
 	fi
 
-# Clean
 clean:
-	rm -rf $(BIN_DIR)
+	rm -rf $(BIN_DIR) $(OBJ_DIR)

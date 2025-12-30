@@ -33,11 +33,11 @@
 #define MAX_LINE_LENGTH 1024
 
 
-FILE *file_ptr = NULL; // Global File pointer
-char *file_path = NULL; // path to file
+//FILE *file_ptr = NULL; // Global File pointer
+//char *file_path = NULL; // path to file
 
 // Shared state
-int serial_fd = -1;
+//int serial_fd = -1;
 
 
 /*
@@ -136,10 +136,10 @@ int is_valid_tty(const char *str) {
 // ---------------- Serial configuration ----------------
 
 
-typedef enum {
+/*typedef enum {
     SERIAL_RS422,  // or RS-232 fallback
     SERIAL_RS485
-} SerialMode;
+} SerialMode;*/
 
 /*
  * Name:         get_mode
