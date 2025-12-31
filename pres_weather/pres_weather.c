@@ -260,7 +260,7 @@ CommandType parse_command(const char *buf) {
  * Bugs:         None known.
  * Notes:
  */
-void handle_command(CommandType cmd, const char *buf)) {
+void handle_command(CommandType cmd, const char *buf) {
     char *resp_copy = NULL;
     switch (cmd) {
         case CMD_START:

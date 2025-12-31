@@ -124,15 +124,25 @@ For consistent USB serial device naming, create a udev rule:
 ```
 wxsensors/
 ├── include/           # Shared header files
+│   ├── crc_utils.h
+│   ├── sensor_utils.h
 │   └── serial_utils.h
 ├── common/            # Shared source files
+│   ├── crc_utils.c
+│   ├── sensor_utils.c
 │   └── serial_utils.c
 ├── wind/              # Gill WindObserver 75 emulator
+│   └── wind_listen.c
 ├── rh_temp/           # Rotronic HC2A-S3 emulator
+│   └── tmp_rh_listen.c
 ├── pres_weather/      # Campbell Scientific AtmosVue30 emulator
+│   └── pres_weather.c
 ├── barometric/        # Barometric pressure emulator
+│   └── barometric.c
 ├── ceilometer/        # Ceilometer emulator
+│   └── ceilometer.c
 ├── flash/             # Lightning sensor emulator
+│   └── lightning.sh
 ├── data_files/        # Sample sensor data files
 ├── bin/               # Compiled executables (generated)
 ├── obj/               # Object files (generated)
