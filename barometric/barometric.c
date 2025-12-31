@@ -3,7 +3,7 @@
  * Author:   Bruce Dearing
  * Date:     26/11/2025
  * Version:  1.0
- * Purpose:  Program to handle setting up a serial connection and two threads
+ * Purpose:  Program to emulate a barometric presure sensor, using two threads
  *           one to listen, and one to respond over RS-485 / RS-422
  *           Two-thread serial handler:
  *            - Receiver thread parses and responds to commands
@@ -72,11 +72,8 @@ volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
 
 int serial_fd = -1;
-// char *site_config = "A0 B3 C1 E1 F1 G0000 H2 J1 K1 L1 M2 NA O1 P1 T1 U1 V1 X1 Z1";
 char site_id = 'A';
 uint8_t address = 0;
-//char units_of_measure[25][50]; // Global array to hold the units of measurement available.
-//float coefficients[57]; // Global array to hold K coefficients of float values.
 int current_u_of_m = 6; // Global variable for the current units of measurement for the sensor, 6 (hPa) is the default.
 
 
@@ -164,18 +161,18 @@ char *get_next_line_copy(void) {
     }
 
     if (!fgets(temp, sizeof(temp), file_ptr)) {
-        /* EOF or error; rewind and try once */
+        // EOF or error; rewind and try once
         rewind(file_ptr);
         if (!fgets(temp, sizeof(temp), file_ptr)) {
             pthread_mutex_unlock(&file_mutex);
-            return NULL; /* file empty or error */
+            return NULL; // file empty or error
         }
     }
     pthread_mutex_unlock(&file_mutex);
 
-    /* Trim CR/LF safely */
+    // Trim CR/LF safely
     temp[strcspn(temp, "\r\n")] = '\0';
-    return strdup(temp); /* caller must free, returns a copy of temp */
+    return strdup(temp); // caller must free, returns a copy of temp
 }
 
 /*
@@ -206,43 +203,6 @@ static void safe_write_response(const char *fmt, ...) {
     vdprintf(serial_fd, fmt, var_arg); // prints to serial device the variables provided, in the fmt provided.
     va_end(var_arg);
     pthread_mutex_unlock(&write_mutex);
-}
-
-
-
-/*
- * Name:         get_next_line
- * Purpose:      Reads a line of a file, received from a file pointer, it then iterates that pointer to the next line, or if at the EOF
- *               loops back to the beginning of the file.
- * Arguments:    None.
- *
- * Output:       Error message, if the file is not open.
- * Modifies:     None.
- * Returns:      returns a line of text from a file MAX_LINE_LENGTH long or NULL.
- * Assumptions:  The file is open, and the line read is less than MAX_LINE_LENGTH
- *
- * Bugs:         None known.
- * Notes:
- */
-const char* get_next_line(void) {
-    static char line[MAX_LINE_LENGTH];
-
-    if (!file_ptr) {
-        fprintf(stderr, "File not opened!\n");
-        return NULL;
-    }
-
-    if (!fgets(line, sizeof(line), file_ptr)) {
-        // Reached EOF or error
-        rewind(file_ptr);             // Go back to start of file
-        if (!fgets(line, sizeof(line), file_ptr)) {
-            // File empty
-            return NULL;
-        }
-    }
-
-    line[strcspn(line, "\r\n")] = '\0'; // Remove trailing newline
-    return line;
 }
 
 
@@ -332,217 +292,6 @@ void handle_command(CommandType cmd) {
     }
 
 }
-
-/*
- * Name:         get_baud_rate
- * Purpose:      Checks if the given baud rate is a standard value and returns its string name.
- * Arguments:    baud_rate: the integer value representing the baud rate provided as an argument to main.
- *
- * Output:       None.
- * Modifies:     None.
- * Returns:      returns a string representing the correct baud rate or B9600 as the default.
- * Assumptions:  baud_rate is a integer and is within the standard values
- *
- * Bugs:         None known.
- * Notes:
- */
-/*speed_t get_baud_rate(const char *baud_rate) {
-    int baud = atoi(baud_rate);
-    switch (baud) {
-        case 50: return B50;
-        case 75: return B75;
-        case 110: return B110;
-        case 150: return B150;
-        case 200: return B200;
-        case 300: return B300;
-        case 600: return B600;
-        case 1200: return B1200;
-        case 1800: return B1800;
-        case 2400: return B2400;
-        case 4800: return B4800;
-        case 9600: return B9600;
-        case 19200: return B19200;
-        case 38400: return B38400;
-        case 57600: return B57600;
-        case 115200: return B115200;
-        case 230400: return B230400;
-        case 460800: return B460800;
-        case 921600: return B921600;
-        default: return BAUD_RATE; // Default value
-    }
-}*/
-
-
-/*
- * Name:         is_valid_tty
- * Purpose:      Checks if the given string matches the regular expression ^/dev/tty(S|USB)[0-9]+$
- *		 This regular expression can match /dev/ttyS0 a non-usb serial device or /dev/ttyUSB0
- * Arguments:    str: the string representing the file descriptor of the serial port which should
- * 		 match the pattern ^/dev/tty(S|USB)[0-9]+$.
- * 		   The pattern to match: ^/dev/tty(S|USB)[0-9]+$
- * 		   ^ marks the start of the string, $ marks the end.
- *		   (S|USB) checks for ttyS or ttyUSB
- *                 [0-9]+ matches one or more digits.
-
- * Output:       Prints to stdout the appropriate error message if one is encountered.
- * Modifies:     None.
- * Returns:      return 0 if the string matches, 1 otherwise
- * Assumptions:  str is a valid char * pointer and the line contains
- *               characters other than white space, and points to an FD.
- *
- * Bugs:         None known.
- * Notes:
- */
-/*int is_valid_tty(const char *str) {
-    regex_t regex;
-    int reti;
-    const char *pattern = "^/dev/tty(S|USB)[0-9]+$";
-
-    // Compile the regular expression
-    reti = regcomp(&regex, pattern, REG_EXTENDED);
-    if (reti) {
-        fprintf(stderr, "Could not compile regex\n");
-        return 1; // Return 1 for error/no match
-    }
-
-    // Execute the regular expression
-    reti = regexec(&regex, str, 0, NULL, 0);
-
-    // Free memory allocated to the pattern buffer by regcomp
-    regfree(&regex);
-
-    if (reti == 0) {
-        // Match found
-        return 0;
-    } else if (reti == REG_NOMATCH) {
-        // No match
-        return 1;
-    } else {
-        // Error
-        char msgbuf[100];
-        regerror(reti, &regex, msgbuf, sizeof(msgbuf));
-        fprintf(stderr, "Regex match failed: %s\n", msgbuf);
-        return 1;
-    }
-}
-
-// ---------------- Serial configuration ----------------
-
-
-typedef enum {
-    SERIAL_RS422,  // or RS-232 fallback
-    SERIAL_RS485
-} SerialMode;
-*/
-/*
- * Name:         get_baud_rate
- * Purpose:      Checks if the given baud rate is a standard value and returns its string name.
- * Arguments:    baud_rate: the integer value representing the baud rate provided as an argument to main.
- *
- * Output:       None.
- * Modifies:     None.
- * Returns:      returns a string representing the correct baud rate or B9600 as the default.
- * Assumptions:  baud_rate is a integer and is within the standard values
- *
- * Bugs:         None known.
- * Notes:
- */
-/*SerialMode get_mode(const char *mode) {
-    if (strcmp(mode, "RS422") == 0) {
-        return SERIAL_RS422;
-    } else if (strcmp(mode, "RS485") == 0) {
-        return SERIAL_RS485;
-    } else {
-        return SERIAL_RS485;
-    }
-}*/
-
-
-
-/*
- * Name:         open_serial_port
- * Purpose:      Takes a file descriptor to a serial device, and opens up an RS-485 or RS-422 connection
- *
- * Arguments:    portname: the string representing the file descriptor of the serial port which should
- * 		 match the pattern ^/dev/ttyUSB[0-9]+$.
- *
- * Output:       Prints to stderr the appropriate error message if one is encountered.
- * Modifies:     serial settings
- * Returns:      Returns an int representing a serial device FD if the FD opens, -1 otherwise
- * Assumptions:  portname is a valid char * pointer and the line contains
- *               characters other than white space, and points to an FD.
- *
- * Bugs:         None known.
- * Notes:
- */
-/*int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
-
-    int fd = open(portname, O_RDWR | O_NOCTTY | O_SYNC);
-    if (fd < 0) {
-        perror("Error opening serial port");
-        return -1;
-    }
-
-    struct termios tty;
-    if (tcgetattr(fd, &tty) != 0) {
-        perror("Error from tcgetattr");
-        close(fd);
-        return -1;
-    }
-
-    // Set raw mode
-    cfmakeraw(&tty);
-
-    // Set baud rate
-    cfsetospeed(&tty, baud_rate);
-    cfsetispeed(&tty, baud_rate);
-
-    // 8N1
-    tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
-    tty.c_cflag &= ~(PARENB | PARODD);
-    tty.c_cflag &= ~CSTOPB;
-    tty.c_cflag |= CLOCAL | CREAD;
-
-    // No RTS/CTS hardware flow control
-    tty.c_cflag &= ~CRTSCTS;
-
-    // Non-blocking read with timeout
-    tty.c_cc[VMIN]  = 0;
-    tty.c_cc[VTIME] = 1;
-
-    if (tcsetattr(fd, TCSANOW, &tty) != 0) {
-        perror("Error from tcsetattr");
-        close(fd);
-        return -1;
-    }
-
-#ifdef TIOCSRS485
-    if (mode == SERIAL_RS485) {
-        struct serial_rs485 rs485conf;
-        memset(&rs485conf, 0, sizeof(rs485conf));
-
-        rs485conf.flags |= SER_RS485_ENABLED;         // Enable RS-485
-        rs485conf.flags |= SER_RS485_RTS_ON_SEND;     // Drive RTS high while sending
-        rs485conf.flags |= SER_RS485_RTS_AFTER_SEND;  // Lower RTS after sending
-        rs485conf.delay_rts_before_send = 0;
-        rs485conf.delay_rts_after_send  = 0;
-
-        if (ioctl(fd, TIOCSRS485, &rs485conf) < 0) {
-            perror("Warning: RS-485 mode not enabled (driver may not support)");
-            printf("Continuing in RS-422/RS-232 mode.\n");
-        } else {
-            printf("RS-485 half-duplex mode enabled via ioctl.\n");
-        }
-    } else {
-        printf("RS-422 / RS-232 mode selected.\n");
-    }
-#else
-    printf("RS-485 ioctl not supported — using RS-422 mode.\n");
-#endif
-
-    printf("Opened %s (%s, 8N1 @ baud)\n", portname, (mode == SERIAL_RS485) ? "RS-485" : "RS-422");
-    return fd;
-}*/
 
 
 // ---------------- Threads ----------------
@@ -706,8 +455,8 @@ int main(int argc, char *argv[]) {
         fclose(file_ptr);
         return 1;
     }
-    /* define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
-       allowing our c program, to close its loop, join threads, and close our serial device. */
+    // define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
+    // allowing our c program, to close its loop, join threads, and close our serial device.
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = handle_signal;

@@ -1,9 +1,9 @@
 /*
- * File:     sky_utils.c
+ * File:     crc_utils.c
  * Author:   Bruce Dearing
  * Date:     26/11/2025
  * Version:  1.0
- * Purpose:  Program to declare helper functions for ceilometer emulation.
+ * Purpose:  Program to declare cyclic redundancy check (CRC) helper functions for sensor emulation.
  *
  * Mods:
  *
@@ -15,10 +15,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <regex.h>
-#include "pw_utils.h"
-
-char units_of_measure[25][50]; // Global array to hold the units of measurement available.
-double coefficients[57]; // Global array to hold K coefficients of float values.
+#include "crc_utils.h"
 
 
 /*
@@ -28,8 +25,8 @@ double coefficients[57]; // Global array to hold K coefficients of float values.
  *               length - the length of the buffer string.
  *
  * Output:       None.
- * Modifies:     The units value of the provided bp_sensor.
- * Returns:      -1 on failure, 1 on success.
+ * Modifies:     unsigned short crc.
+ * Returns:      the calculated CRC value of the string provided.
  * Assumptions:
  *
  * Bugs:         None known.
@@ -54,7 +51,19 @@ unsigned short crc16(char *buffer, int length) {
     return crc;
 }
 
-
+/*
+ * Name:         crc_ccitt
+ * Purpose:      Returns the CRC value of the buffer string provided.
+ * Arguments:    line_of_date - the string to calculate the CRC from.
+ *
+ * Output:       None.
+ * Modifies:     unsigned int crc.
+ * Returns:      the calculated crc value of the string provided.
+ * Assumptions:
+ *
+ * Bugs:         None known.
+ * Notes:
+ */
 unsigned int crc_ccitt(char *line_of_data) {
     unsigned int crc; // Returned CRC value
     unsigned int i; // counter

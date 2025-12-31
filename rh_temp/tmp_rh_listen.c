@@ -1,3 +1,42 @@
+/*
+ * File:     tmp_rh_listen.c
+ * Author:   Bruce Dearing
+ * Date:     19/11/2025
+ * Version:  1.0
+ * Purpose:  Emulates a Rotronic HC2A-S3 Temperature/Relative Humidity probe over RS-485/RS-422.
+ *           The probe is housed in an Apogee TS-100 aspirated radiation shield.
+ *           This program sets up a serial connection with two threads:
+ *            - Receiver thread: parses and responds to incoming commands
+ *            - Sender thread: periodically transmits T/RH data when in continuous mode
+ *
+ *           Supported commands (per Rotronic HygroClip2 protocol):
+ *	     Command Format { ID Adr RDD <Checksum | }> CR
+ *	     Answer Format { ID Adr RDD <Checksum | }> CR
+ *           Command: {F00RDD}
+ * 	     Response: {F00rdd 001; 4.45;%RH;000;=;20.07;°C;000;=;nc;---.-;°C;000; ;001;V1.7-1;0060568338;HC2-S3 ;000;4
+ *           All replies (ACKs, responses, errors) are sent out on the serial port.
+ *
+ *           Data output includes: relative humidity (%), temperature (°C), status, and checksum
+ *
+ * Usage:    use case ' tmp_rh_listen <file_path> // The serial port and baud rate will be set to  defaults /dev/ttyUSB0, and B9600
+ *           use case ' tmp_rh_listen <file_path> <serial_port_location> <baud_rate> <RS422|RS485> The serial port currently must match /dev/tty(S|USB)[0-9]+
+ *
+ * Sensor:   Rotronic HC2A-S3 HygroClip2 Probe
+ *           - Digital temperature and relative humidity probe
+ *           - Temperature range: -50°C to +100°C (accuracy ±0.1°C)
+ *           - Humidity range: 0-100% RH (accuracy ±0.8% RH)
+ *           - Output: digital RS-485
+ *           - Default baud rate: 19200
+ *           - Default protocol: RS-485 half-duplex
+ *
+ * Housing:  Apogee TS-100 Aspirated Radiation Shield
+ *           - Fan-aspirated design for accurate ambient readings
+ *           - Minimizes solar radiation effects on temperature measurement
+ *           - 12 VDC fan operation
+ *
+ * Mods:
+ *
+ */
 
 /*
  * File:     tmp_bp_listen.c
@@ -9,12 +48,7 @@
  *           Two-thread serial handler:
  *            - Receiver thread parses and responds to commands
  *            - Sender thread periodically transmits data when active (Not implemented in this program)
- *           Commands supported:
- *           START, STOP, {F00RDD}, SITE
- *           All replies (ACKs, responses, errors) are sent out on the serial port.
  *
- * 	     use case ' tmp_bp_listen <file_path> // The serial port and baud rate will be set to  defaults /dev/ttyUSB0, and B9600
- *           use case ' tmp_bp_listen <file_path> <serial_port_location> <baud_rate> <RS422|RS485> The serial port currently must match /dev/tty(S|USB)[0-9]+
  * Mods:
  *
  *
@@ -77,7 +111,6 @@ void handle_signal(int sig) {
 }
 
 
-
 /*
  * Name:         get_next_line_copy
  * Purpose:      Reads a line of a file, received from a file pointer, it then iterates that pointer to the next line, or if at the EOF
@@ -115,43 +148,6 @@ char *get_next_line_copy(void) {
     /* Trim CR/LF safely */
     temp[strcspn(temp, "\r\n")] = '\0';
     return strdup(temp); /* caller must free, returns a copy of temp */
-}
-
-
-/*
- * Name:         get_next_line
- * Purpose:      Reads a line of a file, received from a file pointer, it then iterates that pointer to the next line, or if at the EOF
- *               loops back to the beginning of the file.
- * Arguments:    None.
- *
- * Output:       Error message, if the file is not open.
- * Modifies:     None.
- * Returns:      returns a line of text from a file MAX_LINE_LENGTH long or NULL.
- * Assumptions:  The file is open, and the line read is less than MAX_LINE_LENGTH
- *
- * Bugs:         None known.
- * Notes:
- */
-const char* get_next_line(void) {
-    static char line[MAX_LINE_LENGTH];
-
-    if (!file_ptr) {
-        fprintf(stderr, "File not opened!\n");
-        return NULL;
-    }
-
-    if (!fgets(line, sizeof(line), file_ptr)) {
-        // Reached EOF or error
-        rewind(file_ptr);             // Go back to start
-        if (!fgets(line, sizeof(line), file_ptr)) {
-            // File empty
-            return NULL;
-        }
-    }
-
-    // Remove trailing newline
-    line[strcspn(line, "\r\n")] = '\0';
-    return line;
 }
 
 
@@ -265,221 +261,6 @@ void handle_command(CommandType cmd) {
     }
 }
 
-/*
- * Name:         get_baud_rate
- * Purpose:      Checks if the given baud rate is a standard value and returns its string name.
- * Arguments:    baud_rate: the integer value representing the baud rate provided as an argument to main.
- *
- * Output:       None.
- * Modifies:     None.
- * Returns:      returns a string representing the correct baud rate or B9600 as the default.
- * Assumptions:  baud_rate is a integer and is within the standard values
- *
- * Bugs:         None known.
- * Notes:
- */
-/*speed_t get_baud_rate(const char *baud_rate) {
-    int baud = atoi(baud_rate);
-    switch (baud) {
-        case 50: return B50;
-        case 75: return B75;
-        case 110: return B110;
-        case 150: return B150;
-        case 200: return B200;
-        case 300: return B300;
-        case 600: return B600;
-        case 1200: return B1200;
-        case 1800: return B1800;
-        case 2400: return B2400;
-        case 4800: return B4800;
-        case 9600: return B9600;
-        case 19200: return B19200;
-        case 38400: return B38400;
-        case 57600: return B57600;
-        case 115200: return B115200;
-        case 230400: return B230400;
-        case 460800: return B460800;
-        case 921600: return B921600;
-        default: return BAUD_RATE; // Default value
-    }
-}*/
-
-/*
- * Name:         is_valid_tty
- * Purpose:      Checks if the given string matches the regular expression ^/dev/tty(S|USB)[0-9]+$
- *		 This regular expression can match /dev/ttyS0 a non-usb serial device or /dev/ttyUSB0
- * Arguments:    str: the string representing the file descriptor of the serial port which should
- * 		 match the pattern ^/dev/tty(S|USB)[0-9]+$.
- * 		   The pattern to match: ^/dev/tty(S|USB)[0-9]+$
- * 		   ^ marks the start of the string, $ marks the end.
- *		   (S|USB) checks for ttyS or ttyUSB
- *                 [0-9]+ matches one or more digits.
-
- * Output:       Prints to stdout the appropriate error message if one is encountered.
- * Modifies:     None.
- * Returns:      return 0 if the string matches, 1 otherwise
- * Assumptions:  str is a valid char * pointer and the line contains
- *               characters other than white space, and points to an FD.
- *
- * Bugs:         None known.
- * Notes:
- */
-/*int is_valid_tty(const char *str) {
-    regex_t regex;
-    int reti;
-    const char *pattern = "^/dev/tty(S|USB)[0-9]+$";
-
-    // Compile the regular expression
-    reti = regcomp(&regex, pattern, REG_EXTENDED);
-    if (reti) {
-        fprintf(stderr, "Could not compile regex\n");
-        return 1; // Return 1 for error/no match
-    }
-
-    // Execute the regular expression
-    reti = regexec(&regex, str, 0, NULL, 0);
-
-    // Free memory allocated to the pattern buffer by regcomp
-    regfree(&regex);
-
-    if (reti == 0) {
-        // Match found
-        return 0;
-    } else if (reti == REG_NOMATCH) {
-        // No match
-        return 1;
-    } else {
-        // Error
-        char msgbuf[100];
-        regerror(reti, &regex, msgbuf, sizeof(msgbuf));
-        fprintf(stderr, "Regex match failed: %s\n", msgbuf);
-        return 1;
-    }
-}*/
-
-// ---------------- Serial configuration ----------------
-
-
-/*
-typedef enum {
-    SERIAL_RS422,  // or RS-232 fallback
-    SERIAL_RS485
-} SerialMode;
-*/
-/*
- * Name:         get_mode
- * Purpose:      Checks if the given serial protocol is a standard value and returns its string name.
- * Arguments:    mode: the stringvalue representing the serial protocol provided as an argument to main.
- *
- * Output:       None.
- * Modifies:     None.
- * Returns:      returns a string representing the correct serial protocol or RS485 as the default.
- * Assumptions:  mode is a integer and is within the standard values
- *
- * Bugs:         None known.
- * Notes:
- */
-/*SerialMode get_mode(const char *mode) {
-    if (strcmp(mode, "RS422") == 0) {
-        return SERIAL_RS422;
-    } else if (strcmp(mode, "RS485") == 0) {
-        return SERIAL_RS485;
-    } else {
-        return SERIAL_RS485;
-    }
-}*/
-
-/*
- * Name:         open_serial_port
- * Purpose:      Takes a file descriptor to a serial device, and opens up an RS-485 or RS-422 connection
- *
- * Arguments:    portname: the string representing the file descriptor of the serial port which should
- * 		 match the pattern ^/dev/ttyUSB[0-9]+$.
- *
- * Output:       Prints to stderr the appropriate error message if one is encountered.
- * Modifies:     serial settings
- * Returns:      Returns an int representing a serial device FD if the FD opens, -1 otherwise
- * Assumptions:  portname is a valid char * pointer and the line contains
- *               characters other than white space, and points to an FD.
- *
- * Bugs:         None known.
- * Notes:
- */
-/*int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
-
-    int fd = open(portname, O_RDWR | O_NOCTTY | O_SYNC); // Potetnially remove 0_SYNC in the future 
-    if (fd < 0) {
-        perror("Error opening serial port");
-        return -1;
-    }
-
-    struct termios tty;
-    if (tcgetattr(fd, &tty) != 0) {
-        perror("Error from tcgetattr");
-        close(fd);
-        return -1;
-    }
-
-    // Set raw mode
-    cfmakeraw(&tty);
-
-    // Set baud rates and check success
-    if (cfsetospeed(&tty, baud_rate) != 0) {
-        perror("cfsetospeed failed");
-        close(fd);
-        return -1;
-    }
-    if (cfsetispeed(&tty, baud_rate) != 0) {
-        perror("cfsetispeed failed");
-        close(fd);
-        return -1;
-    }
-
-    // 8N1
-    tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
-    tty.c_cflag &= ~(PARENB | PARODD);
-    tty.c_cflag &= ~CSTOPB;
-    tty.c_cflag |= CLOCAL | CREAD;
-
-    // No RTS/CTS hardware flow control
-    tty.c_cflag &= ~CRTSCTS;
-
-    // Non-blocking read with timeout
-    tty.c_cc[VMIN]  = 0;
-    tty.c_cc[VTIME] = 1;
-
-    if (tcsetattr(fd, TCSANOW, &tty) != 0) {
-        perror("Error from tcsetattr");
-        close(fd);
-        return -1;
-    }
-
-#ifdef TIOCSRS485
-    if (mode == SERIAL_RS485) {
-        struct serial_rs485 rs485conf;
-        memset(&rs485conf, 0, sizeof(rs485conf));
-
-        rs485conf.flags |= SER_RS485_ENABLED;         // Enable RS-485
-        rs485conf.flags |= SER_RS485_RTS_ON_SEND;     // Drive RTS high while sending
-        rs485conf.flags |= SER_RS485_RTS_AFTER_SEND;  // Lower RTS after sending
-        rs485conf.delay_rts_before_send = 0;
-        rs485conf.delay_rts_after_send  = 0;
-
-        if (ioctl(fd, TIOCSRS485, &rs485conf) < 0) {
-            perror("Warning: RS-485 mode not enabled (driver may not support)");
-            printf("Continuing in RS-422/RS-232 mode.\n");
-        } else {
-            printf("RS-485 half-duplex mode enabled via ioctl.\n");
-        }
-    } else {
-        printf("RS-422 / RS-232 mode selected.\n");
-    }
-#else
-    printf("RS-485 ioctl not supported — using RS-422 mode.\n");
-#endif
-    printf("Opened %s (%s, 8N1 @ baud)\n", portname, (mode == SERIAL_RS485) ? "RS-485" : "RS-422");
-    return fd;
-}*/
 
 
 // ---------------- Threads ----------------
