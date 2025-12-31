@@ -19,4 +19,4 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ## Full License Text
 
-[Insert the full text from https://www.gnu.org/licenses/gpl-3.0.txt here]
+For full text see <https://www.gnu.org/licenses/gpl-3.0.txt>.
