@@ -36,8 +36,13 @@ All sensor emulators support a number of different command sets:
 ```
 TO BE POPULATED WITH COMMAND SETS PER SENSOR
 ```
-|SENSOR A               |
-|-----------------------|
+### Sensor A
+| Command | Description |
+| :--- | :--- |
+|`CMD 1`| The command to provide a description of |
+|`CMD 2`| The command to provide a description of |
+
+### Sensor B
 | Command | Description |
 |---------|-------------|
 | `!` | Enable continuous data output mode |
