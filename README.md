@@ -138,6 +138,7 @@ wxsensors/
 ├── obj/               # Object files (generated)
 ├── Makefile
 └── README.md
+└── LICENSE.md
 ```
 
 ## Dependencies
@@ -148,11 +149,11 @@ wxsensors/
 
 ## License
 
-Copyright (C) 2025 dearingdbk
+Copyright (C) 2025
 
 This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE.md) file for details.
 
-This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the [GNU General Public License]
+This project is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the [GNU General Public License]
 
 ## Author
 
