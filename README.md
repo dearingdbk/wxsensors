@@ -137,8 +137,8 @@ wxsensors/
 ├── bin/               # Compiled executables (generated)
 ├── obj/               # Object files (generated)
 ├── Makefile
+├── LICENSE.md
 └── README.md
-└── LICENSE.md
 ```
 
 ## Dependencies
