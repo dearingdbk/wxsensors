@@ -36,8 +36,8 @@ All sensor emulators support a number of different command sets:
 ```
 TO BE POPULATED WITH COMMAND SETS PER SENSOR
 ```
-|SENSOR A|
-|--------|
+|SENSOR A               |
+|-----------------------|
 | Command | Description |
 |---------|-------------|
 | `!` | Enable continuous data output mode |
@@ -72,7 +72,7 @@ Executables are output to the `bin/` directory, organized by sensor type.
 ## Usage
 ```bash
 # General usage pattern
-<sensor>_listen <data_file> [serial_port] [baud_rate] [RS422|RS485]
+<sensor> <data_file> [serial_port] [baud_rate] [RS422|RS485]
 
 # Examples
 bin/wind/wind_listen /path/to/wind_data.txt
