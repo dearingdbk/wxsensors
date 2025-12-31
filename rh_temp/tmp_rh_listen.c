@@ -38,22 +38,6 @@
  *
  */
 
-/*
- * File:     tmp_bp_listen.c
- * Author:   Bruce Dearing
- * Date:     17/11/2025
- * Version:  1.2
- * Purpose:  Program to handle setting up a serial connection and two threads
- *           one to listen, and one to respond over RS-485 / RS-422
- *           Two-thread serial handler:
- *            - Receiver thread parses and responds to commands
- *            - Sender thread periodically transmits data when active (Not implemented in this program)
- *
- * Mods:
- *
- *
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -252,7 +236,7 @@ void handle_command(CommandType cmd) {
             break;
 
         case CMD_SITE:
-            printf("CMD: SITE -> Sending site info\n");
+            // printf("CMD: SITE -> Sending site info\n");
             break;
 
         default:
@@ -260,7 +244,6 @@ void handle_command(CommandType cmd) {
             break;
     }
 }
-
 
 
 // ---------------- Threads ----------------
@@ -351,7 +334,7 @@ int main(int argc, char *argv[]) {
     speed_t baud = (argc >= 4) ? get_baud_rate(argv[3]) : BAUD_RATE;
 
     // ternary statement to set Serial Protocol if supplied in args or default
-    SerialMode mode = (argc >=5) ? get_mode(argv[4]) : SERIAL_RS485; // returns RS485 by default.
+    SerialMode mode = (argc >= 5) ? get_mode(argv[4]) : SERIAL_RS485; // returns RS485 by default.
 
     serial_fd = open_serial_port(device, baud, mode);
 

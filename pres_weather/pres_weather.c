@@ -3,38 +3,44 @@
  * Author:   Bruce Dearing
  * Date:     28/11/2025
  * Version:  1.0
- * Purpose:  Program to handle setting up a serial connection and two threads
- *           one to listen, and one to respond over RS-485 / RS-422
- *           Two-thread serial handler:
- *            - Receiver thread parses and responds to commands
- *            - Sender thread periodically transmits data when active
- *           Program emulates a weather sensor - Druck DSP8100
- *           Commands supported:
- *           R - Requests current pressure reading.
- *           G - Request new pressure reading.
- *           Z - Read raw data.
- *           I - identify and setup information.
- *           A - Set automatic transmission interval, also used to set if units are output as text.
- * 	     N - Set device address.
- *           Q - Pressure measurement speed.
- *           U - Pressure Units.
- *           C - Digital output calibration.
- *           H - Set full-scale. - Disabled for sensor emulation.
- *           M - User message.
- *           O - Communication Settings
- *           P - Change PIN.
- *           S - Set offset. - Disabled for sensor emulation.
- *           <CR> <CRLF> - Command Terminators.
- *           <A|N|Q|U|C|H|M|O|P|S|E|L|T|V|W>,? Query the value of those fields.
- *           *<A-Z> provides the reading and the units of measurement.
- *           All replies (ACKs, responses, errors) are sent out on the serial port.
- *           All incoming commands follow this format:
- *           Direct Mode: <SPACE><Command>,<P1>,<P2>,...,<Pn><CR>
- *           Addressed Mode: <SPACE><Address>:<Command>,<P1>,<P2>,...,<Pn><CR>
- *	     use case ' barometric <file_path> <serial_port_location> <baud_rate> <RS422|RS485> The serial port currently must match /dev/tty(S|USB)[0-9]+
- * 	     use case ' barometric <file_path> // The serial port, baud rate, and mode will be set to  defaults /dev/ttyUSB0, and B9600
- * Mods:
+ * Purpose:  Emulates a Campbell Scientific AtmosVue30 present weather sensor over RS-485/RS-232.
+ *           This program sets up a serial connection with two threads:
+ *            - Receiver thread: parses and responds to incoming commands
+ *            - Sender thread: periodically transmits weather data when in continuous mode
  *
+ *           Supported commands:
+ *             !        - Enable continuous data output mode
+ *             ?        - Disable continuous mode (switch to polled mode)
+ *             <A-Z>    - Poll sensor at unit address (e.g., 'A' polls unit A)
+ *             *<A-Z>   - Enter configuration mode for specified unit
+ *             &        - Request unit identifier (returns configured address A-Z)
+ *
+ *           Output format:
+ *             <STX>data<ETX>checksum<CR><LF>
+ *           Where STX=0x02, ETX=0x03, checksum is XOR of data bytes (2 hex digits)
+ *
+ *           Data output includes: WMO weather code, visibility (m), precipitation type,
+ *           precipitation intensity (mm/hr), and checksum
+ *
+ * Usage:    use case ' pres_weather <file_path> <serial_port_location> <baud_rate> <RS422|RS485> The serial port currently must match /dev/tty(S|USB)[0-9]+
+ * 	     use case ' pres_weather <file_path> // The serial port, baud rate, and mode will be set to  defaults /dev/ttyUSB0, and B38400
+ *
+ *           Serial port must match pattern: /dev/tty(S|USB)[0-9]+
+ *
+ * Sensor:   Campbell Scientific AtmosVue30 Present Weather Sensor
+ *           - Multi-variable present weather and visibility sensor
+ *           - Technology: forward-scatter visibility with optical precipitation detection
+ *           - Visibility range: 10 m to 30 km (MOR - Meteorological Optical Range)
+ *           - Precipitation types: rain, snow, mixed, drizzle, freezing rain
+ *           - Precipitation intensity: 0-200 mm/hr
+ *           - Weather codes: WMO 4677 (SYNOP) and WMO 4680 (METAR) formats
+ *           - Operating temperature: -40°C to +60°C
+ *           - Output: RS-485, SDI-12
+ *           - Default baud rate: 38400
+ *           - Default protocol: RS-485 half-duplex
+ *           - Integrated heater for lens de-icing
+ *
+ * Mods:
  *
  */
 
@@ -59,7 +65,7 @@
 #include "serial_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
-#define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
+#define BAUD_RATE   B38400	     // Adjust as needed, main has logic to take arguments for a new baud rate
 #define MAX_LINE_LENGTH 1024
 
 
@@ -208,8 +214,10 @@ typedef enum {
     CMD_START, // ! received from the terminal
     CMD_STOP,  // ? received from the terminal
     CMD_SITE,  // & recieved from the terminal
-    CMD_POLL,  // <A-Z> received from the terminal
-    CMD_CONFIG // *<A-Z> received from the terminal
+    CMD_POLL,  // POLL received from the terminal
+    CMD_CONFIG, // *<A-Z> received from the terminal
+    CMD_GET,	// GET command recived from the terminal
+    CMD_SET	// SET command recieved from the terminal
 } CommandType;
 
 
@@ -231,7 +239,9 @@ CommandType parse_command(const char *buf) {
     if (buf[0] == '?' && buf[1] == '\0')					return CMD_STOP;
     if (buf[0] == '&' && buf[1] == '\0')					return CMD_SITE;
     if (buf[0] == '*' && buf[1] >= 'A' && buf[1] <= 'Z' && buf[2] =='\0') 	return CMD_CONFIG;
-    if (buf && buf[0] >= 'A' && buf[0] <= 'Z' && buf[1] == '\0') 		return CMD_POLL;
+    if (buf[0] == 0x02 && strncmp(buf + 1, "POLL", 4) == 0)			return CMD_POLL;
+    if (buf[0] == 0x02 && strncmp(buf + 1, "GET", 3) == 0)			return CMD_GET;
+    if (buf[0] == 0x02 && strncmp(buf + 1, "SET", 3) == 0)			return CMD_SET;
     return CMD_UNKNOWN;
 }
 
@@ -240,6 +250,7 @@ CommandType parse_command(const char *buf) {
  * Name:         handle_command
  * Purpose:      Handle each command and send response on serial.
  * Arguments:    cmd: the command enum we want to handle.
+ *		 buf: the original command string recieved to pass back as required.
  *
  * Output:       Prints to serial port the requsite response to the command.
  * Modifies:     None.
@@ -249,7 +260,7 @@ CommandType parse_command(const char *buf) {
  * Bugs:         None known.
  * Notes:
  */
-void handle_command(CommandType cmd) {
+void handle_command(CommandType cmd, const char *buf)) {
     char *resp_copy = NULL;
     switch (cmd) {
         case CMD_START:
@@ -275,12 +286,26 @@ void handle_command(CommandType cmd) {
             resp_copy = get_next_line_copy();
             if (resp_copy) {
                 // prints <Start of Line ASCII 2>, the string of data read, <EOL ASCII 3>, Checksum of the line read
-                safe_write_response("%c%s%c%02X\r\n", 2, resp_copy, 3, check_sum(resp_copy));
+                safe_write_response("%c%s%c%02X\r\n", 0x02, resp_copy, 0x03, check_sum(resp_copy));
                 free(resp_copy);
             } else {
                 safe_write_response("ERR: Empty file\r\n");
             }
             break;
+	case CMD_GET:
+	    resp_copy = get_next_line_copy();
+	    if (resp_copy) {
+                // prints <Start of Line ASCII 2>, the string of data read, <EOL ASCII 3>, Checksum of the line read
+                safe_write_response("%c%s%c%02X\r\n", 0x02, resp_copy, 0x03, check_sum(resp_copy));
+                free(resp_copy);
+	    } else {
+                safe_write_response("ERR: Empty file\r\n");
+	    }
+	    break;
+	case CMD_SET:
+		// prints the SET command recieved by the terminal, retaining the <STX> and <ETX>.
+                safe_write_response("%s\r\n", buf);
+	    break;
         default:
             printf("CMD: Unknown command\n");
             break;
@@ -300,9 +325,6 @@ void handle_command(CommandType cmd) {
  * Modifies:     None.
  * Returns:      NULL.
  * Assumptions:  serial port will have data, and that data will translate to a command.
- *
- * Bugs:         None known.
- * Notes:
  */
 void* receiver_thread(void* arg) {
     (void)arg;
@@ -316,7 +338,7 @@ void* receiver_thread(void* arg) {
 	    if (c == '\r' || c == '\n') {
                 if (len > 0) {
                     line[len] = '\0';
-		    handle_command(parse_command(line));
+		    handle_command(parse_command(line), line);
                     len = 0;
                 } else { // empty line ignore
                   }
