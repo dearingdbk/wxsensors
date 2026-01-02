@@ -36,12 +36,13 @@ All sensor emulators support a number of different command sets:
 ```
 TO BE POPULATED WITH COMMAND SETS PER SENSOR
 ```
-### Sensor A
+### Sensor HC2A-S3
 | Command | Description |
 | :--- | :--- |
-|`CMD 1`| The command to provide a description of |
-|`CMD 2`| The command to provide a description of |
+|`{F00RDD}`| <{> <ID> <Address> <RDD> <}> |
 
+### {F00RDD} Response
+`{F00rdd 001;4.45;%RH;000;=;20.07;°C;000;=;nc;---.-;°C;000; ;001;V1.7;0060568338;HC2-S3;000}`
 ### Sensor B
 | Command | Description |
 |---------|-------------|
