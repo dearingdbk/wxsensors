@@ -39,7 +39,7 @@ TO BE POPULATED WITH COMMAND SETS PER SENSOR
 ### Sensor HC2A-S3
 | Command | Description |
 | :--- | :--- |
-|`{F00RDD}`| <{> <ID> <Address> <RDD> <}> |
+|`{F00RDD}`| `<{> <ID> <Address> <RDD> <}>` |
 
 ### {F00RDD} Response
 `{F00rdd 001;4.45;%RH;000;=;20.07;°C;000;=;nc;---.-;°C;000; ;001;V1.7;0060568338;HC2-S3;000}`
