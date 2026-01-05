@@ -10,8 +10,8 @@
  *            - Sender thread: periodically transmits T/RH data when in continuous mode
  *
  *           Supported commands (per Rotronic HygroClip2 protocol):
- *	     Command Format { ID Adr RDD <Checksum | }> CR
- *	     Answer Format { ID Adr RDD <Checksum | }> CR
+ *	     Command Format { ID Adr RDD <Checksum || }> CR
+ *	     Answer Format { ID Adr RDD <Checksum || }> CR
  *           Command: {F00RDD}
  * 	     Response: {F00rdd 001; 4.45;%RH;000;=;20.07;°C;000;=;nc;---.-;°C;000; ;001;V1.7-1;0060568338;HC2-S3 ;000;4
  *           All replies (ACKs, responses, errors) are sent out on the serial port.
@@ -58,7 +58,7 @@
 #include "serial_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
-#define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
+#define BAUD_RATE   B19200	     // Adjust as needed, main has logic to take arguments for a new baud rate
 #define MAX_LINE_LENGTH 1024
 
 
@@ -170,10 +170,7 @@ static void safe_write_response(const char *fmt, ...) {
 
 typedef enum {
     CMD_UNKNOWN,
-    CMD_START,
-    CMD_STOP,
     CMD_RDD,
-    CMD_SITE
 } CommandType;
 
 
@@ -192,10 +189,8 @@ typedef enum {
  */
 
 CommandType parse_command(const char* buf) {
-    if (strcmp(buf, "START") == 0)      return CMD_START;
-    if (strcmp(buf, "STOP") == 0)       return CMD_STOP;
-    if (strcmp(buf, "{F00RDD}") == 0)   return CMD_RDD;
-    if (strcmp(buf, "SITE") == 0)       return CMD_SITE;
+    if (strcmp(buf, "{F00RDD}") == 0)   	return CMD_RDD; // Expected poll request from AWI and CS systems.
+    if (strncmp(buf, "{F00RDD", 7) == 0)       	return CMD_RDD; // Optional command request with a checksum instead of '{' as the end.
     return CMD_UNKNOWN;
 }
 
@@ -217,14 +212,6 @@ void handle_command(CommandType cmd) {
     char *resp_copy = NULL;
 
     switch (cmd) {
-        case CMD_START:
-            //running = true; // disable for now
-            break;
-
-        case CMD_STOP:
-            //running = false; // disable for now
-            break;
-
         case CMD_RDD:
             resp_copy = get_next_line_copy();
             if (resp_copy) {
@@ -234,11 +221,6 @@ void handle_command(CommandType cmd) {
                 safe_write_response("ERR: Empty file\r\n");
             }
             break;
-
-        case CMD_SITE:
-            // printf("CMD: SITE -> Sending site info\n");
-            break;
-
         default:
             printf("CMD: Unknown command\n");
             break;

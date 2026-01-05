@@ -39,15 +39,13 @@ typedef struct {
     char internal_chksum[MAX_INPUT_STR];
 } bp_sensor;
 
-typedef enum {
-    CMD_UNKNOWN,
-    CMD_START, 	// ! received from the terminal
-    CMD_STOP,  	// ? received from the terminal
-    CMD_SITE,  	// & recieved from the terminal
-    CMD_POLL,   // <A-Z> received from the terminal
-    CMD_CONFIG, // *<A-Z> received from the terminal
-    CMD_R	// R received from terminal
-} CommandType;
+
+typedef struct {
+	uint16_t overhead;
+	uint16_t vicinity;
+	uint16_t near_distant;
+        uint16_t far_distant;
+} flash_sensor;
 
 
 void init_units();
@@ -56,6 +54,10 @@ int init_sensor(bp_sensor **ptr);
 int update_message(bp_sensor **ptr, char *msg);
 int update_units(bp_sensor **ptr, uint8_t unit_id);
 
-
+// BTD-300 Flash Sensor specific functions.
+time_t parse_btd_datetime(const char *date_str, const char *time_str);
+int format_btd_datetime(time_t t, char *date_str, char *time_str);
+int update_btd_timestamps(const char *input, char *output, size_t output_size);
+int init_flash(flash_sensor **ptr);
 
 #endif

@@ -36,7 +36,7 @@ All sensor emulators support a number of different command sets:
 ```
 TO BE POPULATED WITH COMMAND SETS PER SENSOR
 ```
-### Sensor HC2A-S3
+### Sensor [HC2A-S3](https://s.campbellsci.com/documents/us/manuals/hc2s3.pdf)
 | Command | Description |
 | :--- | :--- |
 |`{F00RDD}`| `<{> <ID> <Address> <RDD> <}>` |

@@ -1,42 +1,73 @@
 /*
- * File:     barometric.c
+ * File:     flash.c
  * Author:   Bruce Dearing
- * Date:     26/11/2025
+ * Date:     19/11/2025
  * Version:  1.0
- * Purpose:  Program to emulate a barometric presure sensor, using two threads
- *           one to listen, and one to respond over RS-485 / RS-422
- *           Two-thread serial handler:
- *            - Receiver thread parses and responds to commands
- *            - Sender thread periodically transmits data when active
- *           Program emulates a weather sensor - Druck DSP8100
- *           Commands supported:
- *           R - Requests current pressure reading.
- *           G - Request new pressure reading.
- *           Z - Read raw data.
- *           I - identify and setup information.
- *           A - Set automatic transmission interval, also used to set if units are output as text.
- * 	     N - Set device address.
- *           Q - Pressure measurement speed.
- *           U - Pressure Units.
- *           C - Digital output calibration.
- *           H - Set full-scale. - Disabled for sensor emulation.
- *           M - User message.
- *           O - Communication Settings
- *           P - Change PIN.
- *           S - Set offset. - Disabled for sensor emulation.
- *           <CR> <CRLF> - Command Terminators.
- *           <A|N|Q|U|C|H|M|O|P|S|E|L|T|V|W>,? Query the value of those fields.
- *           *<A-Z> provides the reading and the units of measurement.
- *           All replies (ACKs, responses, errors) are sent out on the serial port.
- *           All incoming commands follow this format:
- *           Direct Mode: <SPACE><Command>,<P1>,<P2>,...,<Pn><CR>
- *           Addressed Mode: <SPACE><Address>:<Command>,<P1>,<P2>,...,<Pn><CR>
- *	     use case ' barometric <file_path> <serial_port_location> <baud_rate> <RS422|RS485> The serial port currently must match /dev/tty(S|USB)[0-9]+
- * 	     use case ' barometric <file_path> // The serial port, baud rate, and mode will be set to  defaults /dev/ttyUSB0, and B9600
+ * Purpose:  Emulates a Biral BTD-300 Thunderstorm Detector over RS-422.
+ *           This program sets up a serial connection with two threads:
+ *            - Receiver thread: parses and responds to incoming commands
+ *            - Sender thread: periodically transmits lightning/warning data when in sampling mode
+ *
+ *           Supported commands (per Biral BTD protocol):
+ *             RUN      - Start normal sampling mode
+ *             STOP     - Stop sampling, enter idle mode
+ *             R?       - Request self-test/status message
+ *             PV?      - Request program version
+ *             SN?      - Request serial number
+ *             RTC?     - Request real-time clock date/time
+ *             SITE?    - Request site characterisation values
+ *             LOCAL?   - Request local calibration values
+ *             LEVEL?   - Request sensitivity levels
+ *             DIST?    - Request distance limits
+ *             RELAY?   - Request relay parameters
+ *             HYST?    - Request hysteresis times
+ *             W?       - Request distant flash warning parameters
+ *             DOSITE   - Start site characterisation process
+ *             RST      - Reset sensor
+ *
+ *           Output format (DATA message transmitted every 2 seconds):
+ *             DATA:,ID,DDMMYY,HHMMSS,A,B,CC,DDDDD,flash1,flash2,flash3,flash4
+ *           Where:
+ *             ID     - Sensor identification (01-99)
+ *             A      - Number of flashes detected (0-4)
+ *             B      - Warning indicator (0=None, 1=Warning, 2=Alert, 3=Severe)
+ *             CC     - Warning flags (corona, charged precip, lightning proximity)
+ *             DDDDD  - Self-test flags (antenna status, faults)
+ *             Each flash: DDMMYY,HHMMSS,CCC,XXXXX,XXX (time, centisec, distance decametres, bearing degrees)
+ *
+ *           Warning levels:
+ *             0 - No warning: No thunderstorm activity
+ *             1 - Warning: Charged precipitation or distant flash (10-30 NM)
+ *             2 - Alert: Strong electric field or vicinity flash (5-10 NM)
+ *             3 - Severe Alert: Overhead flash (<5 NM)
+ *
+ * Usage:    use case ' flash <file_path> <serial_port_location> <baud_rate> <RS422|RS485> The serial port currently must match /dev/tty(S|USB)[0-9]+
+ * 	         use case ' flash <file_path> // The serial port, baud rate, and mode will be set to  defaults /dev/ttyUSB0, and B9600
+ *			 use case ' flash <(socat - TCP:lightningdata.com:8080) <serial_port_location> <baud_rate> <RS422|RS485> // in the event we use external data
+ *           Serial port must match pattern: /dev/tty(S|USB)[0-9]+
+ *
+ * Sensor:   Biral BTD-300 Thunderstorm Detector
+ *           - Standalone lightning detection and thunderstorm warning system
+ *           - Technology: quasi-electrostatic field sensing (1-47 Hz)
+ *           - Detection range: 0-83 km (0-45 nautical miles)
+ *           - Flash types: Cloud-to-ground (CG), intra-cloud (IC), cloud-to-cloud (CC)
+ *           - Detection efficiency: >95% for single flash, 99% for 2+ flashes within 56 km
+ *           - Range accuracy: ±3 NM (0-10 NM), ±5.5 NM (10-45 NM)
+ *           - False alarm rate: <2%
+ *           - Additional sensing: charged precipitation, strong electric field detection
+ *           - Corona initiator spikes for overhead thunderstorm development warning
+ *           - Optional direction finder module (bearing to nearest degree)
+ *           - Update period: 2 seconds
+ *           - Maximum flash rate: 120 flashes per minute
+ *           - Operating temperature: -55°C to +60°C
+ *           - Output: RS-422 (default) or Ethernet
+ *           - Default baud rate: 9600
+ *           - Optional relay outputs (3x) for warning/alert/severe alert
+ *
  * Mods:
  *
- *
  */
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,8 +86,9 @@
 #include <stdatomic.h>
 #include <stdarg.h>
 #include <time.h>
-#include "sensor_utils.h"
+#include <ctype.h>
 #include "serial_utils.h"
+#include "sensor_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
@@ -67,26 +99,19 @@ FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
 
 // Shared state
-int continuous = 0;
+int sampling = 1; // Is the sensor in sampling mode or not, the default for the sensor will be yes i.e. 1.
 volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
 
 int serial_fd = -1;
+char *site_config = "A0 B3 C1 E1 F1 G0000 H2 J1 K1 L1 M2 NA O1 P1 T1 U1 V1 X1 Z1";
 char site_id = 'A';
-uint8_t address = 0;
-int current_u_of_m = 6; // Global variable for the current units of measurement for the sensor, 6 (hPa) is the default.
-
 
 /* Synchronization primitives */
 static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER; // protects serial writes
 static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  send_cond  = PTHREAD_COND_INITIALIZER;
-
-// These need to be freed upon exit.
-bp_sensor *sensor_one; // Global pointer to struct for Barometric sensor 1.
-bp_sensor *sensor_two; // Global pointer to struct for Barometric sensor 2.
-bp_sensor *sensor_three; // Global pointer to struct for Barometric sensor 3.
 
 
 /*
@@ -161,24 +186,25 @@ char *get_next_line_copy(void) {
     }
 
     if (!fgets(temp, sizeof(temp), file_ptr)) {
-        // EOF or error; rewind and try once
+        /* EOF or error; rewind and try once */
         rewind(file_ptr);
         if (!fgets(temp, sizeof(temp), file_ptr)) {
             pthread_mutex_unlock(&file_mutex);
-            return NULL; // file empty or error
+            return NULL; /* file empty or error */
         }
     }
     pthread_mutex_unlock(&file_mutex);
 
-    // Trim CR/LF safely
+    /* Trim CR/LF safely */
     temp[strcspn(temp, "\r\n")] = '\0';
-    return strdup(temp); // caller must free, returns a copy of temp
+    return strdup(temp); /* caller must free, returns a copy of temp */
 }
+
 
 /*
  * Name:         safe_write_response
- * Purpose:      Serializes writes to the serial device to ensure, that all writes do not
- *               interleave, and create errors.
+ * Purpose:      Serializes writes to the serial device to ensure that all writes do not
+ *               interleave and create errors.
  * Arguments:    fmt -  the string representing the format you want the the function to print.
  *               ... - a list of potential unfixed arguments, that can be supplied to the format string.
  *               i.e. if you supplied safe_write_response("%s%c%d", string_var, char_var, decimal_var); it would
@@ -214,6 +240,10 @@ typedef enum {
     CMD_STOP,  // ? received from the terminal
     CMD_SITE,  // & recieved from the terminal
     CMD_POLL,  // <A-Z> received from the terminal
+    CMD_SELF_TEST,  // "R?" received from the terminal, trasmit Self Test Message.
+    CMD_DEF_DIST, // "DESTDEF" Reset the flash distance limits to FAA Defaults 5,10,20, 30.
+    CMD_GET_DIST, // "DIST?" Get Distance Limits
+    CMD_SET_DIST, // "DISTx,yyyy" Set Distance Limits x == 0-OH, 1-V, 2-ND, 3-FD. yyyy == decametres.
     CMD_CONFIG // *<A-Z> received from the terminal
 } CommandType;
 
@@ -232,11 +262,16 @@ typedef enum {
  * Notes:
  */
 CommandType parse_command(const char *buf) {
-    if (buf[0] == '!' && buf[1] == '\0')					return CMD_START;
-    if (buf[0] == '?' && buf[1] == '\0')					return CMD_STOP;
-    if (buf[0] == '&' && buf[1] == '\0')					return CMD_SITE;
+    if (buf[0] == '!' && buf[1] == '\0')									return CMD_START;
+    if (buf[0] == '?' && buf[1] == '\0')									return CMD_STOP;
+    if (buf[0] == '&' && buf[1] == '\0')									return CMD_SITE;
     if (buf[0] == '*' && buf[1] >= 'A' && buf[1] <= 'Z' && buf[2] =='\0') 	return CMD_CONFIG;
-    if (buf && buf[0] >= 'A' && buf[0] <= 'Z' && buf[1] == '\0') 		return CMD_POLL;
+    if (buf && buf[0] >= 'A' && buf[0] <= 'Z' && buf[1] == '\0') 			return CMD_POLL;
+    if (strncmp(buf, "DIST", 4) == 0) {
+        if (isdigit(buf[4]) && buf[4] >= '0' && buf[4] <= '3')				return CMD_SET_DIST;
+	if (buf[4] == '?' && buf[5] == '\0')									return CMD_GET_DIST;
+        if (buf[4] == 'D' && buf[5] == 'E' && buf[6] == 'F')				return CMD_DEF_DIST;
+    }
     return CMD_UNKNOWN;
 }
 
@@ -259,14 +294,14 @@ void handle_command(CommandType cmd) {
     switch (cmd) {
         case CMD_START:
 	    pthread_mutex_lock(&send_mutex);
-            continuous = 1; // enable continuous sending
+            sampling = 1; // enable continuous sending
             pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
             pthread_mutex_unlock(&send_mutex);
             break;
 
         case CMD_STOP:
             pthread_mutex_lock(&send_mutex);
-	    continuous = 0; // disables continuous sending.
+	    	sampling = 0; // disables continuous sending.
             pthread_cond_signal(&send_cond);   // Wake sender_thread to exit loop
             pthread_mutex_unlock(&send_mutex);
             break;
@@ -277,6 +312,23 @@ void handle_command(CommandType cmd) {
             break;
 
         case CMD_POLL:
+            resp_copy = get_next_line_copy();
+            if (resp_copy)
+            {
+			    char updated_line[MAX_LINE_LENGTH];
+                if (update_btd_timestamps(resp_copy, updated_line, sizeof(updated_line)) == 0)
+                {
+                    safe_write_response("%s\r\n", updated_line);
+                } else
+                {
+					safe_write_response("%s\r\n", resp_copy);
+				}
+				free(resp_copy);
+            } else {
+                safe_write_response("ERR: Empty file\r\n");
+            }
+            break;
+        case CMD_SET_DIST:
             resp_copy = get_next_line_copy();
             if (resp_copy) {
                 // prints <Start of Line ASCII 2>, the string of data read, <EOL ASCII 3>, Checksum of the line read
@@ -317,34 +369,51 @@ void* receiver_thread(void* arg) {
     while (!terminate) {
         char c;
         int n = read(serial_fd, &c, 1);
-        if (n > 0) {
-	    if (c == '\r' || c == '\n') {
-                if (len > 0) {
-                    line[len] = '\0';
-		    handle_command(parse_command(line));
-                    len = 0;
-                } else { // empty line ignore
-                  }
-            } else {
-                  if (len < sizeof(line)-1) {
+        if (n > 0)
+		{
+	    	if (c == '\r' || c == '\n')
+			{
+        		if (len > 0)
+				{
+            		line[len] = '\0';
+		    		handle_command(parse_command(line));
+                	len = 0;
+            	}
+				else
+				{ // empty line ignore. Note: Not likely to happen, as we generate the input file.
+            	}
+        	}
+			else
+			{
+                if (len < sizeof(line)-1)
+				{
                     line[len++] = c;
-                  } else {
-                        len = 0;
-                    }
-              }
-        } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-            perror("read");
-        } else {
-            // no data available n == 0, avoid busy loop
-            usleep(10000);
+                }
+				else
+                {
+                    len = 0;
+                 }
+            }
         }
-    }
+        else
+        {
+            if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+            {
+                perror("read");
+        	}
+        	else
+        	{
+            	// no data available n == 0, avoid busy loop
+               	usleep(10000);
+        	}
+        }
+        }
     return NULL;
 }
 
 /*
  * Name:         sender_thread
- * Purpose:      On continuous == 1 and assuming terminate != 1 it will get the next line from a specified file, usinf
+ * Purpose:      On sampling == 1 and assuming terminate != 1 it will get the next line from a specified file, usinf
  *               get_next_line_copy() and send that line to the serial device using safe_write_response() function every 2 seconds.
  * Arguments:    arg: thread arguments.
  *
@@ -362,8 +431,8 @@ void* sender_thread(void* arg) {
 
     while (!terminate) {
         pthread_mutex_lock(&send_mutex);
-        // wait until either terminate is set or continuous becomes 1
-        while (!terminate && !continuous) {
+        // wait until either terminate is set or "sampling" becomes 1
+        while (!terminate && !sampling) {
             pthread_cond_wait(&send_cond, &send_mutex);
         }
 
@@ -372,13 +441,19 @@ void* sender_thread(void* arg) {
             break;
         }
 
-        while (!terminate && continuous) {
+        while (!terminate && sampling) {
              char *line = get_next_line_copy();
-             if (line) {
-                 // prints <STX ASCII 2>, the string of data read, <ETX ASCII 3>, Checksum of the line read
-                 safe_write_response("%c%s%c%02X\r\n", 2, line, 3, check_sum(line));
-                 // safe_write_response("%s\r\n", line);
-                 free(line); // caller of get_next_line_copy() must free resource.
+             if (line)
+			 {
+                char updated_line[MAX_LINE_LENGTH];
+                if (update_btd_timestamps(line, updated_line, sizeof(updated_line)) == 0)
+                {
+                    safe_write_response("%s\r\n", updated_line);
+                } else
+                {
+					safe_write_response("%s\r\n", line);
+				}
+                free(line); // caller of get_next_line_copy() must free resource.
              }
 
              clock_gettime(CLOCK_REALTIME, &requested_time);
@@ -418,17 +493,6 @@ void* sender_thread(void* arg) {
 
 int main(int argc, char *argv[]) {
 
-    init_units();
-    init_sensor(&sensor_one);
-    init_sensor(&sensor_two);
-    init_sensor(&sensor_three);
-
-    for (int i = 0; i<25; i++) {
-    printf("%d  -  %s\r\n", i, units_of_measure[i]);
-
-    }
-
-    printf("Current Units are %s\n", sensor_one->units);
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
         return 1;
@@ -455,8 +519,8 @@ int main(int argc, char *argv[]) {
         fclose(file_ptr);
         return 1;
     }
-    // define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
-    // allowing our c program, to close its loop, join threads, and close our serial device.
+    /* define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
+       allowing our c program, to close its loop, join threads, and close our serial device. */
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = handle_signal;
