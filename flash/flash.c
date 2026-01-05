@@ -281,7 +281,7 @@ CommandType parse_command(const char *buf) {
     if (buf && buf[0] >= 'A' && buf[0] <= 'Z' && buf[1] == '\0') 			return CMD_POLL;
     if (strncmp(buf, "DIST", 4) == 0) {
         if (isdigit(buf[4]) && buf[4] >= '0' && buf[4] <= '3')				return CMD_SET_DIST;
-	if (buf[4] == '?' && buf[5] == '\0')									return CMD_GET_DIST;
+    	if (buf[4] == '?' && buf[5] == '\0')								return CMD_GET_DIST;
         if (buf[4] == 'D' && buf[5] == 'E' && buf[6] == 'F')				return CMD_DEF_DIST;
     }
     return CMD_UNKNOWN;
@@ -341,14 +341,14 @@ void handle_command(CommandType cmd) {
             }
             break;
         case CMD_SET_DIST:
-            resp_copy = get_next_line_copy();
-            if (resp_copy) {
+            //resp_copy = get_next_line_copy();
+            //if (resp_copy) {
                 // prints <Start of Line ASCII 2>, the string of data read, <EOL ASCII 3>, Checksum of the line read
-                safe_write_response("%c%s%c%02X\r\n", 2, resp_copy, 3, check_sum(resp_copy));
-                free(resp_copy);
-            } else {
-                safe_write_response("ERR: Empty file\r\n");
-            }
+              //  safe_write_response("%c%s%c%02X\r\n", 2, resp_copy, 3, check_sum(resp_copy));
+                //free(resp_copy);
+            //} else {
+            //    safe_write_response("ERR: Empty file\r\n");
+            //}
             break;
         default:
             printf("CMD: Unknown command\n");
@@ -425,7 +425,7 @@ void* receiver_thread(void* arg) {
 
 /*
  * Name:         sender_thread
- * Purpose:      On sampling == 1 and assuming terminate != 1 it will get the next line from a specified file, usinf
+ * Purpose:      On sampling == 1 and assuming terminate != 1 it will get the next line from a specified file, using
  *               get_next_line_copy() and send that line to the serial device using safe_write_response() function every 2 seconds.
  * Arguments:    arg: thread arguments.
  *
@@ -466,6 +466,7 @@ void* sender_thread(void* arg) {
 					safe_write_response("%s\r\n", line);
 				}
                 free(line); // caller of get_next_line_copy() must free resource.
+				line = NULL;
              }
 
              clock_gettime(CLOCK_REALTIME, &requested_time);
