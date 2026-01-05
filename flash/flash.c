@@ -43,7 +43,7 @@
  *
  * Usage:    use case ' flash <file_path> <serial_port_location> <baud_rate> <RS422|RS485> The serial port currently must match /dev/tty(S|USB)[0-9]+
  * 	         use case ' flash <file_path> // The serial port, baud rate, and mode will be set to  defaults /dev/ttyUSB0, and B9600
- *			 use case ' flash <(socat - TCP:lightningdata.com:8080) <serial_port_location> <baud_rate> <RS422|RS485> // in the event we use external data
+ *			 use case ' flash <(socat - TCP:lightningdata.com:8080,forever,intervall=10) <serial_port_location> <baud_rate> <RS422|RS485> // in the event we use external data
  *           Serial port must match pattern: /dev/tty(S|USB)[0-9]+
  *
  * Sensor:   Biral BTD-300 Thunderstorm Detector
@@ -186,12 +186,24 @@ char *get_next_line_copy(void) {
     }
 
     if (!fgets(temp, sizeof(temp), file_ptr)) {
-        /* EOF or error; rewind and try once */
-        rewind(file_ptr);
-        if (!fgets(temp, sizeof(temp), file_ptr)) {
-            pthread_mutex_unlock(&file_mutex);
-            return NULL; /* file empty or error */
-        }
+        // EOF or error; rewind if we can.
+        if (fseek(file_ptr, 0 , SEEK_SET) == 0) // effectively rewinds the file ptr with a check.
+		{
+        	// rewind(file_ptr);
+        	if (!fgets(temp, sizeof(temp), file_ptr)) {
+            	pthread_mutex_unlock(&file_mutex);
+            	return NULL; /* file empty or error */
+        	}
+		} else // This is a PIPE (socat) - It has run dry, socat should be set to try forever, so this will infinetly loop.
+		  {
+			  // clear the EOF status to try again, note it is going to try until we kill the program.
+			  clearerr(file_ptr);
+			  pthread_mutex_unlock(&file_mutex);
+
+              // Log the error so you know why the sensor stopped
+			  fprintf(stderr, "[%ld] Network stream closed. Waiting for data...\n", time(NULL));
+              return NULL;
+		 }
     }
     pthread_mutex_unlock(&file_mutex);
 
