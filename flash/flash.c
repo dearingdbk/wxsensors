@@ -1,7 +1,7 @@
 /*
  * File:     flash.c
  * Author:   Bruce Dearing
- * Date:     19/11/2025
+ * Date:     05/01/2026
  * Version:  1.0
  * Purpose:  Emulates a Biral BTD-300 Thunderstorm Detector over RS-422.
  *           This program sets up a serial connection with two threads:
@@ -107,6 +107,8 @@ int serial_fd = -1;
 char *site_config = "A0 B3 C1 E1 F1 G0000 H2 J1 K1 L1 M2 NA O1 P1 T1 U1 V1 X1 Z1";
 char site_id = 'A';
 
+flash_sensor *fl_sensor;
+
 /* Synchronization primitives */
 static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER; // protects serial writes
 static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
@@ -207,9 +209,9 @@ char *get_next_line_copy(void) {
     }
     pthread_mutex_unlock(&file_mutex);
 
-    /* Trim CR/LF safely */
+    // Trim CR/LF safely
     temp[strcspn(temp, "\r\n")] = '\0';
-    return strdup(temp); /* caller must free, returns a copy of temp */
+    return strdup(temp); // caller must free, returns a copy of temp.
 }
 
 
@@ -248,15 +250,14 @@ static void safe_write_response(const char *fmt, ...) {
 
 typedef enum {
     CMD_UNKNOWN,
-    CMD_START, // ! received from the terminal
-    CMD_STOP,  // ? received from the terminal
-    CMD_SITE,  // & recieved from the terminal
-    CMD_POLL,  // <A-Z> received from the terminal
+    CMD_RUN, // "RUN" received from the terminal
+    CMD_STOP,  // "STOP" received from the terminal
+    CMD_SITE,  // "SITE?" recieved from the terminal
     CMD_SELF_TEST,  // "R?" received from the terminal, trasmit Self Test Message.
     CMD_DEF_DIST, // "DESTDEF" Reset the flash distance limits to FAA Defaults 5,10,20, 30.
     CMD_GET_DIST, // "DIST?" Get Distance Limits
     CMD_SET_DIST, // "DISTx,yyyy" Set Distance Limits x == 0-OH, 1-V, 2-ND, 3-FD. yyyy == decametres.
-    CMD_CONFIG // *<A-Z> received from the terminal
+    CMD_GET_SER // "SN?" get sensor serial number.
 } CommandType;
 
 
@@ -274,11 +275,10 @@ typedef enum {
  * Notes:
  */
 CommandType parse_command(const char *buf) {
-    if (buf[0] == '!' && buf[1] == '\0')									return CMD_START;
-    if (buf[0] == '?' && buf[1] == '\0')									return CMD_STOP;
-    if (buf[0] == '&' && buf[1] == '\0')									return CMD_SITE;
-    if (buf[0] == '*' && buf[1] >= 'A' && buf[1] <= 'Z' && buf[2] =='\0') 	return CMD_CONFIG;
-    if (buf && buf[0] >= 'A' && buf[0] <= 'Z' && buf[1] == '\0') 			return CMD_POLL;
+    if (strncmp(buf, "RUN", 3) == 0)										return CMD_RUN;
+    if (strncmp(buf, "STOP", 4) == 0)										return CMD_STOP;
+    if (buf[0] == 'S' && buf[1] == 'N' && buf[2] == '?' && buf[3] == '\0')	return CMD_GET_SER;
+    if (strncmp(buf, "SITE?", 5) == 0)										return CMD_SITE;
     if (strncmp(buf, "DIST", 4) == 0) {
         if (isdigit(buf[4]) && buf[4] >= '0' && buf[4] <= '3')				return CMD_SET_DIST;
     	if (buf[4] == '?' && buf[5] == '\0')								return CMD_GET_DIST;
@@ -302,56 +302,54 @@ CommandType parse_command(const char *buf) {
  * Notes:
  */
 void handle_command(CommandType cmd) {
-    char *resp_copy = NULL;
+    // char *resp_copy = NULL;
     switch (cmd) {
-        case CMD_START:
-	    pthread_mutex_lock(&send_mutex);
-            sampling = 1; // enable continuous sending
-            pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
-            pthread_mutex_unlock(&send_mutex);
+        case CMD_RUN:
+			if (sampling == 1) {
+                safe_write_response("%s\r\n", "COMMAND NOT ALLOWED");
+			} else {
+			    pthread_mutex_lock(&send_mutex);
+                sampling = 1; // enable continuous sending
+                pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
+                pthread_mutex_unlock(&send_mutex);
+				safe_write_response("%s\r\n", "OK");
+			}
             break;
-
         case CMD_STOP:
-            pthread_mutex_lock(&send_mutex);
-	    	sampling = 0; // disables continuous sending.
-            pthread_cond_signal(&send_cond);   // Wake sender_thread to exit loop
-            pthread_mutex_unlock(&send_mutex);
+            if (sampling == 0) {
+                safe_write_response("%s\r\n", "COMMAND NOT ALLOWED");
+			} else {
+				   pthread_mutex_lock(&send_mutex);
+		    	   sampling = 0; // disables continuous sending.
+        	       pthread_cond_signal(&send_cond);   // Wake sender_thread to exit loop
+            	   pthread_mutex_unlock(&send_mutex);
+				   safe_write_response("%s\r\n", "OK");
+			}
             break;
-
         case CMD_SITE:
-            printf("CMD: SITE -> Sending site info\n");
-            safe_write_response("%c\r\n", site_id);
-            break;
-
-        case CMD_POLL:
-            resp_copy = get_next_line_copy();
-            if (resp_copy)
-            {
-			    char updated_line[MAX_LINE_LENGTH];
-                if (update_btd_timestamps(resp_copy, updated_line, sizeof(updated_line)) == 0)
-                {
-                    safe_write_response("%s\r\n", updated_line);
-                } else
-                {
-					safe_write_response("%s\r\n", resp_copy);
-				}
-				free(resp_copy);
-            } else {
-                safe_write_response("ERR: Empty file\r\n");
-            }
             break;
         case CMD_SET_DIST:
-            //resp_copy = get_next_line_copy();
-            //if (resp_copy) {
-                // prints <Start of Line ASCII 2>, the string of data read, <EOL ASCII 3>, Checksum of the line read
-              //  safe_write_response("%c%s%c%02X\r\n", 2, resp_copy, 3, check_sum(resp_copy));
-                //free(resp_copy);
-            //} else {
-            //    safe_write_response("ERR: Empty file\r\n");
-            //}
+			break;
+		case CMD_GET_DIST:
+            safe_write_response("%s,%hu,%hu,%hu,%hu\r\n", "DIST:",
+								fl_sensor->overhead,
+							    fl_sensor->vicinity,
+								fl_sensor->near_distant,
+								fl_sensor->far_distant);
+			break;
+		case CMD_GET_SER:
+            safe_write_response("%s\r\n", fl_sensor->serial_num);
+			break;
+		case CMD_DEF_DIST:
+			if (sampling == 1) {
+                safe_write_response("%s\r\n", "COMMAND NOT ALLOWED");
+			} else {
+				reset_flash(&fl_sensor);
+                safe_write_response("%s\r\n", "OK");
+			}
             break;
         default:
-            printf("CMD: Unknown command\n");
+            printf("BAD CMD\r\n");
             break;
     }
 
@@ -443,7 +441,7 @@ void* sender_thread(void* arg) {
 
     while (!terminate) {
         pthread_mutex_lock(&send_mutex);
-        // wait until either terminate is set or "sampling" becomes 1
+        // wait until either terminate is set or "sampling" becomes 1, by default sampling is set to 1 on startup.
         while (!terminate && !sampling) {
             pthread_cond_wait(&send_cond, &send_mutex);
         }
@@ -532,8 +530,8 @@ int main(int argc, char *argv[]) {
         fclose(file_ptr);
         return 1;
     }
-    /* define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
-       allowing our c program, to close its loop, join threads, and close our serial device. */
+    // define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
+    // allowing our c program, to close its loop, join threads, and close our serial device.
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = handle_signal;
@@ -558,6 +556,8 @@ int main(int argc, char *argv[]) {
         fclose(file_ptr);
         return 1;
     }
+
+    init_flash(&fl_sensor);
 
     printf("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {
@@ -587,7 +587,7 @@ int main(int argc, char *argv[]) {
     pthread_join(send_thread, NULL);
     close(serial_fd);
     fclose(file_ptr);
-
+	free(fl_sensor);
     printf("Program terminated.\n");
     return 0;
 }

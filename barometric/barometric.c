@@ -15,7 +15,7 @@
  *           Z - Read raw data.
  *           I - identify and setup information.
  *           A - Set automatic transmission interval, also used to set if units are output as text.
- * 	     N - Set device address.
+ *	 	     N - Set device address.
  *           Q - Pressure measurement speed.
  *           U - Pressure Units.
  *           C - Digital output calibration.
@@ -397,20 +397,20 @@ void* sender_thread(void* arg) {
  * Purpose:      Main funstion, which opens up serial port, and creates a receiver and transmit threads to listen, and respond to commands
  *               over that serial port. Can take two arguments or no arguments. If changing the serial device name and baud rate, you must supply both.
  *               i.e. tmp_bp_listen <file_path> [serial_device] [baud_rate]
- *		 uses ternary statements to set either default values for SERIAL_PORT, and BAUD_RATE which are defined above.
- * 		 (condition) ? (value if true) : (value if false)
+ *				 uses ternary statements to set either default values for SERIAL_PORT, and BAUD_RATE which are defined above.
+ * 				 (condition) ? (value if true) : (value if false)
  *
  * Arguments:    file_path: The location of the file we want to read from, line by line.
  *               device: the string representing the file descriptor of the serial port which should
- * 		 match the pattern ^/dev/tty(S|USB)[0-9]+$. This is tested with function is_valid_tty()
- *		 baud: the string value representing the proposed baud rate, this string is sent to get_baud_rate() which returns a speed_t value.
+ * 		 		 match the pattern ^/dev/tty(S|USB)[0-9]+$. This is tested with function is_valid_tty()
+ *		  		 baud: the string value representing the proposed baud rate, this string is sent to get_baud_rate() which returns a speed_t value.
  *
  * Output:       Prints to stderr the appropriate error messages if encountered.
  * Modifies:     None.
  * Returns:      Returns an int 0 representing success once the program closes the fd, and joins the threads, or 1 if unable to open the serial port.
  * Assumptions:  device is a valid char * pointer and the line contains
  *               characters other than white space, and points to an FD.
- *		 The int provided by arguments is a valid baud rate, although B9600 is set on any errors.
+ *		 		 The int provided by arguments is a valid baud rate, although B9600 is set on any errors.
  *
  * Bugs:         None known.
  * Notes:
@@ -418,10 +418,6 @@ void* sender_thread(void* arg) {
 
 int main(int argc, char *argv[]) {
 
-    init_units();
-    init_sensor(&sensor_one);
-    init_sensor(&sensor_two);
-    init_sensor(&sensor_three);
 
     for (int i = 0; i<25; i++) {
     printf("%d  -  %s\r\n", i, units_of_measure[i]);
@@ -482,6 +478,12 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+	// Initialize BP Sensors
+    init_units();
+    init_sensor(&sensor_one); // Calls malloc, these sensors must be freed upon exit.
+    init_sensor(&sensor_two);
+    init_sensor(&sensor_three);
+
     printf("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {
         char input[8];
@@ -510,7 +512,9 @@ int main(int argc, char *argv[]) {
     pthread_join(send_thread, NULL);
     close(serial_fd);
     fclose(file_ptr);
-
+	free(sensor_one);
+	free(sensor_two);
+	free(sensor_three);
     printf("Program terminated.\n");
     return 0;
 }

@@ -172,7 +172,7 @@ int init_flash(flash_sensor **ptr) {
         perror("Failed to allocate cur_sensor");
         return -1;
     }
-    //snprintf((*ptr)->units, 50, units_of_measure[current_u_of_m]); // sets default unit of measurement to hPa.
+    snprintf((*ptr)->serial_num, 13, "000008675309"); // sets the serial number fo the sensor.
     //snprintf((*ptr)->pin_set, 50, "000"); // sets the default pin to 000.
     //snprintf((*ptr)->user_message, 16, "%s", ""); // sets the default user message to empty string '\0'.
     //(*ptr)->filter_factor = 0; // sets the defualt filter factor to 0.
@@ -184,6 +184,32 @@ int init_flash(flash_sensor **ptr) {
     return 1;
 }
 
+/*
+ * Name:         reset_flash
+ * Purpose:      resets a BTD-300 lightning sensor.
+ * Arguments:    ptr - a pointer to a flash_sensor struct.
+ *
+ * Output:       Error message if unable to allocate memory for the struct.
+ * Modifies:     Updates the default values of provided sensor.
+ * Returns:      -1 on failure, 1 on success.
+ * Assumptions:
+ *
+ * Bugs:         None known.
+ * Notes:        int snprintf(char *str, size_t size, const char *format, ...);
+ */
+int reset_flash(flash_sensor **ptr) {
+    // *ptr = malloc(sizeof(flash_sensor));
+    if (*ptr == NULL) {
+        perror("Failed to allocate cur_sensor");
+        return -1;
+    }
+    (*ptr)->overhead = 926; // sets the overhead lightning limit to 5 NM or 926 decametres
+    (*ptr)->vicinity = 1852; // sets the overhead lightning limit to 10 NM or 1852 decametres
+    (*ptr)->near_distant = 3704; // sets the overhead lightning limit to 20 NM or 3704 decametres
+    (*ptr)->far_distant = 5556; // sets the overhead lightning limit to 30 NM or 5556 decametres
+
+    return 1;
+}
 
 /*
  * Name:         update_message
