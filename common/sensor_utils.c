@@ -102,28 +102,6 @@ void init_coefficients() {
 }
 
 
-/*typedef struct {
-    char *unit_type[MAX_INPUT_STR];
-    char *serial_number[MAX_INPUT_STR];
-    char *style[MAX_INPUT_STR];
-    char *min_pressure[MAX_INPUT_STR];
-    char *max_pressure[MAX_INPUT_STR];
-    char *manufacture_date[MAX_INPUT_STR];
-    char *software_version[MAX_INPUT_STR];
-    int trans_interval[MAX_INPUT_STR];
-    char *units_sent[MAX_INPUT_STR];
-    int measurement_speed;
-    int filter_factor;
-    char *filter_step[MAX_INPUT_STR];
-    char *user_message[MAX_INPUT_STR];
-    char *units[MAX_INPUT_STR];
-    char *pin_set[MAX_INPUT_STR];
-    char *user_zero[MAX_INPUT_STR];
-    char *user_fs[MAX_INPUT_STR];
-    char *sensor_sn[MAX_INPUT_STR];
-    char *internal_chksum[MAX_INPUT_STR];
-} bp_sensor; */
-
 
 /*
  * Name:         init_sensor
@@ -173,9 +151,6 @@ int init_flash(flash_sensor **ptr) {
         return -1;
     }
     snprintf((*ptr)->serial_num, 13, "000008675309"); // sets the serial number fo the sensor.
-    //snprintf((*ptr)->pin_set, 50, "000"); // sets the default pin to 000.
-    //snprintf((*ptr)->user_message, 16, "%s", ""); // sets the default user message to empty string '\0'.
-    //(*ptr)->filter_factor = 0; // sets the defualt filter factor to 0.
     (*ptr)->overhead = 926; // sets the overhead lightning limit to 5 NM or 926 decametres
     (*ptr)->vicinity = 1852; // sets the overhead lightning limit to 10 NM or 1852 decametres
     (*ptr)->near_distant = 3704; // sets the overhead lightning limit to 20 NM or 3704 decametres

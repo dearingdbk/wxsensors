@@ -45,7 +45,7 @@ typedef struct {
 	uint16_t vicinity;
 	uint16_t near_distant;
     uint16_t far_distant;
-	char *serial_num;
+	char serial_num[13];
 } flash_sensor;
 
 
