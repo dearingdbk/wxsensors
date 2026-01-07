@@ -385,7 +385,7 @@ static GtkWidget *create_main_window(void) {
     // Create main window
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), "wxsensors Control Panel");
-    gtk_window_set_default_size(GTK_WINDOW(window), 950, 600);
+    gtk_window_set_default_size(GTK_WINDOW(window), 950, 650);
     gtk_container_set_border_width(GTK_CONTAINER(window), 10);
     g_signal_connect(window, "destroy", G_CALLBACK(on_window_destroy), NULL);
 

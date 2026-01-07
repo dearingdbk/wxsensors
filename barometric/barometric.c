@@ -419,12 +419,6 @@ void* sender_thread(void* arg) {
 int main(int argc, char *argv[]) {
 
 
-    for (int i = 0; i<25; i++) {
-    printf("%d  -  %s\r\n", i, units_of_measure[i]);
-
-    }
-
-    printf("Current Units are %s\n", sensor_one->units);
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
         return 1;
@@ -483,7 +477,13 @@ int main(int argc, char *argv[]) {
     init_sensor(&sensor_one); // Calls malloc, these sensors must be freed upon exit.
     init_sensor(&sensor_two);
     init_sensor(&sensor_three);
+/*    for (int i = 0; i<25; i++) {
+    	printf("%d  -  %s\r\n", i, units_of_measure[i]);
 
+    }
+
+    printf("Current Units are %s\n", sensor_one->units);
+*/
     printf("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {
         char input[8];

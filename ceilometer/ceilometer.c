@@ -255,7 +255,7 @@ void handle_command(CommandType cmd) {
     char *resp_copy = NULL;
     switch (cmd) {
         case CMD_START:
-	    pthread_mutex_lock(&send_mutex);
+		    pthread_mutex_lock(&send_mutex);
             continuous = 1; // enable continuous sending
             pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
             pthread_mutex_unlock(&send_mutex);
@@ -263,7 +263,7 @@ void handle_command(CommandType cmd) {
 
         case CMD_STOP:
             pthread_mutex_lock(&send_mutex);
-	    continuous = 0; // disables continuous sending.
+		    continuous = 0; // disables continuous sending.
             pthread_cond_signal(&send_cond);   // Wake sender_thread to exit loop
             pthread_mutex_unlock(&send_mutex);
             break;
