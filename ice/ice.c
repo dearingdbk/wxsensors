@@ -268,7 +268,6 @@ CommandType parse_command(const char *buf) {
     if (buf[0] == 'Z' && buf[1] == '3' && isdigit(buf[2]) && isdigit(buf[3]))	return CMD_Z3;
     if (buf[0] == 'Z' && buf[1] == '4' && buf[2] == '\0')						return CMD_Z4;
     if (buf[0] == 'F' && buf[1] == '4' && buf[2] == '\0')						return CMD_F4;
-    }
     return CMD_UNKNOWN;
 }
 
@@ -287,12 +286,13 @@ CommandType parse_command(const char *buf) {
  * Notes:
  */
 void handle_command(CommandType cmd) {
-    // char *resp_copy = NULL;
+     char *resp_copy = NULL;
     switch (cmd) {
         case CMD_Z1:
             resp_copy = get_next_line_copy();
             if (resp_copy) {
-                safe_write_response("%s%02hhu\r\n", resp_copy, generate_check_sum(resp_copy));
+                safe_write_response("%s%02hhu\r\n", resp_copy,
+													generate_check_sum((const uint8_t *)resp_copy, sizeof(resp_copy)));
                 free(resp_copy);
 			} else {
 				safe_write_response("%s\r\n", "OK");
