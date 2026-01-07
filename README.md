@@ -29,7 +29,7 @@ Each sensor emulator follows a common architecture:
 | DSP8100 | GE Druck  | Pressure | Barometric pressure sensor emulator |
 | SkyVUE8 | Campbell Scientific | Cloud Height | Cloud base height and sky condition sensor emulator |
 | BTD-300 | Biral | Lightning | Lightning detection sensor emulator |
-
+| 0872F1  | Goodrich | Ice Detector | Ultrasonic axially vibrating tube ice accumulation detector | 
 ## Supported Commands
 
 All sensor emulators support a number of different command sets:
@@ -130,29 +130,33 @@ For consistent USB serial device naming, create a udev rule:
 ## Project Structure
 ```
 wxsensors/
-├── include/           # Shared header files
+├── include/              # Shared header files
 │   ├── crc_utils.h
 │   ├── sensor_utils.h
 │   └── serial_utils.h
-├── common/            # Shared source files
+├── common/               # Shared source files
 │   ├── crc_utils.c
 │   ├── sensor_utils.c
 │   └── serial_utils.c
-├── wind/              # Gill WindObserver 75 emulator
+├── wind/                 # Gill WindObserver 75 emulator
 │   └── wind_listen.c
-├── rh_temp/           # Rotronic HC2A-S3 emulator
+├── rh_temp/              # Rotronic HC2A-S3 emulator
 │   └── tmp_rh_listen.c
-├── pres_weather/      # Campbell Scientific AtmosVue30 emulator
+├── pres_weather/         # Campbell Scientific AtmosVue30 emulator
 │   └── pres_weather.c
-├── barometric/        # Barometric pressure emulator
+├── barometric/           # Barometric pressure emulator
 │   └── barometric.c
-├── ceilometer/        # Ceilometer emulator
+├── ceilometer/           # Ceilometer emulator
 │   └── ceilometer.c
-├── flash/             # Lightning sensor emulator
-│   └── lightning.sh
-├── data_files/        # Sample sensor data files
-├── bin/               # Compiled executables (generated)
-├── obj/               # Object files (generated)
+├── ice/        	      # Ice Accumulation Detection emulator
+│   └── ice.c
+├── flash/                # Lightning sensor emulator
+│   └── flash.c
+├── sensor_control/       # Graphical User Interface Program
+│   └── sensor_control.c
+├── data_files/           # Sample sensor data files
+├── bin/                  # Compiled executables (generated)
+├── obj/                  # Object files (generated)
 ├── Makefile
 ├── LICENSE.md
 └── README.md
