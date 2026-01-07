@@ -1,7 +1,7 @@
 /*
  * File:     sensor_control.c
  * Author:   Bruce Dearing
- * Date:     2025
+ * Date:     07-01-2026
  * Version:  1.0
  * Purpose:  GTK 3 GUI application to control wxsensors emulator programs.
  *           Provides start/stop buttons, status LEDs, and flag entry for each sensor.
@@ -52,6 +52,7 @@ static SensorDef sensor_defs[] = {
     {"ceilometer",  "Ceilometer",               "./data_files/ceilometer/ceil_data.txt /dev/ttyUSB4 9600 RS422"},
     {"flash",       "Biral BTD-300",            "./data_files/flash/flash_data.txt /dev/ttyUSB0 9600 RS422"},
     {"ice",         "Goodrich 0872F1",          "./data_files/ice/ice_data.txt /dev/ttyUSB6 2400 RS232"},
+    {"rain",        "Campbell CS700H",          "./data_files/rain/rain_data.txt /dev/ttyUSB6 1200 SDI-12"},
     {NULL, NULL, NULL}
 };
 
