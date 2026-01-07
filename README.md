@@ -64,6 +64,17 @@ data <CR><LF>
 - **ETX**: End of text (0x03)
 - **Checksum**: XOR of data bytes (2 hex digits)
 
+## Dependencies
+
+```bash
+# GTK-3 Liabraries required for only the GUI build.
+sudo apt install libgtk-3-dev
+# C build essentials package. 
+sudo apt install build-essential
+# add the user to the dialout group, enabling access to serial devices.
+sudo usermod -aG dialout $USER && logout 
+```
+
 ## Building
 ```bash
 # Build only the sensors (default)
