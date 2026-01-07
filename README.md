@@ -67,10 +67,12 @@ data <CR><LF>
 ## Dependencies
 
 ```bash
-# GTK-3 Liabraries required for only the GUI build.
+# GTK-3 Libraries required for only the GUI build.
 sudo apt install libgtk-3-dev
+
 # C build essentials package. 
 sudo apt install build-essential
+
 # add the user to the dialout group, enabling access to serial devices.
 sudo usermod -aG dialout $USER && logout 
 ```
