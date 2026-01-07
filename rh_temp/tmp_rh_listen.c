@@ -5,9 +5,8 @@
  * Version:  1.0
  * Purpose:  Emulates a Rotronic HC2A-S3 Temperature/Relative Humidity probe over RS-485/RS-422.
  *           The probe is housed in an Apogee TS-100 aspirated radiation shield.
- *           This program sets up a serial connection with two threads:
+ *           This program sets up a serial connection with one thread:
  *            - Receiver thread: parses and responds to incoming commands
- *            - Sender thread: periodically transmits T/RH data when in continuous mode
  *
  *           Supported commands (per Rotronic HygroClip2 protocol):
  *	     Command Format { ID Adr RDD <Checksum || }> CR
@@ -67,7 +66,7 @@ char *file_path = NULL; // path to file
 // Shared state
 volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
-volatile bool running = false;
+// volatile bool running = false;
 int serial_fd = -1;
 
 /* Synchronization primitives */
@@ -190,7 +189,7 @@ typedef enum {
 
 CommandType parse_command(const char* buf) {
     if (strcmp(buf, "{F00RDD}") == 0)   	return CMD_RDD; // Expected poll request from AWI and CS systems.
-    if (strncmp(buf, "{F00RDD", 7) == 0)       	return CMD_RDD; // Optional command request with a checksum instead of '{' as the end.
+    if (strncmp(buf, "{F00RDD", 7) == 0)    return CMD_RDD; // Optional command request with a checksum instead of '{' as the end.
     return CMD_UNKNOWN;
 }
 
@@ -255,7 +254,7 @@ void* receiver_thread(void* arg) {
 	    if (c == '\r' || c == '\n') {
                 if (len > 0) {
                     line[len] = '\0';
-		    handle_command(parse_command(line));
+				    handle_command(parse_command(line));
                     len = 0;
                 }
             } else if (len < sizeof(line)-1) {

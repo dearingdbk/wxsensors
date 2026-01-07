@@ -66,10 +66,16 @@ data <CR><LF>
 
 ## Building
 ```bash
-# Build all sensor emulators
+# Build only the sensors (default)
 make
 
-# Clean build artifacts
+# Build only the GUI
+make gui
+
+# Build everything (sensors + GUI)
+make full
+
+# Clean all
 make clean
 ```
 
