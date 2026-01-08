@@ -299,9 +299,10 @@ void handle_command(CommandType cmd) {
 			}
             break;
         case CMD_Z3:
-				   safe_write_response("%s\r\n", "ZDOK51"); // Hardcoded response to turning on the heater.
+			safe_write_response("%s\r\n", "ZDOK51"); // Hardcoded response to turning on the heater.
             break;
         case CMD_Z4:
+		    safe_write_response("%s\r\n", "ZP E3"); // Hardcoded response to Z4.
             break;
         case CMD_F4:
 			break;
