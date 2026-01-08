@@ -14,7 +14,7 @@ COMMON_SRC = $(wildcard common/*.c)
 COMMON_OBJ = $(patsubst common/%.c, $(OBJ_DIR)/%.o, $(COMMON_SRC))
 
 # Get all immediate subfolders of SRC_DIR that contain .c files, excluding common and sensor_control
-FOLDERS := $(shell find $(SRC_DIR) -mindepth 1 -maxdepth 1 -type d ! -name 'common' ! -name 'sensor_control' -exec sh -c 'ls $$0/*.c >/dev/null 2>&1 && echo $$0' {} \;)
+FOLDERS := $(shell find $(SRC_DIR) -mindepth 1 -maxdepth 1 -type d ! -name 'common' ! -name 'sensor_control' ! -name 'cldn_parser' -exec sh -c 'ls $$0/*.c >/dev/null 2>&1 && echo $$0' {} \;)
 FOLDER_NAMES := $(notdir $(FOLDERS))
 EXES := $(addprefix $(BIN_DIR)/, $(addsuffix /%, $(FOLDER_NAMES)))
 
