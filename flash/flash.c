@@ -301,8 +301,8 @@ CommandType parse_command(const char *buf) {
  * Bugs:         None known.
  * Notes:
  */
-void handle_command(CommandType cmd) {
-    // char *resp_copy = NULL;
+void handle_command(CommandType cmd, const char *buf) {
+     // char *resp_copy = NULL;
     switch (cmd) {
         case CMD_RUN:
 			if (sampling == 1) {
@@ -329,6 +329,12 @@ void handle_command(CommandType cmd) {
         case CMD_SITE:
             break;
         case CMD_SET_DIST:
+            if (sampling == 1) {
+                safe_write_response("%s\r\n", "COMMAND NOT ALLOWED");
+			} else {
+				  set_dist(&fl_sensor, buf);
+	              safe_write_response("%s\r\n", "OK");
+			}
 			break;
 		case CMD_GET_DIST:
             safe_write_response("%s,%hu,%hu,%hu,%hu\r\n", "DIST:",
@@ -386,7 +392,7 @@ void* receiver_thread(void* arg) {
         		if (len > 0)
 				{
             		line[len] = '\0';
-		    		handle_command(parse_command(line));
+		    		handle_command(parse_command(line), line);
                 	len = 0;
             	}
 				else

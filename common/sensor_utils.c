@@ -16,6 +16,7 @@
 #include <string.h>
 #include <regex.h>
 #include <time.h>
+#include <ctype.h>
 #include "sensor_utils.h"
 
 #define MAX_TOKENS 32
@@ -182,6 +183,54 @@ int reset_flash(flash_sensor **ptr) {
     (*ptr)->vicinity = 1852; // sets the overhead lightning limit to 10 NM or 1852 decametres
     (*ptr)->near_distant = 3704; // sets the overhead lightning limit to 20 NM or 3704 decametres
     (*ptr)->far_distant = 5556; // sets the overhead lightning limit to 30 NM or 5556 decametres
+
+    return 1;
+}
+/*
+ * Name:         set_dist
+ * Purpose:      sets a BTD-300 lightning sensor.
+ * Arguments:    ptr - a pointer to a flash_sensor struct.
+ *
+ * Output:       Error message if unable to allocate memory for the struct.
+ * Modifies:     Updates the default values of provided sensor.
+ * Returns:      -1 on failure, 1 on success.
+ * Assumptions:  "DISTx,yyyy" Set Distance Limits x == 0-OH, 1-V, 2-ND, 3-FD. yyyy == decametres
+ *
+ * Bugs:         None known.
+ * Notes:        int snprintf(char *str, size_t size, const char *format, ...);
+ */
+int set_dist(flash_sensor **ptr, const char *buf) {
+    if (*ptr == NULL) {
+        perror("Failed to allocate cur_sensor");
+        return -1;
+    }
+
+	if (buf == NULL) return -1;
+    int key = (isdigit(buf[4]) == 0) ? buf[4] - '0' : 99;
+	char distance[5]; // Space for 4 digits + null terminator
+
+	strncpy(distance, &buf[6], 4);
+	distance[5] = '\0';
+
+	uint16_t value = (uint16_t)strtoul(distance, NULL, 10);
+
+	switch(key) {
+		case 0:
+    		(*ptr)->overhead = value; // sets the overhead lightning limit to 'value'
+			break;
+		case 1:
+		    (*ptr)->vicinity = value; // sets the overhead lightning limit to 'value'
+			break;
+		case 2:
+		    (*ptr)->near_distant = value; // sets the overhead lightning limit to 'value'
+			break;
+		case 3:
+		    (*ptr)->far_distant = value; // sets the overhead lightning limit to 'value'
+			break;
+		default:
+			// 99 or another bad number, do nothing.
+			break;
+	}
 
     return 1;
 }

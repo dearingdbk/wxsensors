@@ -43,14 +43,18 @@ TO BE POPULATED WITH COMMAND SETS PER SENSOR
 
 ### {F00RDD} Response
 `{F00rdd 001;4.45;%RH;000;=;20.07;°C;000;=;nc;---.-;°C;000; ;001;V1.7;0060568338;HC2-S3;000}`
-### Sensor B
+
+### Sensor [BTD-300](https://www.biral.com/wp-content/uploads/2023/04/106543.04F.pdf)
 | Command | Description |
 |---------|-------------|
-| `!` | Enable continuous data output mode |
-| `?` | Disable continuous mode (switch to polled mode) |
-| `<A-Z>` | Poll sensor at specified unit address |
-| `*<A-Z>` | Enter configuration mode for specified unit |
-| `&` | Request unit identifier |
+| `RUN` | Enable continuous data output mode |
+| `STOP` | Disable continuous mode  |
+| `SITE?` | Request site characterisation values |
+| `R?` | Request self-test/status message |
+| `DIST?` | Request distance limits |
+| `DISTDEF?` | Reset the flash distance limits to FAA Defaults 5,10,20,30 | 
+| `DISTx,yyyy` | Set Distance Limits x == 0-OH, 1-V, 2-ND, 3-FD. yyyy == decametres | 
+| `SN?` | Request sensor serial number | 
 
 ## Output Format
 

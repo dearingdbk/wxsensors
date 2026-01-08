@@ -61,5 +61,5 @@ int format_btd_datetime(time_t t, char *date_str, char *time_str);
 int update_btd_timestamps(const char *input, char *output, size_t output_size);
 int init_flash(flash_sensor **ptr);
 int reset_flash(flash_sensor **ptr);
-
+int set_dist(flash_sensor **ptr, const char *buf);
 #endif
