@@ -144,7 +144,7 @@ uint8_t generate_check_sum(const uint8_t *str_to_chk, size_t length) {
 
     uint8_t checksum = 0;
     if (str_to_chk == NULL || length == 0 || length > MAX_PACKET_LENGTH) {
-        return 0;
+        return -1;
     }
 
 	for (size_t i = 0; i < length; i++) {
@@ -153,7 +153,31 @@ uint8_t generate_check_sum(const uint8_t *str_to_chk, size_t length) {
     return (uint8_t)(checksum & 0xFF);
 }
 
+/*
+ * Name:         prepend_to_buffer
+ * Purpose:      Takes a destination and source string, and appends "STX \r \n" to the beginning.
+ * Arguments:    str_to_chk the string that checksum will be calculated for, it is set to uint_8 to eliminate any sign errors.
+ *				 length the length of the string to check.
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      returns an unsigned 8 bit integer of the checksum of str_to_chk.
+ * Assumptions:  Terminate is set to false.
+ *
+ * Bugs:         None known.
+ * Notes:        To print in HEX utilize dprintf(serial_fd, "%s%02X\r\n", str_to_chk, check_sum(str_to_chk));
+ */
+char* prepend_to_buffer(const char* original) {
+    // Length: 3 (for STX, \r, \n) + length of data + 1 (for null terminator)
+    size_t new_len = 3 + strlen(original) + 1;
+    char* new_str = malloc(new_len);
+    if (new_str == NULL) return NULL;
 
+    // \x02 is STX, \r is Carriage Return, \n is Newline
+    // %s is your original data
+    snprintf(new_str, new_len, "\x02\r\n%s", original);
+
+    return new_str;
+}
 
 
 /*
@@ -286,24 +310,40 @@ CommandType parse_command(const char *buf) {
  * Notes:
  */
 void handle_command(CommandType cmd) {
-     char *resp_copy = NULL;
+    char *resp_copy = NULL;
     switch (cmd) {
-        case CMD_Z1:
+        case CMD_Z1: {
             resp_copy = get_next_line_copy();
             if (resp_copy) {
-                safe_write_response("%s%02hhu\r\n", resp_copy,
-													generate_check_sum((const uint8_t *)resp_copy, sizeof(resp_copy)));
-                free(resp_copy);
+				char *msg = prepend_to_buffer(resp_copy);
+				uint8_t crc = generate_check_sum((const uint8_t *)msg, strlen(msg));
+		    	safe_write_response("%s%02X\x03\r\n", msg, crc);
+				free(msg);
+				msg = NULL;
 			} else {
-				safe_write_response("%s\r\n", "OK");
+				// safe_write_response("%s\r\n", "OK");
 			}
+			free(resp_copy);
             break;
-        case CMD_Z3:
-			safe_write_response("%s\r\n", "ZDOK51"); // Hardcoded response to turning on the heater.
+			}
+        case CMD_Z3: {
+			char *msg = prepend_to_buffer("ZDOK51");
+			uint8_t crc = generate_check_sum((const uint8_t *)msg, strlen(msg));
+		    safe_write_response("%s%02X\x03\r\n", msg, crc); // Hardcoded response to Z3.
+			free(msg);
+			msg = NULL;
+			// safe_write_response("%s\r\n", "ZDOK51"); // Hardcoded response to turning on the heater.
             break;
-        case CMD_Z4:
-		    safe_write_response("%s\r\n", "ZP E3"); // Hardcoded response to Z4.
-            break;
+			}
+        case CMD_Z4: {
+			char* msg = prepend_to_buffer("ZP E3");
+			uint8_t crc = generate_check_sum((const uint8_t *)msg, strlen(msg));
+		    safe_write_response("%s%02X\x03\r\n", msg, crc); // Hardcoded response to Z4.
+			free(msg);
+			msg = NULL;
+		    // safe_write_response("%s\r\n", "ZP E3"); // Hardcoded response to Z4.
+			break;
+			}
         case CMD_F4:
 			break;
         default:
@@ -330,25 +370,93 @@ void handle_command(CommandType cmd) {
  */
 void* receiver_thread(void* arg) {
     (void)arg;
+    char line[5]; // Buffer for 1 letter + 3 digits + null terminator
+    size_t len = 0;
+
+    while (!terminate) {
+        char c;
+        // n=0 means VTIME (0.1s) reached. n=1 means a byte arrived.
+        int n = read(serial_fd, &c, 1);
+
+        if (n > 1) { // n will be 1 for a single byte
+            // Start of new command, detected by a letter (Z, F, etc.)
+            if (isalpha(c)) {
+                // If we have an existing command, process it before starting the new one
+                if (len >= 2) {
+                    line[len] = '\0';
+                    handle_command(parse_command(line));
+                }
+                line[0] = c;
+                len = 1;
+            }
+            // Collect up to 3 digits, i.e. Z360
+            else if (isdigit(c) && len > 0) {
+                line[len++] = c;
+
+                // trigger if we hit the absolute maximum length (e.g., Z3XX)
+                if (len == 4) {
+                    line[len] = '\0';
+                    handle_command(parse_command(line));
+                    len = 0;
+                }
+            }
+            // Ignore anything else (\r, \n, spaces, nulls)
+        }
+        else if (n == 0) {
+            // Timeout Trigger: The line went silent (Handles Z1, Z4, F5)
+            if (len >= 2) {
+                line[len] = '\0';
+                handle_command(parse_command(line));
+                len = 0;
+            }
+        }
+		else
+		{
+            if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+                perror("Serial Read Error");
+            }
+			else {
+            	// avoid busy loop
+               	usleep(1000);
+			}
+        }
+    }
+    return NULL;
+}
+
+/*
+void* receiver_thread(void* arg) {
+    (void)arg;
     char line[256];
     size_t len = 0;
 
     while (!terminate) {
         char c;
         int n = read(serial_fd, &c, 1);
-        if (n > 0)
+        if (n > 0) // read() will return 0 if the VTIME (0.1s) expires with no data.
 		{
-	    	if (c == '\r' || c == '\n')
+	    	if (c == '\r' || c == '\n') //delimiter check for '\r' '\n'.
 			{
-        		if (len > 0)
+        		if (len >= 2) // Ensure we have at least a letter and a digit.
 				{
             		line[len] = '\0';
 		    		handle_command(parse_command(line));
                 	len = 0;
             	}
-				else
-				{ // empty line ignore. Note: Not likely to happen, as we generate the input file.
+				else if (isalpha(c))
+				{
+					if (len >= 2) {
+            		line[len] = '\0';
+		    		handle_command(parse_command(line));
+					}
+					line[0] = c;
+                	len = 1;
             	}
+				else if (isdigit(c) && len > 0 && len < (MAX_LINE_LENGTH - 1)) {
+                line[len++] = c;
+                // Optional: If you know the max digits is 3 (e.g., Z3XX),
+                // you could trigger at len == 4 here.
+            }
         	}
 			else
 			{
@@ -376,7 +484,7 @@ void* receiver_thread(void* arg) {
         }
         }
     return NULL;
-}
+}*/
 
 /*
  * Name:         sender_thread
@@ -460,6 +568,12 @@ void* sender_thread(void* arg) {
  */
 
 int main(int argc, char *argv[]) {
+
+
+    //char msg[] = "\x02\x0D\x0A\x5A\x44\x20\x34\x30\x30\x30\x36";
+	//uint8_t crc = generate_check_sum((const uint8_t *)msg, strlen(msg));
+
+    //printf("Checksum: %02X\x03\n", crc);
 
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);

@@ -33,13 +33,6 @@
 #define MAX_LINE_LENGTH 1024
 
 
-//FILE *file_ptr = NULL; // Global File pointer
-//char *file_path = NULL; // path to file
-
-// Shared state
-//int serial_fd = -1;
-
-
 /*
  * Name:         get_baud_rate
  * Purpose:      Checks if the given baud rate is a standard value and returns its string name.
@@ -103,7 +96,7 @@ speed_t get_baud_rate(const char *baud_rate) {
 int is_valid_tty(const char *str) {
     regex_t regex;
     int reti;
-    const char *pattern = "^/dev/tty(S|USB)[0-9]+$";
+    const char *pattern = "^/dev/tty(S|USB|ACM)[0-9]+$";
 
     // Compile the regular expression
     reti = regcomp(&regex, pattern, REG_EXTENDED);
@@ -208,16 +201,20 @@ int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
     tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
     tty.c_cflag &= ~(PARENB | PARODD);
     tty.c_cflag &= ~CSTOPB;
-    tty.c_cflag |= CLOCAL | CREAD;
+    tty.c_cflag |= CLOCAL | CREAD; // ignore modem lines
 
     // No RTS/CTS hardware flow control
     tty.c_cflag &= ~CRTSCTS;
+
+	// No software control
+	tty.c_iflag &= ~(IXON | IXOFF | IXANY); // Shut off software flow control
+	tty.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL);
 
     // Non-blocking read with timeout
     tty.c_cc[VMIN]  = 0;
     tty.c_cc[VTIME] = 1;
 
-    if (tcsetattr(fd, TCSANOW, &tty) != 0) {
+	if (tcsetattr(fd, TCSANOW, &tty) != 0) {
         perror("Error from tcsetattr");
         close(fd);
         return -1;
