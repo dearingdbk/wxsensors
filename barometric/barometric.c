@@ -258,7 +258,7 @@ void handle_command(CommandType cmd) {
     char *resp_copy = NULL;
     switch (cmd) {
         case CMD_START:
-	    pthread_mutex_lock(&send_mutex);
+		    pthread_mutex_lock(&send_mutex);
             continuous = 1; // enable continuous sending
             pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
             pthread_mutex_unlock(&send_mutex);
@@ -266,7 +266,7 @@ void handle_command(CommandType cmd) {
 
         case CMD_STOP:
             pthread_mutex_lock(&send_mutex);
-	    continuous = 0; // disables continuous sending.
+		    continuous = 0; // disables continuous sending.
             pthread_cond_signal(&send_cond);   // Wake sender_thread to exit loop
             pthread_mutex_unlock(&send_mutex);
             break;
@@ -279,8 +279,13 @@ void handle_command(CommandType cmd) {
         case CMD_POLL:
             resp_copy = get_next_line_copy();
             if (resp_copy) {
+
+//				char final_msg[MAX_LINE_LENGTH];
+//				char* data = "ZP39990";
+//				uint8_t crc = 0xAB;
+//				snprintf(final_msg, sizeof(final_msg), "\x02%s%02X\x03\r\n", data, crc);
                 // prints <Start of Line ASCII 2>, the string of data read, <EOL ASCII 3>, Checksum of the line read
-                safe_write_response("%c%s%c%02X\r\n", 2, resp_copy, 3, check_sum(resp_copy));
+                safe_write_response("\x02%s\x03%02X\r\n", resp_copy, check_sum(resp_copy));
                 free(resp_copy);
             } else {
                 safe_write_response("ERR: Empty file\r\n");

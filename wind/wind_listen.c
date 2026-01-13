@@ -22,7 +22,7 @@
  *           Wind data includes: direction (degrees), speed (m/s), status, and checksum
  *
  * Usage:    use case ' wind_listen <file_path> <serial_port_location> <baud_rate> <RS422|RS485> The serial port currently must match /dev/tty(S|USB)[0-9]+
- * 	     use case ' wind_listen <file_path> // The serial port, baud rate, and mode will be set to  defaults /dev/ttyUSB0, and B9600
+ *	 	     use case ' wind_listen <file_path> // The serial port, baud rate, and mode will be set to  defaults /dev/ttyUSB0, and B9600
  *
  * Sensor:   Gill Instruments WindObserver 75
  *           - Ultrasonic wind sensor (no moving parts)
@@ -45,14 +45,13 @@
 #include <errno.h>
 #include <termios.h>
 #include <pthread.h>
-#include <sys/ioctl.h>
-#include <linux/serial.h>
 #include <regex.h>
 #include <signal.h>
 #include <stdatomic.h>
 #include <stdarg.h>
 #include <time.h>
 #include "serial_utils.h"
+#include "sensor_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
@@ -68,7 +67,7 @@ volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
 
 int serial_fd = -1;
-char *site_config = "A0 B3 C1 E1 F1 G0000 H2 J1 K1 L1 M2 NA O1 P1 T1 U1 V1 X1 Z1";
+//char *site_config = "A0 B3 C1 E1 F1 G0000 H2 J1 K1 L1 M2 NA O1 P1 T1 U1 V1 X1 Z1";
 char site_id = 'A';
 
 /* Synchronization primitives */
@@ -77,6 +76,7 @@ static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file
 static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  send_cond  = PTHREAD_COND_INITIALIZER;
 
+wind_sensor *wnd_sensor;
 
 /*
  * Name:         handle_signal
@@ -222,11 +222,11 @@ typedef enum {
  * Notes:
  */
 CommandType parse_command(const char *buf) {
-    if (buf[0] == '!' && buf[1] == '\0')					return CMD_START;
-    if (buf[0] == '?' && buf[1] == '\0')					return CMD_STOP;
-    if (buf[0] == '&' && buf[1] == '\0')					return CMD_SITE;
+    if (buf[0] == '!' && buf[1] == '\0')									return CMD_START;
+    if (buf[0] == '?' && buf[1] == '\0')									return CMD_STOP;
+    if (buf[0] == '&' && buf[1] == '\0')									return CMD_SITE;
     if (buf[0] == '*' && buf[1] >= 'A' && buf[1] <= 'Z' && buf[2] =='\0') 	return CMD_CONFIG;
-    if (buf && buf[0] >= 'A' && buf[0] <= 'Z' && buf[1] == '\0') 		return CMD_POLL;
+    if (buf && buf[0] >= 'A' && buf[0] <= 'Z' && buf[1] == '\0') 			return CMD_POLL;
     return CMD_UNKNOWN;
 }
 
@@ -248,7 +248,7 @@ void handle_command(CommandType cmd) {
     char *resp_copy = NULL;
     switch (cmd) {
         case CMD_START:
-	    pthread_mutex_lock(&send_mutex);
+		    pthread_mutex_lock(&send_mutex);
             continuous = 1; // enable continuous sending
             pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
             pthread_mutex_unlock(&send_mutex);
@@ -256,26 +256,30 @@ void handle_command(CommandType cmd) {
 
         case CMD_STOP:
             pthread_mutex_lock(&send_mutex);
-	    continuous = 0; // disables continuous sending.
+		    continuous = 0; // disables continuous sending.
             pthread_cond_signal(&send_cond);   // Wake sender_thread to exit loop
             pthread_mutex_unlock(&send_mutex);
             break;
 
         case CMD_SITE:
-            printf("CMD: SITE -> Sending site info\n");
-            safe_write_response("%c\r\n", site_id);
+            // safe_write_response("%c\r\n", site_id);
+            safe_write_response("\x02%c\x03\r\n", "", wnd_sensor->n_val);
             break;
 
-        case CMD_POLL:
+        case CMD_POLL: {
             resp_copy = get_next_line_copy();
             if (resp_copy) {
-                // prints <Start of Line ASCII 2>, the string of data read, <EOL ASCII 3>, Checksum of the line read
-                safe_write_response("%c%s%c%02X\r\n", 2, resp_copy, 3, check_sum(resp_copy));
+				char final_msg[MAX_LINE_LENGTH];
+				snprintf(final_msg, sizeof(final_msg), "%c,%s,%c,00,", wnd_sensor->n_val, resp_copy, get_wind_units(wnd_sensor->u_val));
+				//printf("\x02%s\x03%02X\r\n", final_msg, check_sum(final_msg));
+                safe_write_response("\x02%s\x03%02X\r\n", final_msg, check_sum(final_msg));
                 free(resp_copy);
             } else {
-                safe_write_response("ERR: Empty file\r\n");
+                // safe_write_response("ERR: Empty file\r\n");
+				fprintf(stderr, "Error: Empty file.\n");
             }
             break;
+			}
         default:
             printf("CMD: Unknown command\n");
             break;
@@ -365,12 +369,13 @@ void* sender_thread(void* arg) {
         while (!terminate && continuous) {
              char *line = get_next_line_copy();
              if (line) {
-                 // prints <STX ASCII 2>, the string of data read, <ETX ASCII 3>, Checksum of the line read
-                 safe_write_response("%c%s%c%02X\r\n", 2, line, 3, check_sum(line));
-                 // safe_write_response("%s\r\n", line);
-                 free(line); // caller of get_next_line_copy() must free resource.
+                char final_msg[MAX_LINE_LENGTH];
+				// Builds the msg string, from sensor struct values, and values read from provided file.
+				snprintf(final_msg, sizeof(final_msg), "%c,%s,%c,00,", wnd_sensor->n_val, line, get_wind_units(wnd_sensor->u_val));
+                safe_write_response("\x02%s\x03%02X\r\n", final_msg, check_sum(final_msg));
+				// prints <STX ASCII 2>, the string of data read, <ETX ASCII 3>, Checksum of the line read
+                free(line); // caller of get_next_line_copy() must free resource.
              }
-
              clock_gettime(CLOCK_REALTIME, &requested_time);
              requested_time.tv_sec += 2;
              pthread_cond_timedwait(&send_cond, &send_mutex, &requested_time);
@@ -461,6 +466,9 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+	init_wind(&wnd_sensor);
+	// printf("\x02%c\x03", wnd_sensor->n_val);
+	handle_command(CMD_POLL);
     printf("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {
         char input[8];

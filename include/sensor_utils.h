@@ -39,6 +39,28 @@ typedef struct {
     char internal_chksum[MAX_INPUT_STR];
 } bp_sensor;
 
+typedef struct {
+	int a_val;
+	int b_val;
+	int c_val;
+	int e_val;
+	int f_val;
+	int g_val;
+	int h_val;
+	int j_val;
+	int k_val;
+	int l_val;
+	int m_val;
+	char n_val;
+	int o_val;
+	int p_val;
+	int t_val;
+	int u_val;
+	int v_val;
+	int x_val;
+	int y_val;
+	int z_val;
+} wind_sensor;
 
 typedef struct {
 	uint16_t overhead;
@@ -54,6 +76,9 @@ void init_coefficients();
 int init_sensor(bp_sensor **ptr);
 int update_message(bp_sensor **ptr, char *msg);
 int update_units(bp_sensor **ptr, uint8_t unit_id);
+
+int init_wind(wind_sensor **ptr);
+char get_wind_units(int chk_val);
 
 // BTD-300 Flash Sensor specific functions.
 time_t parse_btd_datetime(const char *date_str, const char *time_str);

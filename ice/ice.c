@@ -108,8 +108,8 @@ static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file
 
 /*
  * Name:         handle_signal
- * Purpose:      Captures any kill signals, and sets volitile bool 'terminate' and 'kill_flag' to true, allowing the while loop to break,
- * 				 and threads to join.
+ * Purpose:      Captures any kill signals, and sets volitile bool 'terminate' and 'kill_flag' to true,
+ *				 allowing the while loop to break, and threads to join.
  * Arguments:    None
  *
  * Output:       None.
@@ -423,125 +423,6 @@ void* receiver_thread(void* arg) {
     }
     return NULL;
 }
-
-/*
-void* receiver_thread(void* arg) {
-    (void)arg;
-    char line[256];
-    size_t len = 0;
-
-    while (!terminate) {
-        char c;
-        int n = read(serial_fd, &c, 1);
-        if (n > 0) // read() will return 0 if the VTIME (0.1s) expires with no data.
-		{
-	    	if (c == '\r' || c == '\n') //delimiter check for '\r' '\n'.
-			{
-        		if (len >= 2) // Ensure we have at least a letter and a digit.
-				{
-            		line[len] = '\0';
-		    		handle_command(parse_command(line));
-                	len = 0;
-            	}
-				else if (isalpha(c))
-				{
-					if (len >= 2) {
-            		line[len] = '\0';
-		    		handle_command(parse_command(line));
-					}
-					line[0] = c;
-                	len = 1;
-            	}
-				else if (isdigit(c) && len > 0 && len < (MAX_LINE_LENGTH - 1)) {
-                line[len++] = c;
-                // Optional: If you know the max digits is 3 (e.g., Z3XX),
-                // you could trigger at len == 4 here.
-            }
-        	}
-			else
-			{
-                if (len < sizeof(line)-1)
-				{
-                    line[len++] = c;
-                }
-				else
-                {
-                    len = 0;
-                 }
-            }
-        }
-        else
-        {
-            if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
-            {
-                perror("read");
-        	}
-        	else
-        	{
-            	// no data available n == 0, avoid busy loop
-               	usleep(10000);
-        	}
-        }
-        }
-    return NULL;
-}*/
-
-/*
- * Name:         sender_thread
- * Purpose:      On sampling == 1 and assuming terminate != 1 it will get the next line from a specified file, using
- *               get_next_line_copy() and send that line to the serial device using safe_write_response() function every 2 seconds.
- * Arguments:    arg: thread arguments.
- *
- * Output:       Error messages if encountered, prints to serial device.
- * Modifies:     None.
- * Returns:      NULL.
- * Assumptions:  serial port will have data, and that data will translate to a command.
- *
- * Bugs:         None known.
- * Notes:
- *
-void* sender_thread(void* arg) {
-    (void)arg;
-    struct timespec requested_time;
-
-    while (!terminate) {
-        pthread_mutex_lock(&send_mutex);
-        // wait until either terminate is set or "sampling" becomes 1, by default sampling is set to 1 on startup.
-        while (!terminate && !sampling) {
-            pthread_cond_wait(&send_cond, &send_mutex);
-        }
-
-        if (terminate) {
-            pthread_mutex_unlock(&send_mutex);
-            break;
-        }
-
-        while (!terminate && sampling) {
-             char *line = get_next_line_copy();
-             if (line)
-			 {
-                char updated_line[MAX_LINE_LENGTH];
-                if (update_btd_timestamps(line, updated_line, sizeof(updated_line)) == 0)
-                {
-                    safe_write_response("%s\r\n", updated_line);
-                } else
-                {
-					safe_write_response("%s\r\n", line);
-				}
-                free(line); // caller of get_next_line_copy() must free resource.
-				line = NULL;
-             }
-
-             clock_gettime(CLOCK_REALTIME, &requested_time);
-             requested_time.tv_sec += 2;
-             pthread_cond_timedwait(&send_cond, &send_mutex, &requested_time);
-        }
-
-        pthread_mutex_unlock(&send_mutex);
-
-    }
-    return NULL;
-}*/
 
 /*
  * Name:         Main
