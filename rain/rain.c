@@ -114,8 +114,6 @@ volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
 
 int serial_fd = -1;
-char *site_config = "A0 B3 C1 E1 F1 G0000 H2 J1 K1 L1 M2 NA O1 P1 T1 U1 V1 X1 Z1";
-char site_id = 'A';
 
 flash_sensor *fl_sensor;
 
@@ -143,6 +141,7 @@ void handle_signal(int sig) {
     (void)sig;
     terminate = 1; // Sets the atmoic var terminate to true, prompting the R & T threads to join.
     kill_flag = 1; // Sets the atomic var kill_flag to true, prompting the main loop to end.
+    pthread_cond_signal(&send_cond);
 }
 
 

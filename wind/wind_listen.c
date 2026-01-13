@@ -67,8 +67,6 @@ volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
 
 int serial_fd = -1;
-//char *site_config = "A0 B3 C1 E1 F1 G0000 H2 J1 K1 L1 M2 NA O1 P1 T1 U1 V1 X1 Z1";
-char site_id = 'A';
 
 /* Synchronization primitives */
 static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER; // protects serial writes
@@ -95,6 +93,7 @@ void handle_signal(int sig) {
     (void)sig;
     terminate = 1; // Sets the atmoic var terminate to true, prompting the R & T threads to join.
     kill_flag = 1; // Sets the atomic var kill_flag to true, prompting the main loop to end.
+    pthread_cond_signal(&send_cond);
 }
 
 
@@ -150,20 +149,59 @@ char *get_next_line_copy(void) {
     }
 
     if (!fgets(temp, sizeof(temp), file_ptr)) {
-        /* EOF or error; rewind and try once */
+        // EOF or error; rewind if we can.
+        if (fseek(file_ptr, 0 , SEEK_SET) == 0) // effectively rewinds the file ptr with a check.
+		{
+        	// rewind(file_ptr);
+        	if (!fgets(temp, sizeof(temp), file_ptr)) {
+            	pthread_mutex_unlock(&file_mutex);
+            	return NULL; /* file empty or error */
+        	}
+		} else // This is a PIPE (socat) - It has run dry, socat should be set to try forever, so this will infinetly loop.
+		  {
+			  // clear the EOF status to try again, note it is going to try until we kill the program.
+			  clearerr(file_ptr);
+			  pthread_mutex_unlock(&file_mutex);
+
+              // Log the error so you know why the sensor stopped
+			  fprintf(stderr, "[%ld] Network stream closed. Waiting for data...\n", time(NULL));
+              return NULL;
+		 }
+    }
+    pthread_mutex_unlock(&file_mutex);
+
+    // Trim CR/LF safely
+    temp[strcspn(temp, "\r\n")] = '\0';
+    return strdup(temp); // caller must free, returns a copy of temp.
+}
+
+
+
+
+/*char *get_next_line_copy(void) {
+    char temp[MAX_LINE_LENGTH];
+
+    pthread_mutex_lock(&file_mutex);
+    if (!file_ptr) {
+        pthread_mutex_unlock(&file_mutex);
+        return NULL;
+    }
+
+    if (!fgets(temp, sizeof(temp), file_ptr)) {
+        // EOF or error; rewind and try once
         rewind(file_ptr);
         if (!fgets(temp, sizeof(temp), file_ptr)) {
             pthread_mutex_unlock(&file_mutex);
-            return NULL; /* file empty or error */
+            return NULL; // file empty or error
         }
     }
     pthread_mutex_unlock(&file_mutex);
 
-    /* Trim CR/LF safely */
+    // Trim CR/LF safely
     temp[strcspn(temp, "\r\n")] = '\0';
-    return strdup(temp); /* caller must free, returns a copy of temp */
+    return strdup(temp); // caller must free, returns a copy of temp
 }
-
+*/
 
 /*
  * Name:         safe_write_response
@@ -467,8 +505,7 @@ int main(int argc, char *argv[]) {
     }
 
 	init_wind(&wnd_sensor);
-	// printf("\x02%c\x03", wnd_sensor->n_val);
-	handle_command(CMD_POLL);
+
     printf("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {
         char input[8];
@@ -497,7 +534,7 @@ int main(int argc, char *argv[]) {
     pthread_join(send_thread, NULL);
     close(serial_fd);
     fclose(file_ptr);
-
+	free(wnd_sensor);
     printf("Program terminated.\n");
     return 0;
 }

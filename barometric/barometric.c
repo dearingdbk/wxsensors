@@ -106,6 +106,7 @@ void handle_signal(int sig) {
     (void)sig;
     terminate = 1; // Sets the atmoic var terminate to true, prompting the R & T threads to join.
     kill_flag = 1; // Sets the atomic var kill_flag to true, prompting the main loop to end.
+    pthread_cond_signal(&send_cond);
 }
 
 
