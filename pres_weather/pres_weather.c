@@ -63,6 +63,7 @@
 #include <time.h>
 #include "crc_utils.h"
 #include "serial_utils.h"
+#include "console_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B38400	     // Adjust as needed, main has logic to take arguments for a new baud rate
@@ -279,7 +280,6 @@ void handle_command(CommandType cmd, const char *buf) {
             break;
 
         case CMD_SITE:
-            printf("CMD: SITE -> Sending site info\n");
             safe_write_response("%c\r\n", site_id);
             break;
 
@@ -308,7 +308,7 @@ void handle_command(CommandType cmd, const char *buf) {
                 safe_write_response("%s\r\n", buf);
 	    break;
         default:
-            printf("CMD: Unknown command\n");
+            safe_console_print("CMD: Unknown command\n");
             break;
     }
 
@@ -437,7 +437,7 @@ void* sender_thread(void* arg) {
 int main(int argc, char *argv[]) {
 
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
+        safe_console_error("Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
         return 1;
     }
 
@@ -445,7 +445,7 @@ int main(int argc, char *argv[]) {
 
     file_ptr = fopen(file_path, "r");
     if (!file_ptr) {
-        perror("Failed to open file");
+        safe_console_error("Failed to open file: %s\n", strerror(errno));
         return 1;
     }
     //ternary statement to set SERIAL_PORT if supplied in args or the default
@@ -489,7 +489,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    printf("Press 'q' + Enter to quit.\n");
+    safe_console_print("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {
         char input[8];
         if (fgets(input, sizeof(input), stdin)) {
@@ -515,9 +515,16 @@ int main(int argc, char *argv[]) {
 
     pthread_join(recv_thread, NULL);
     pthread_join(send_thread, NULL);
+
+	pthread_mutex_destroy(&write_mutex);
+	pthread_mutex_destroy(&file_mutex);
+	pthread_mutex_destroy(&send_mutex);
+	pthread_cond_destroy(&send_cond);
+
     close(serial_fd);
     fclose(file_ptr);
 
-    printf("Program terminated.\n");
-    return 0;
+    safe_console_print("Program terminated.\n");
+	console_cleanup();
+	return 0;
 }

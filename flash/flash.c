@@ -89,6 +89,7 @@
 #include <ctype.h>
 #include "serial_utils.h"
 #include "sensor_utils.h"
+#include "console_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
@@ -202,8 +203,9 @@ char *get_next_line_copy(void) {
 			  pthread_mutex_unlock(&file_mutex);
 
               // Log the error so you know why the sensor stopped
-			  fprintf(stderr, "[%ld] Network stream closed. Waiting for data...\n", time(NULL));
-              return NULL;
+				safe_console_error("[%ld] Network stream closed. Waiting for data...\n", time(NULL));
+			  	//fprintf(stderr, "[%ld] Network stream closed. Waiting for data...\n", time(NULL));
+              	return NULL;
 		 }
     }
     pthread_mutex_unlock(&file_mutex);
@@ -354,7 +356,7 @@ void handle_command(CommandType cmd, const char *buf) {
 			}
             break;
         default:
-            printf("BAD CMD\r\n");
+            safe_console_print("BAD CMD\r\n");
             break;
     }
 
@@ -414,7 +416,7 @@ void* receiver_thread(void* arg) {
         {
             if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
             {
-                perror("read");
+                safe_console_error("Read Error: %s\n", strerror(errno));
         	}
         	else
         	{
@@ -510,7 +512,7 @@ void* sender_thread(void* arg) {
 int main(int argc, char *argv[]) {
 
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
+        safe_console_error("Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
         return 1;
     }
 
@@ -518,7 +520,7 @@ int main(int argc, char *argv[]) {
 
     file_ptr = fopen(file_path, "r");
     if (!file_ptr) {
-        perror("Failed to open file");
+        safe_console_error("Failed to open file: %s\n", strerror(errno));
         return 1;
     }
     //ternary statement to set SERIAL_PORT if supplied in args or the default
@@ -546,7 +548,8 @@ int main(int argc, char *argv[]) {
     pthread_t recv_thread, send_thread;
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
-        perror("Failed to create receiver thread");
+        safe_console_error("Failed to create receiver thread: %s\n", strerror(errno));
+		// perror("Failed to create receiver thread");
         terminate = 1;          // <- symmetrical, but not required
         close(serial_fd);
         fclose(file_ptr);
@@ -554,7 +557,8 @@ int main(int argc, char *argv[]) {
     }
 
     if (pthread_create(&send_thread, NULL, sender_thread, NULL) != 0) {
-        perror("Failed to create sender thread");
+        safe_console_error("Failed to create sender thread: %s\n", strerror(errno));
+		// perror("Failed to create sender thread");
         terminate = 1;          // <- needed because recv_thread is running
         pthread_join(recv_thread, NULL);
         close(serial_fd);
@@ -562,9 +566,18 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    init_flash(&fl_sensor);
+    if (init_flash(&fl_sensor) != 1) {
+        safe_console_error("Failed to initialize sensor: %s\n", strerror(errno));
+		// perror("Failed to initialize sensor");
+        terminate = 1;
+        pthread_join(recv_thread, NULL);
+        close(serial_fd);
+        fclose(file_ptr);
+        free(fl_sensor);
+        return 1;
+    }
 
-    printf("Press 'q' + Enter to quit.\n");
+    safe_console_print("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {
         char input[8];
         if (fgets(input, sizeof(input), stdin)) {
@@ -590,9 +603,16 @@ int main(int argc, char *argv[]) {
 
     pthread_join(recv_thread, NULL);
     pthread_join(send_thread, NULL);
+
+	pthread_mutex_destroy(&write_mutex);
+	pthread_mutex_destroy(&file_mutex);
+	pthread_mutex_destroy(&send_mutex);
+	pthread_cond_destroy(&send_cond);
+
     close(serial_fd);
     fclose(file_ptr);
 	free(fl_sensor);
-    printf("Program terminated.\n");
+    safe_console_print("Program terminated.\n");
+	console_cleanup();
     return 0;
 }

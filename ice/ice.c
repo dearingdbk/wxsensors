@@ -85,6 +85,7 @@
 #include <ctype.h>
 #include "serial_utils.h"
 #include "sensor_utils.h"
+#include "console_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B2400	     // Adjust as needed, main has logic to take arguments for a new baud rate
@@ -215,13 +216,13 @@ char *get_next_line_copy(void) {
         	}
 		} else // This is a PIPE (socat) - It has run dry, socat should be set to try forever, so this will infinetly loop.
 		  {
-			  // clear the EOF status to try again, note it is going to try until we kill the program.
-			  clearerr(file_ptr);
-			  pthread_mutex_unlock(&file_mutex);
+			  	// clear the EOF status to try again, note it is going to try until we kill the program.
+			  	clearerr(file_ptr);
+			  	pthread_mutex_unlock(&file_mutex);
 
-              // Log the error so you know why the sensor stopped
-			  fprintf(stderr, "[%ld] Network stream closed. Waiting for data...\n", time(NULL));
-              return NULL;
+              	// Log the error so you know why the sensor stopped
+			  	safe_console_error("[%ld] Network stream closed. Waiting for data...\n", time(NULL));
+              	return NULL;
 		 }
     }
     pthread_mutex_unlock(&file_mutex);
@@ -347,7 +348,7 @@ void handle_command(CommandType cmd) {
         case CMD_F4:
 			break;
         default:
-            printf("BAD CMD\r\n");
+            safe_console_print("BAD CMD\r\n");
             break;
     }
 }
@@ -450,14 +451,8 @@ void* receiver_thread(void* arg) {
 
 int main(int argc, char *argv[]) {
 
-
-    //char msg[] = "\x02\x0D\x0A\x5A\x44\x20\x34\x30\x30\x30\x36";
-	//uint8_t crc = generate_check_sum((const uint8_t *)msg, strlen(msg));
-
-    //printf("Checksum: %02X\x03\n", crc);
-
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
+        safe_console_error("Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
         return 1;
     }
 
@@ -465,7 +460,7 @@ int main(int argc, char *argv[]) {
 
     file_ptr = fopen(file_path, "r");
     if (!file_ptr) {
-        perror("Failed to open file");
+        safe_console_error("Failed to open file: %s\n", strerror(errno));
         return 1;
     }
     //ternary statement to set SERIAL_PORT if supplied in args or the default
@@ -500,7 +495,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    printf("Press 'q' + Enter to quit.\n");
+    safe_console_print("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {
         char input[8];
         if (fgets(input, sizeof(input), stdin)) {
@@ -519,8 +514,13 @@ int main(int argc, char *argv[]) {
     }
 
     pthread_join(recv_thread, NULL);
-    close(serial_fd);
+
+	pthread_mutex_destroy(&write_mutex);
+	pthread_mutex_destroy(&file_mutex);
+
+	close(serial_fd);
     fclose(file_ptr);
-    printf("Program terminated.\n");
+    safe_console_print("Program terminated.\n");
+	console_cleanup();
     return 0;
 }

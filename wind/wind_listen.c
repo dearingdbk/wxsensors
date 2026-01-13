@@ -52,11 +52,12 @@
 #include <time.h>
 #include "serial_utils.h"
 #include "sensor_utils.h"
+#include "console_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
 #define MAX_LINE_LENGTH 1024
-
+#define MAX_CMD_LENGTH 256
 
 FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
@@ -164,7 +165,8 @@ char *get_next_line_copy(void) {
 			  pthread_mutex_unlock(&file_mutex);
 
               // Log the error so you know why the sensor stopped
-			  fprintf(stderr, "[%ld] Network stream closed. Waiting for data...\n", time(NULL));
+			  safe_console_error("[%ld] Network stream closed. Waiting for data...\n", time(NULL));
+			  //fprintf(stderr, "[%ld] Network stream closed. Waiting for data...\n", time(NULL));
               return NULL;
 		 }
     }
@@ -176,32 +178,6 @@ char *get_next_line_copy(void) {
 }
 
 
-
-
-/*char *get_next_line_copy(void) {
-    char temp[MAX_LINE_LENGTH];
-
-    pthread_mutex_lock(&file_mutex);
-    if (!file_ptr) {
-        pthread_mutex_unlock(&file_mutex);
-        return NULL;
-    }
-
-    if (!fgets(temp, sizeof(temp), file_ptr)) {
-        // EOF or error; rewind and try once
-        rewind(file_ptr);
-        if (!fgets(temp, sizeof(temp), file_ptr)) {
-            pthread_mutex_unlock(&file_mutex);
-            return NULL; // file empty or error
-        }
-    }
-    pthread_mutex_unlock(&file_mutex);
-
-    // Trim CR/LF safely
-    temp[strcspn(temp, "\r\n")] = '\0';
-    return strdup(temp); // caller must free, returns a copy of temp
-}
-*/
 
 /*
  * Name:         safe_write_response
@@ -309,17 +285,16 @@ void handle_command(CommandType cmd) {
             if (resp_copy) {
 				char final_msg[MAX_LINE_LENGTH];
 				snprintf(final_msg, sizeof(final_msg), "%c,%s,%c,00,", wnd_sensor->n_val, resp_copy, get_wind_units(wnd_sensor->u_val));
-				//printf("\x02%s\x03%02X\r\n", final_msg, check_sum(final_msg));
                 safe_write_response("\x02%s\x03%02X\r\n", final_msg, check_sum(final_msg));
                 free(resp_copy);
             } else {
-                // safe_write_response("ERR: Empty file\r\n");
-				fprintf(stderr, "Error: Empty file.\n");
+				safe_console_error("Error: Empty file.\n");
             }
             break;
 			}
         default:
-            printf("CMD: Unknown command\n");
+            safe_console_print("CMD: Unknown command\n");
+			// printf("CMD: Unknown command\n");
             break;
     }
 
@@ -343,7 +318,7 @@ void handle_command(CommandType cmd) {
  */
 void* receiver_thread(void* arg) {
     (void)arg;
-    char line[256];
+    char line[MAX_CMD_LENGTH];
     size_t len = 0;
 
     while (!terminate) {
@@ -353,7 +328,7 @@ void* receiver_thread(void* arg) {
 	    if (c == '\r' || c == '\n') {
                 if (len > 0) {
                     line[len] = '\0';
-		    handle_command(parse_command(line));
+		    		handle_command(parse_command(line));
                     len = 0;
                 } else { // empty line ignore
                   }
@@ -396,7 +371,7 @@ void* sender_thread(void* arg) {
         pthread_mutex_lock(&send_mutex);
         // wait until either terminate is set or continuous becomes 1
         while (!terminate && !continuous) {
-            pthread_cond_wait(&send_cond, &send_mutex);
+            pthread_cond_wait(&send_cond, &send_mutex); // we need to add a handler for this in the sig handler.
         }
 
         if (terminate) {
@@ -413,7 +388,10 @@ void* sender_thread(void* arg) {
                 safe_write_response("\x02%s\x03%02X\r\n", final_msg, check_sum(final_msg));
 				// prints <STX ASCII 2>, the string of data read, <ETX ASCII 3>, Checksum of the line read
                 free(line); // caller of get_next_line_copy() must free resource.
+				line = NULL;
              }
+
+			 if (terminate) break; // check before waiting 2 seconds.
              clock_gettime(CLOCK_REALTIME, &requested_time);
              requested_time.tv_sec += 2;
              pthread_cond_timedwait(&send_cond, &send_mutex, &requested_time);
@@ -452,7 +430,8 @@ void* sender_thread(void* arg) {
 int main(int argc, char *argv[]) {
 
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
+		safe_console_error("Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
+        //fprintf(stderr, "Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
         return 1;
     }
 
@@ -504,9 +483,17 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-	init_wind(&wnd_sensor);
+	if (init_wind(&wnd_sensor) != 1) {
+        perror("Failed to initialize sensor");
+        terminate = 1;
+        pthread_join(recv_thread, NULL);
+        close(serial_fd);
+        fclose(file_ptr);
+		free(wnd_sensor);
+        return 1;
+	}
 
-    printf("Press 'q' + Enter to quit.\n");
+	safe_console_print("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {
         char input[8];
         if (fgets(input, sizeof(input), stdin)) {
@@ -535,6 +522,7 @@ int main(int argc, char *argv[]) {
     close(serial_fd);
     fclose(file_ptr);
 	free(wnd_sensor);
-    printf("Program terminated.\n");
+    safe_console_print("Program terminated.\n");
+	console_cleanup();
     return 0;
 }

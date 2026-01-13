@@ -55,6 +55,7 @@
 #include <stdarg.h>
 #include <time.h>
 #include "serial_utils.h"
+#include "console_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B19200	     // Adjust as needed, main has logic to take arguments for a new baud rate
@@ -221,7 +222,7 @@ void handle_command(CommandType cmd) {
             }
             break;
         default:
-            printf("CMD: Unknown command\n");
+            safe_console_print("CMD: Unknown command\n");
             break;
     }
 }
@@ -297,7 +298,7 @@ void* receiver_thread(void* arg) {
 int main(int argc, char *argv[]) {
 
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
+        safe_console_error("Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
         return 1;
     }
 
@@ -305,7 +306,7 @@ int main(int argc, char *argv[]) {
 
     file_ptr = fopen(file_path, "r");
     if (!file_ptr) {
-        perror("Failed to open file");
+        safe_console_error("Failed to open file: %s\n", strerror(errno));
         return 1;
     }
     //ternary statement to set SERIAL_PORT if supplied in args or the default
@@ -341,7 +342,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    printf("Press 'q' + Enter to quit.\n");
+    safe_console_print("Press 'q' + Enter to quit.\n");
     while (!kill_flag) { // Keep looping until the global kill_flag is set (user wants to quit or signal received)
         char input[8];   // Buffer to store user input (up to 7 chars + null terminator)
         // try to read a line from standard input (stdin)
@@ -359,7 +360,7 @@ int main(int argc, char *argv[]) {
     pthread_join(recv_thread, NULL);
     close(serial_fd);
     fclose(file_ptr);
-
-    printf("Program terminated.\n");
+	safe_console_print("Program terminated.\n");
+	console_cleanup();
     return 0;
 }

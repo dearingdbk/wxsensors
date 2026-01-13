@@ -99,6 +99,7 @@
 #include <ctype.h>
 #include "serial_utils.h"
 #include "sensor_utils.h"
+#include "console_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
@@ -514,7 +515,7 @@ void* sender_thread(void* arg) {
 int main(int argc, char *argv[]) {
 
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
+        safe_console_error("Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
         return 1;
     }
 
@@ -566,9 +567,9 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    init_flash(&fl_sensor);
+    init_flash(&fl_sensor); // add in a proper checl once we get here.
 
-    printf("Press 'q' + Enter to quit.\n");
+    safe_console_print("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {
         char input[8];
         if (fgets(input, sizeof(input), stdin)) {
@@ -594,9 +595,16 @@ int main(int argc, char *argv[]) {
 
     pthread_join(recv_thread, NULL);
     pthread_join(send_thread, NULL);
+
+	pthread_mutex_destroy(&write_mutex);
+	pthread_mutex_destroy(&file_mutex);
+	pthread_mutex_destroy(&send_mutex);
+	pthread_cond_destroy(&send_cond);
+
     close(serial_fd);
     fclose(file_ptr);
 	free(fl_sensor);
-    printf("Program terminated.\n");
+    safe_console_print("Program terminated.\n");
+	console_cleanup();
     return 0;
 }
