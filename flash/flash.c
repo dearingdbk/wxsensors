@@ -276,14 +276,14 @@ typedef enum {
  * Notes:
  */
 CommandType parse_command(const char *buf) {
-    if (strncmp(buf, "RUN", 3) == 0)										return CMD_RUN;
-    if (strncmp(buf, "STOP", 4) == 0)										return CMD_STOP;
-    if (buf[0] == 'S' && buf[1] == 'N' && buf[2] == '?' && buf[3] == '\0')	return CMD_GET_SER;
-    if (strncmp(buf, "SITE?", 5) == 0)										return CMD_SITE;
+    if (strncmp(buf, "RUN", 3) == 0)							return CMD_RUN;
+    if (strncmp(buf, "STOP", 4) == 0)							return CMD_STOP;
+    if (strcmp(buf, "SN?") == 0)								return CMD_GET_SER;
+    if (strncmp(buf, "SITE?", 5) == 0)							return CMD_SITE;
     if (strncmp(buf, "DIST", 4) == 0) {
-        if (isdigit(buf[4]) && buf[4] >= '0' && buf[4] <= '3')				return CMD_SET_DIST;
-    	if (buf[4] == '?' && buf[5] == '\0')								return CMD_GET_DIST;
-        if (buf[4] == 'D' && buf[5] == 'E' && buf[6] == 'F')				return CMD_DEF_DIST;
+        if (isdigit(buf[4]) && buf[4] >= '0' && buf[4] <= '3')	return CMD_SET_DIST;
+    	if (buf[4] == '?' && buf[5] == '\0')					return CMD_GET_DIST;
+        if (buf[4] == 'D' && buf[5] == 'E' && buf[6] == 'F')	return CMD_DEF_DIST;
     }
     return CMD_UNKNOWN;
 }
