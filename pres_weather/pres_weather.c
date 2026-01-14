@@ -64,6 +64,7 @@
 #include "crc_utils.h"
 #include "serial_utils.h"
 #include "console_utils.h"
+#include "file_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B38400	     // Adjust as needed, main has logic to take arguments for a new baud rate
@@ -138,44 +139,6 @@ uint8_t check_sum(const char *str_to_chk) {
 }
 
 
-/*
- * Name:         get_next_line_copy
- * Purpose:      Reads a line of a file, received from a file pointer, it then iterates that pointer to the next line, or if at the EOF
- *               loops back to the beginning of the file. This version is a thread safe version of get_next_line.
- * Arguments:    None.
- *
- * Output:       Error message, if the file is not open.
- * Modifies:     None.
- * Returns:      returns a heap-allocated copy of a line of text from a file MAX_LINE_LENGTH long or NULL.
- * Assumptions:  The file is open, and the line read is less than MAX_LINE_LENGTH
- *
- * Bugs:         None known.
- * Notes:        The caller of this function, must free(), the heap-allocated copy when done processing it.
- *               i.e. if using char *line = get_next_line_copy(); in the same function, you must use 'free(line);'
- */
-char *get_next_line_copy(void) {
-    char temp[MAX_LINE_LENGTH];
-
-    pthread_mutex_lock(&file_mutex);
-    if (!file_ptr) {
-        pthread_mutex_unlock(&file_mutex);
-        return NULL;
-    }
-
-    if (!fgets(temp, sizeof(temp), file_ptr)) {
-        /* EOF or error; rewind and try once */
-        rewind(file_ptr);
-        if (!fgets(temp, sizeof(temp), file_ptr)) {
-            pthread_mutex_unlock(&file_mutex);
-            return NULL; /* file empty or error */
-        }
-    }
-    pthread_mutex_unlock(&file_mutex);
-
-    /* Trim CR/LF safely */
-    temp[strcspn(temp, "\r\n")] = '\0';
-    return strdup(temp); /* caller must free, returns a copy of temp */
-}
 
 /*
  * Name:         safe_write_response
@@ -284,7 +247,7 @@ void handle_command(CommandType cmd, const char *buf) {
             break;
 
         case CMD_POLL:
-            resp_copy = get_next_line_copy();
+            resp_copy = get_next_line_copy(file_ptr, &file_mutex);
             if (resp_copy) {
                 // prints <Start of Line ASCII 2>, the string of data read, <EOL ASCII 3>, Checksum of the line read
                 safe_write_response("%c%s%c%02X\r\n", 0x02, resp_copy, 0x03, check_sum(resp_copy));
@@ -294,7 +257,7 @@ void handle_command(CommandType cmd, const char *buf) {
             }
             break;
 	case CMD_GET:
-	    resp_copy = get_next_line_copy();
+	    resp_copy = get_next_line_copy(file_ptr, &file_mutex);
 	    if (resp_copy) {
                 // prints <Start of Line ASCII 2>, the string of data read, <EOL ASCII 3>, Checksum of the line read
                 safe_write_response("%c%s%c%02X\r\n", 0x02, resp_copy, 0x03, check_sum(resp_copy));
@@ -391,7 +354,7 @@ void* sender_thread(void* arg) {
         }
 
         while (!terminate && continuous) {
-             char *line = get_next_line_copy();
+             char *line = get_next_line_copy(file_ptr, &file_mutex);
              if (line) {
                  // prints <STX ASCII 2>, the string of data read, <ETX ASCII 3>, Checksum of the line read
                  safe_write_response("%c%s%c%02X\r\n", 2, line, 3, check_sum(line));

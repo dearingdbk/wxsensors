@@ -53,6 +53,7 @@
 #include "serial_utils.h"
 #include "sensor_utils.h"
 #include "console_utils.h"
+#include "file_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
@@ -123,60 +124,6 @@ uint8_t check_sum(const char *str_to_chk) {
     }
     return checksum;
 }
-
-
-/*
- * Name:         get_next_line_copy
- * Purpose:      Reads a line of a file, received from a file pointer, it then iterates that pointer to the next line, or if at the EOF
- *               loops back to the beginning of the file. This version is a thread safe version of get_next_line.
- * Arguments:    None.
- *
- * Output:       Error message, if the file is not open.
- * Modifies:     None.
- * Returns:      returns a heap-allocated copy of a line of text from a file MAX_LINE_LENGTH long or NULL.
- * Assumptions:  The file is open, and the line read is less than MAX_LINE_LENGTH
- *
- * Bugs:         None known.
- * Notes:        The caller of this function, must free(), the heap-allocated copy when done processing it.
- *               i.e. if using char *line = get_next_line_copy(); in the same function, you must use 'free(line);'
- */
-char *get_next_line_copy(void) {
-    char temp[MAX_LINE_LENGTH];
-
-    pthread_mutex_lock(&file_mutex);
-    if (!file_ptr) {
-        pthread_mutex_unlock(&file_mutex);
-        return NULL;
-    }
-
-    if (!fgets(temp, sizeof(temp), file_ptr)) {
-        // EOF or error; rewind if we can.
-        if (fseek(file_ptr, 0 , SEEK_SET) == 0) // effectively rewinds the file ptr with a check.
-		{
-        	// rewind(file_ptr);
-        	if (!fgets(temp, sizeof(temp), file_ptr)) {
-            	pthread_mutex_unlock(&file_mutex);
-            	return NULL; /* file empty or error */
-        	}
-		} else // This is a PIPE (socat) - It has run dry, socat should be set to try forever, so this will infinetly loop.
-		  {
-			  // clear the EOF status to try again, note it is going to try until we kill the program.
-			  clearerr(file_ptr);
-			  pthread_mutex_unlock(&file_mutex);
-
-              // Log the error so you know why the sensor stopped
-			  safe_console_error("[%ld] Network stream closed. Waiting for data...\n", time(NULL));
-			  //fprintf(stderr, "[%ld] Network stream closed. Waiting for data...\n", time(NULL));
-              return NULL;
-		 }
-    }
-    pthread_mutex_unlock(&file_mutex);
-
-    // Trim CR/LF safely
-    temp[strcspn(temp, "\r\n")] = '\0';
-    return strdup(temp); // caller must free, returns a copy of temp.
-}
-
 
 
 /*
@@ -281,7 +228,7 @@ void handle_command(CommandType cmd) {
             break;
 
         case CMD_POLL: {
-            resp_copy = get_next_line_copy();
+            resp_copy = get_next_line_copy(file_ptr, &file_mutex);
             if (resp_copy) {
 				char final_msg[MAX_LINE_LENGTH];
 				snprintf(final_msg, sizeof(final_msg), "%c,%s,%c,00,", wnd_sensor->n_val, resp_copy, get_wind_units(wnd_sensor->u_val));
@@ -380,7 +327,7 @@ void* sender_thread(void* arg) {
         }
 
         while (!terminate && continuous) {
-             char *line = get_next_line_copy();
+             char *line = get_next_line_copy(file_ptr, &file_mutex);
              if (line) {
                 char final_msg[MAX_LINE_LENGTH];
 				// Builds the msg string, from sensor struct values, and values read from provided file.
