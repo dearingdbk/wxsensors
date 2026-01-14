@@ -104,7 +104,6 @@ volatile sig_atomic_t kill_flag = 0;
 int serial_fd = -1;
 
 /* Synchronization primitives */
-static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER; // protects serial writes
 static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 
 
@@ -182,38 +181,6 @@ char* prepend_to_buffer(const char* original) {
 }
 
 
-
-/*
- * Name:         safe_write_response
- * Purpose:      Serializes writes to the serial device to ensure that all writes do not
- *               interleave and create errors.
- * Arguments:    fmt -  the string representing the format you want the the function to print.
- *               ... - a list of potential unfixed arguments, that can be supplied to the format string.
- *               i.e. if you supplied safe_write_response("%s%c%d", string_var, char_var, decimal_var); it would
- *               use vdprintf to print those variables in the format specified by fmt.
- *
- * Output:       Error message, if the file is not open.
- * Modifies:     None.
- * Returns:      None.
- * Assumptions:  The file is open, and the line read is less than MAX_LINE_LENGTH
- *
- * Bugs:         None known.
- * Notes:        va_start is a C macro that initializes a variable argument list, which
-                 is a list of arguments passed to a function that can have a variable
-   		 number of parameters. It must be called before any other variable argument
-   		 macros, such as va_arg, and requires two arguments: the va_list variable and
-   		 the name of the last fixed argument in the function's parameter list in our case fmt.
- */
-static void safe_write_response(const char *fmt, ...) {
-    va_list var_arg;  // Declare a va_list variable
-    pthread_mutex_lock(&write_mutex);
-    va_start(var_arg, fmt); // Initialize var_arg with the last fixed argument 'fmt'
-    vdprintf(serial_fd, fmt, var_arg); // prints to serial device the variables provided, in the fmt provided.
-    va_end(var_arg);
-    pthread_mutex_unlock(&write_mutex);
-}
-
-
 // ---------------- Command handling ----------------
 
 typedef enum {
@@ -268,31 +235,30 @@ void handle_command(CommandType cmd) {
             if (resp_copy) {
 				char *msg = prepend_to_buffer(resp_copy);
 				uint8_t crc = generate_check_sum((const uint8_t *)msg, strlen(msg));
-		    	safe_write_response("%s%02X\x03\r\n", msg, crc);
+		    	safe_serial_write(serial_fd, "%s%02X\x03\r\n", msg, crc);
 				free(msg);
 				msg = NULL;
 			} else {
 				// safe_write_response("%s\r\n", "OK");
 			}
 			free(resp_copy);
+			resp_copy = NULL;
             break;
 			}
         case CMD_Z3: {
 			char *msg = prepend_to_buffer("ZDOK51");
 			uint8_t crc = generate_check_sum((const uint8_t *)msg, strlen(msg));
-		    safe_write_response("%s%02X\x03\r\n", msg, crc); // Hardcoded response to Z3.
+		    safe_serial_write(serial_fd, "%s%02X\x03\r\n", msg, crc); // Hardcoded response to Z3.
 			free(msg);
 			msg = NULL;
-			// safe_write_response("%s\r\n", "ZDOK51"); // Hardcoded response to turning on the heater.
             break;
 			}
         case CMD_Z4: {
 			char* msg = prepend_to_buffer("ZP E3");
 			uint8_t crc = generate_check_sum((const uint8_t *)msg, strlen(msg));
-		    safe_write_response("%s%02X\x03\r\n", msg, crc); // Hardcoded response to Z4.
+		    safe_serial_write(serial_fd, "%s%02X\x03\r\n", msg, crc); // Hardcoded response to Z4.
 			free(msg);
 			msg = NULL;
-		    // safe_write_response("%s\r\n", "ZP E3"); // Hardcoded response to Z4.
 			break;
 			}
         case CMD_F4:
@@ -380,20 +346,20 @@ void* receiver_thread(void* arg) {
  * Purpose:      Main funstion, which opens up serial port, and creates a receiver and transmit threads to listen, and respond to commands
  *               over that serial port. Can take two arguments or no arguments. If changing the serial device name and baud rate, you must supply both.
  *               i.e. tmp_bp_listen <file_path> [serial_device] [baud_rate]
- *		 uses ternary statements to set either default values for SERIAL_PORT, and BAUD_RATE which are defined above.
- * 		 (condition) ? (value if true) : (value if false)
+ *		 		 uses ternary statements to set either default values for SERIAL_PORT, and BAUD_RATE which are defined above.
+ * 		 		 (condition) ? (value if true) : (value if false)
  *
  * Arguments:    file_path: The location of the file we want to read from, line by line.
  *               device: the string representing the file descriptor of the serial port which should
- * 		 match the pattern ^/dev/tty(S|USB)[0-9]+$. This is tested with function is_valid_tty()
- *		 baud: the string value representing the proposed baud rate, this string is sent to get_baud_rate() which returns a speed_t value.
+ * 		 		 match the pattern ^/dev/tty(S|USB)[0-9]+$. This is tested with function is_valid_tty()
+ *		 		 baud: the string value representing the proposed baud rate, this string is sent to get_baud_rate() which returns a speed_t value.
  *
  * Output:       Prints to stderr the appropriate error messages if encountered.
  * Modifies:     None.
  * Returns:      Returns an int 0 representing success once the program closes the fd, and joins the threads, or 1 if unable to open the serial port.
  * Assumptions:  device is a valid char * pointer and the line contains
  *               characters other than white space, and points to an FD.
- *		 The int provided by arguments is a valid baud rate, although B9600 is set on any errors.
+ *		 		 The int provided by arguments is a valid baud rate, although B9600 is set on any errors.
  *
  * Bugs:         None known.
  * Notes:
@@ -465,12 +431,12 @@ int main(int argc, char *argv[]) {
 
     pthread_join(recv_thread, NULL);
 
-	pthread_mutex_destroy(&write_mutex);
 	pthread_mutex_destroy(&file_mutex);
 
 	close(serial_fd);
     fclose(file_ptr);
     safe_console_print("Program terminated.\n");
 	console_cleanup();
+	serial_utils_cleanup();
     return 0;
 }

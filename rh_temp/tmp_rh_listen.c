@@ -9,10 +9,10 @@
  *            - Receiver thread: parses and responds to incoming commands
  *
  *           Supported commands (per Rotronic HygroClip2 protocol):
- *	     Command Format { ID Adr RDD <Checksum || }> CR
- *	     Answer Format { ID Adr RDD <Checksum || }> CR
+ *		     Command Format { ID Adr RDD <Checksum || }> CR
+ *		     Answer Format { ID Adr RDD <Checksum || }> CR
  *           Command: {F00RDD}
- * 	     Response: {F00rdd 001; 4.45;%RH;000;=;20.07;°C;000;=;nc;---.-;°C;000; ;001;V1.7-1;0060568338;HC2-S3 ;000;4
+ * 	    	 Response: {F00rdd 001; 4.45;%RH;000;=;20.07;°C;000;=;nc;---.-;°C;000; ;001;V1.7-1;0060568338;HC2-S3 ;000;4
  *           All replies (ACKs, responses, errors) are sent out on the serial port.
  *
  *           Data output includes: relative humidity (%), temperature (°C), status, and checksum
@@ -72,9 +72,7 @@ volatile sig_atomic_t kill_flag = 0;
 int serial_fd = -1;
 
 /* Synchronization primitives */
-static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER; // protects serial writes
 static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
-
 
 /*
  * Name:         handle_signal
@@ -93,37 +91,6 @@ void handle_signal(int sig) {
     (void)sig;
     terminate = 1;
     kill_flag = 1;
-}
-
-
-/*
- * Name:         safe_write_response
- * Purpose:      Serializes writes to the serial device to ensure, that all writes do not
- *               interleave, and create errors.
- * Arguments:    fmt -  the string representing the format you want the the function to print.
- *               ... - a list of potential unfixed arguments, that can be supplied to the format string.
- *               i.e. if you supplied safe_write_response("%s%c%d", string_var, char_var, decimal_var); it would
- *               use vdprintf to print those variables in the format specified by fmt.
- *
- * Output:       Error message, if the file is not open.
- * Modifies:     None.
- * Returns:      None.
- * Assumptions:  The file is open, and the line read is less than MAX_LINE_LENGTH
- *
- * Bugs:         None known.
- * Notes:        va_start is a C macro that initializes a variable argument list, which
-                 is a list of arguments passed to a function that can have a variable
-   		 number of parameters. It must be called before any other variable argument
-   		 macros, such as va_arg, and requires two arguments: the va_list variable and
-   		 the name of the last fixed argument in the function's parameter list in our case fmt.
- */
-static void safe_write_response(const char *fmt, ...) {
-    va_list var_arg;  // Declare a va_list variable
-    pthread_mutex_lock(&write_mutex);
-    va_start(var_arg, fmt); // Initialize var_arg with the last fixed argument 'fmt'
-    vdprintf(serial_fd, fmt, var_arg); // prints to serial device the variables provided, in the fmt provided.
-    va_end(var_arg);
-    pthread_mutex_unlock(&write_mutex);
 }
 
 
@@ -176,10 +143,10 @@ void handle_command(CommandType cmd) {
         case CMD_RDD:
             resp_copy = get_next_line_copy(file_ptr, &file_mutex);
             if (resp_copy) {
-                safe_write_response("%s\r\n", resp_copy);
+                safe_serial_write(serial_fd, "%s\r\n", resp_copy);
                 free(resp_copy);
             } else {
-                safe_write_response("ERR: Empty file\r\n");
+                safe_console_error("ERR: Empty file\r\n");
             }
             break;
         default:
@@ -296,7 +263,7 @@ int main(int argc, char *argv[]) {
     pthread_t recv_thread;
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
-        perror("Failed to create receiver thread");
+        safe_console_error("Failed to create receiver thread: %s\n", strerror(errno));
         terminate = 1;          // <- symmetrical, but not required
         close(serial_fd);
         fclose(file_ptr);
@@ -319,9 +286,13 @@ int main(int argc, char *argv[]) {
     }
 
     pthread_join(recv_thread, NULL);
+
+	pthread_mutex_destroy(&file_mutex);
+
     close(serial_fd);
     fclose(file_ptr);
 	safe_console_print("Program terminated.\n");
 	console_cleanup();
+	serial_utils_cleanup();
     return 0;
 }

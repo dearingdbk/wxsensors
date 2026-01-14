@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdarg.h>
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
@@ -32,6 +33,58 @@
 #define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
 #define MAX_LINE_LENGTH 1024
 
+static pthread_mutex_t serial_write_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+
+/*
+ * Name:         safe_serial_write
+ * Purpose:      Serializes writes to the serial device to ensure that all writes do not
+ *               interleave and create errors.
+ * Arguments:    fmt -  the string representing the format you want the the function to print.
+ *               ... - a list of potential unfixed arguments, that can be supplied to the format string.
+ *               i.e. if you supplied safe_write_response("%s%c%d", string_var, char_var, decimal_var); it would
+ *               use vdprintf to print those variables in the format specified by fmt.
+ *
+ * Output:       Error message, if the file is not open.
+ * Modifies:     None.
+ * Returns:      None.
+ * Assumptions:  The file is open, and the line read is less than MAX_LINE_LENGTH
+ *
+ * Bugs:         None known.
+ * Notes:        va_start is a C macro that initializes a variable argument list, which
+ *               is a list of arguments passed to a function that can have a variable
+ * 		 		 number of parameters. It must be called before any other variable argument
+ * 		 		 macros, such as va_arg, and requires two arguments: the va_list variable and
+ *  		 	 the name of the last fixed argument in the function's parameter list in our case fmt.
+ */
+void safe_serial_write(int fd, const char *fmt, ...) {
+    va_list args;
+    pthread_mutex_lock(&serial_write_mutex);
+    va_start(args, fmt);
+    int result = vdprintf(fd, fmt, args);
+    va_end(args);
+    pthread_mutex_unlock(&serial_write_mutex);
+    if (result < 0) {
+        fprintf(stderr, "Serial write error: %s\n", strerror(errno));
+    }
+}
+
+/*
+ * Name:         serial_utils_cleanup
+ * Purpose:      Cleans up the serial_write_mutex, by callinf mutex_destroy.
+ * Arguments:    None.
+ *
+ * Output:       None.
+ * Modifies:     Destroys serial_write_mutex.
+ * Returns:      None.
+ * Assumptions:  serial_write_mutex exists.
+ *
+ * Bugs:         None known.
+ * Notes:
+ */
+void serial_utils_cleanup(void) {
+    pthread_mutex_destroy(&serial_write_mutex);
+}
 
 /*
  * Name:         get_baud_rate
@@ -76,13 +129,13 @@ speed_t get_baud_rate(const char *baud_rate) {
 /*
  * Name:         is_valid_tty
  * Purpose:      Checks if the given string matches the regular expression ^/dev/tty(S|USB)[0-9]+$
- *		 This regular expression can match /dev/ttyS0 a non-usb serial device or /dev/ttyUSB0
+ *		 		 This regular expression can match /dev/ttyS0 a non-usb serial device or /dev/ttyUSB0
  * Arguments:    str: the string representing the file descriptor of the serial port which should
- * 		 match the pattern ^/dev/tty(S|USB)[0-9]+$.
- * 		   The pattern to match: ^/dev/tty(S|USB)[0-9]+$
- * 		   ^ marks the start of the string, $ marks the end.
- *		   (S|USB) checks for ttyS or ttyUSB
- *                 [0-9]+ matches one or more digits.
+ * 		 		 match the pattern ^/dev/tty(S|USB)[0-9]+$.
+ * 		   		 The pattern to match: ^/dev/tty(S|USB|ACM)[0-9]+$
+ * 		   		 ^ marks the start of the string, $ marks the end.
+ *		   		 (S|USB|ACM) checks for ttyS or ttyUSB or ttyACM
+ *               [0-9]+ matches one or more digits.
 
  * Output:       Prints to stdout the appropriate error message if one is encountered.
  * Modifies:     None.

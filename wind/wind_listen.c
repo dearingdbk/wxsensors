@@ -71,7 +71,6 @@ volatile sig_atomic_t kill_flag = 0;
 int serial_fd = -1;
 
 /* Synchronization primitives */
-static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER; // protects serial writes
 static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  send_cond  = PTHREAD_COND_INITIALIZER;
@@ -123,37 +122,6 @@ uint8_t check_sum(const char *str_to_chk) {
         str_to_chk++;
     }
     return checksum;
-}
-
-
-/*
- * Name:         safe_write_response
- * Purpose:      Serializes writes to the serial device to ensure that all writes do not
- *               interleave and create errors.
- * Arguments:    fmt -  the string representing the format you want the the function to print.
- *               ... - a list of potential unfixed arguments, that can be supplied to the format string.
- *               i.e. if you supplied safe_write_response("%s%c%d", string_var, char_var, decimal_var); it would
- *               use vdprintf to print those variables in the format specified by fmt.
- *
- * Output:       Error message, if the file is not open.
- * Modifies:     None.
- * Returns:      None.
- * Assumptions:  The file is open, and the line read is less than MAX_LINE_LENGTH
- *
- * Bugs:         None known.
- * Notes:        va_start is a C macro that initializes a variable argument list, which
-                 is a list of arguments passed to a function that can have a variable
-   		 number of parameters. It must be called before any other variable argument
-   		 macros, such as va_arg, and requires two arguments: the va_list variable and
-   		 the name of the last fixed argument in the function's parameter list in our case fmt.
- */
-static void safe_write_response(const char *fmt, ...) {
-    va_list var_arg;  // Declare a va_list variable
-    pthread_mutex_lock(&write_mutex);
-    va_start(var_arg, fmt); // Initialize var_arg with the last fixed argument 'fmt'
-    vdprintf(serial_fd, fmt, var_arg); // prints to serial device the variables provided, in the fmt provided.
-    va_end(var_arg);
-    pthread_mutex_unlock(&write_mutex);
 }
 
 
@@ -224,7 +192,7 @@ void handle_command(CommandType cmd) {
 
         case CMD_SITE:
             // safe_write_response("%c\r\n", site_id);
-            safe_write_response("\x02%c\x03\r\n", "", wnd_sensor->n_val);
+            safe_serial_write(serial_fd, "\x02%c\x03\r\n", "", wnd_sensor->n_val);
             break;
 
         case CMD_POLL: {
@@ -232,7 +200,7 @@ void handle_command(CommandType cmd) {
             if (resp_copy) {
 				char final_msg[MAX_LINE_LENGTH];
 				snprintf(final_msg, sizeof(final_msg), "%c,%s,%c,00,", wnd_sensor->n_val, resp_copy, get_wind_units(wnd_sensor->u_val));
-                safe_write_response("\x02%s\x03%02X\r\n", final_msg, check_sum(final_msg));
+                safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", final_msg, check_sum(final_msg));
                 free(resp_copy);
             } else {
 				safe_console_error("Error: Empty file.\n");
@@ -241,7 +209,6 @@ void handle_command(CommandType cmd) {
 			}
         default:
             safe_console_print("CMD: Unknown command\n");
-			// printf("CMD: Unknown command\n");
             break;
     }
 
@@ -332,7 +299,7 @@ void* sender_thread(void* arg) {
                 char final_msg[MAX_LINE_LENGTH];
 				// Builds the msg string, from sensor struct values, and values read from provided file.
 				snprintf(final_msg, sizeof(final_msg), "%c,%s,%c,00,", wnd_sensor->n_val, line, get_wind_units(wnd_sensor->u_val));
-                safe_write_response("\x02%s\x03%02X\r\n", final_msg, check_sum(final_msg));
+                safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", final_msg, check_sum(final_msg));
 				// prints <STX ASCII 2>, the string of data read, <ETX ASCII 3>, Checksum of the line read
                 free(line); // caller of get_next_line_copy() must free resource.
 				line = NULL;
@@ -466,10 +433,16 @@ int main(int argc, char *argv[]) {
 
     pthread_join(recv_thread, NULL);
     pthread_join(send_thread, NULL);
+
+	pthread_mutex_destroy(&file_mutex);
+	pthread_mutex_destroy(&send_mutex);
+	pthread_cond_destroy(&send_cond);
+
     close(serial_fd);
     fclose(file_ptr);
 	free(wnd_sensor);
     safe_console_print("Program terminated.\n");
 	console_cleanup();
+	serial_utils_cleanup();
     return 0;
 }

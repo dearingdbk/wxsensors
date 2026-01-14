@@ -74,13 +74,12 @@ volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
 
 int serial_fd = -1;
-// char *site_config = "A0 B3 C1 E1 F1 G0000 H2 J1 K1 L1 M2 NA O1 P1 T1 U1 V1 X1 Z1";
 char site_id = 'A';
-uint8_t address = 0;
+//uint8_t address = 0;
 
 
 /* Synchronization primitives */
-static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER; // protects serial writes
+// static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER; // protects serial writes
 static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  send_cond  = PTHREAD_COND_INITIALIZER;
@@ -132,39 +131,6 @@ uint8_t check_sum(const char *str_to_chk) {
     }
     return checksum;
 }
-
-/*
- * Name:         safe_write_response
- * Purpose:      Serializes writes to the serial device to ensure, that all writes do not
- *               interleave, and create errors.
- * Arguments:    fmt -  the string representing the format you want the the function to print.
- *               ... - a list of potential unfixed arguments, that can be supplied to the format string.
- *               i.e. if you supplied safe_write_response("%s%c%d", string_var, char_var, decimal_var); it would
- *               use vdprintf to print those variables in the format specified by fmt.
- *
- * Output:       Error message, if the file is not open.
- * Modifies:     None.
- * Returns:      None.
- * Assumptions:  The file is open, and the line read is less than MAX_LINE_LENGTH
- *
- * Bugs:         None known.
- * Notes:        va_start is a C macro that initializes a variable argument list, which
-                 is a list of arguments passed to a function that can have a variable
-   		 number of parameters. It must be called before any other variable argument
-   		 macros, such as va_arg, and requires two arguments: the va_list variable and
-   		 the name of the last fixed argument in the function's parameter list in our case fmt.
- */
-static void safe_write_response(const char *fmt, ...) {
-    va_list var_arg;  // Declare a va_list variable
-    pthread_mutex_lock(&write_mutex);
-    va_start(var_arg, fmt); // Initialize var_arg with the last fixed argument 'fmt'
-    vdprintf(serial_fd, fmt, var_arg); // prints to serial device the variables provided, in the fmt provided.
-    va_end(var_arg);
-    pthread_mutex_unlock(&write_mutex);
-}
-
-
-
 
 // ---------------- Command handling ----------------
 
@@ -233,17 +199,18 @@ void handle_command(CommandType cmd) {
 
         case CMD_SITE:
             // safe_console_print("CMD: SITE -> Sending site info\n");
-            safe_write_response("%c\r\n", site_id);
+            safe_serial_write(serial_fd, "%c\r\n", site_id);
+			//safe_write_response("%c\r\n", site_id);
             break;
 
         case CMD_POLL:
             resp_copy = get_next_line_copy(file_ptr, &file_mutex);
             if (resp_copy) {
                 // prints <Start of Line ASCII 2>, the string of data read, <EOL ASCII 3>, Checksum of the line read
-                safe_write_response("%c%s%c%02X\r\n", 2, resp_copy, 3, check_sum(resp_copy));
+                safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", resp_copy, check_sum(resp_copy));
                 free(resp_copy);
             } else {
-                safe_write_response("ERR: Empty file\r\n");
+                safe_console_error("ERR: Empty file\r\n");
             }
             break;
         default:
@@ -305,7 +272,7 @@ void* receiver_thread(void* arg) {
 /*
  * Name:         sender_thread
  * Purpose:      On continuous == 1 and assuming terminate != 1 it will get the next line from a specified file, usinf
- *               get_next_line_copy() and send that line to the serial device using safe_write_response() function every 2 seconds.
+ *               get_next_line_copy() and send that line to the serial device using safe_serial_write() function every 2 seconds.
  * Arguments:    arg: thread arguments.
  *
  * Output:       Error messages if encountered, prints to serial device.
@@ -333,17 +300,18 @@ void* sender_thread(void* arg) {
         }
 
         while (!terminate && continuous) {
-             char *line = get_next_line_copy(file_ptr, &file_mutex);
-             if (line) {
-                 // prints <STX ASCII 2>, the string of data read, <ETX ASCII 3>, Checksum of the line read
-                 safe_write_response("%c%s%c%02X\r\n", 2, line, 3, check_sum(line));
-                 // safe_write_response("%s\r\n", line);
-                 free(line); // caller of get_next_line_copy() must free resource.
-             }
+            char *line = get_next_line_copy(file_ptr, &file_mutex);
+            if (line) {
+                // prints <STX ASCII 2>, the string of data read, <ETX ASCII 3>, Checksum of the line read
+                safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", line, check_sum(line));
+				//safe_write_response("%c%s%c%02X\r\n", 2, line, 3, check_sum(line));
+                // safe_write_response("%s\r\n", line);
+                free(line); // caller of get_next_line_copy() must free resource.
+            }
 
-             clock_gettime(CLOCK_REALTIME, &requested_time);
-             requested_time.tv_sec += 2;
-             pthread_cond_timedwait(&send_cond, &send_mutex, &requested_time);
+            clock_gettime(CLOCK_REALTIME, &requested_time);
+            requested_time.tv_sec += 2;
+            pthread_cond_timedwait(&send_cond, &send_mutex, &requested_time);
         }
 
         pthread_mutex_unlock(&send_mutex);
@@ -458,7 +426,6 @@ int main(int argc, char *argv[]) {
     pthread_join(recv_thread, NULL);
     pthread_join(send_thread, NULL);
 
-	pthread_mutex_destroy(&write_mutex);
 	pthread_mutex_destroy(&file_mutex);
 	pthread_mutex_destroy(&send_mutex);
 	pthread_cond_destroy(&send_cond);
@@ -468,5 +435,6 @@ int main(int argc, char *argv[]) {
 
     safe_console_print("Program terminated.\n");
 	console_cleanup();
+	serial_utils_cleanup();
     return 0;
 }
