@@ -150,10 +150,14 @@ wxsensors/
 ├── include/              # Shared header files
 │   ├── crc_utils.h
 │   ├── sensor_utils.h
+│   ├── file_utils.h
+│   ├── console_utils.h
 │   └── serial_utils.h
 ├── common/               # Shared source files
 │   ├── crc_utils.c
 │   ├── sensor_utils.c
+│   ├── file_utils.c
+│   ├── console_utils.c
 │   └── serial_utils.c
 ├── wind/                 # Gill WindObserver 75 emulator
 │   └── wind_listen.c
@@ -169,6 +173,8 @@ wxsensors/
 │   └── ice.c
 ├── flash/                # Lightning sensor emulator
 │   └── flash.c
+├── rain/                 # Rain tipping bucket sensor emulator
+│   └── rain.c
 ├── sensor_control/       # Graphical User Interface Program
 │   └── sensor_control.c
 ├── data_files/           # Sample sensor data files
