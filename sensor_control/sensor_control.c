@@ -45,7 +45,7 @@ typedef struct {
 
 // Global sensor definitions
 static SensorDef sensor_defs[] = {
-    {"wind",        "Gill WindObserver 75",     "./data_files/wind/wind_data.txt /dev/ttyUSB0 9600 RS485"},
+    {"wind",        "Gill WindObserver 75",     "./data_files/wind/wind_data.txt /dev/ttyUSB0 9600 RS422"},
     {"rh_temp",     "Rotronic HC2A-S3",         "./data_files/rh_temp/rh_temp_data.txt /dev/ttyUSB1 9600 RS485"},
     {"pres_weather","Campbell AtmosVue30",      "./data_files/pw_data.txt /dev/ttyUSB2 9600 RS485"},
     {"barometric",  "Barometric Sensor",        "./data_files/barometric/baro_data.txt /dev/ttyUSB3 9600 RS485"},

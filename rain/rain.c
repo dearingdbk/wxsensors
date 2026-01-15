@@ -56,7 +56,7 @@
  *           rain /path/to/rain_data.txt                          (uses defaults: /dev/ttyUSB0, 1200, RS232)
  *           rain /path/to/rain_data.txt /dev/ttyUSB1 1200 RS232
  *
- *           Serial port must match pattern: /dev/tty(S|USB)[0-9]+
+ *           Serial port must match pattern: /dev/tty(S|USB|ACM)[0-9]+
  *
  * Sensor:   Campbell Scientific CS700H Heated Rain Gauge
  *           - Manufacturer: HS Hyquest Solutions (Model TB-3)
@@ -103,8 +103,12 @@
 #include "file_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
-#define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
+#define BAUD_RATE   B1200	     // Adjust as needed, main has logic to take arguments for a new baud rate
 #define MAX_LINE_LENGTH 1024
+#define MAX_CMD_LENGTH 256
+#define BLOCK_WAIT 8300
+#define BUSY_LOOP_WAIT 5000
+#define SENSOR_REPORT_INTERVAL 2
 
 
 FILE *file_ptr = NULL; // Global File pointer
@@ -143,33 +147,6 @@ void handle_signal(int sig) {
     terminate = 1; // Sets the atmoic var terminate to true, prompting the R & T threads to join.
     kill_flag = 1; // Sets the atomic var kill_flag to true, prompting the main loop to end.
     pthread_cond_signal(&send_cond);
-}
-
-
-/*
- * Name:         check_sum
- * Purpose:      Takes a '\0' delimited string, and returns a checksum of the characters XOR.
- * Arguments:    str_to_chk the string that checksum will be calculated for
- *
- * Output:       None.
- * Modifies:     None.
- * Returns:      returns an unsigned 8 bit integer of the checksum of str_to_chk.
- * Assumptions:  Terminate is set to false.
- *
- * Bugs:         None known.
- * Notes:        To print in HEX utilize dprintf(serial_fd, "%c%s%c%02X\r\n",2, str_to_chk, check_sum(str_to_chk));
- */
-uint8_t check_sum(const char *str_to_chk) {
-
-    uint8_t checksum = 0;
-    if (str_to_chk == NULL) {
-        return 0;
-    }
-    while (*str_to_chk != '\0') {
-        checksum ^= (uint8_t)(*str_to_chk);
-        str_to_chk++;
-    }
-    return checksum;
 }
 
 
@@ -259,11 +236,7 @@ void handle_command(CommandType cmd) {
         case CMD_SET_DIST:
 			break;
 		case CMD_GET_DIST:
-            safe_serial_write(serial_fd, "%s,%hu,%hu,%hu,%hu\r\n", "DIST:",
-								fl_sensor->overhead,
-							    fl_sensor->vicinity,
-								fl_sensor->near_distant,
-								fl_sensor->far_distant);
+            safe_serial_write(serial_fd, "%s\r\n", "DIST:");
 			break;
 		case CMD_GET_SER:
             safe_serial_write(serial_fd, "%s\r\n", fl_sensor->serial_num);
@@ -272,7 +245,6 @@ void handle_command(CommandType cmd) {
 			if (sampling == 1) {
                 safe_serial_write(serial_fd, "%s\r\n", "COMMAND NOT ALLOWED");
 			} else {
-				reset_flash(&fl_sensor);
                 safe_serial_write(serial_fd, "%s\r\n", "OK");
 			}
             break;
@@ -301,52 +273,48 @@ void handle_command(CommandType cmd) {
  */
 void* receiver_thread(void* arg) {
     (void)arg;
-    char line[256];
+    char line[MAX_CMD_LENGTH];
     size_t len = 0;
 
     while (!terminate) {
-        char c;
+        unsigned char c;
         int n = read(serial_fd, &c, 1);
-        if (n > 0)
-		{
-	    	if (c == '\r' || c == '\n')
-			{
-        		if (len > 0)
-				{
-            		line[len] = '\0';
-		    		handle_command(parse_command(line));
-                	len = 0;
-            	}
-				else
-				{ // empty line ignore. Note: Not likely to happen, as we generate the input file.
-            	}
-        	}
-			else
-			{
-                if (len < sizeof(line)-1)
-				{
-                    line[len++] = c;
+        if (n > 0) {
+			// Detect SDI-12 break signal (0xFF 0x00 0x00)
+			if (c == 0xFF) {
+				unsigned char next_two[2];
+
+				if (read(serial_fd, &next_two, 2) == 2 && next_two[0] == 0x00 && next_two[1] == 0x00) {
+                	len = 0; // get ready for a new command
+                	usleep(BLOCK_WAIT); // Wait for marking
+                	continue;
                 }
-				else
-                {
-                    len = 0;
-                 }
+			}
+
+			if (len < sizeof(line) - 1) line[len++] = c; // add the char to the line.
+
+	    	if (c == '!') { // ! is the delimiter for all received commands.
+            	line[len] = '\0';
+		    	handle_command(parse_command(line));
+            	len = 0;
+            }
+			else if (len >= 2 && line[len-2] == '\r' && line[len-1] == '\n') {
+                // SDI-12 is single wire, so this is likely an echo of a sent command.
+				// Clear the buffer and don't parse it.
+                len = 0;
             }
         }
-        else
-        {
-            if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
-            {
-                perror("read");
+        else {
+            if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+            	perror("read");
         	}
-        	else
-        	{
+        	else {
             	// no data available n == 0, avoid busy loop
-               	usleep(10000);
+               	usleep(BUSY_LOOP_WAIT);
         	}
-        }
-        }
-    return NULL;
+     	}
+    }
+	return NULL;
 }
 
 /*
@@ -396,7 +364,7 @@ void* sender_thread(void* arg) {
              }
 
              clock_gettime(CLOCK_REALTIME, &requested_time);
-             requested_time.tv_sec += 2;
+             requested_time.tv_sec += SENSOR_REPORT_INTERVAL;
              pthread_cond_timedwait(&send_cond, &send_mutex, &requested_time);
         }
 
@@ -485,8 +453,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    init_flash(&fl_sensor); // add in a proper check once we get here.
-
     safe_console_print("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {
         char input[8];
@@ -520,7 +486,6 @@ int main(int argc, char *argv[]) {
 
     close(serial_fd);
     fclose(file_ptr);
-	free(fl_sensor);
     safe_console_print("Program terminated.\n");
 	console_cleanup();
 	serial_utils_cleanup();

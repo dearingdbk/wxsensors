@@ -14,9 +14,10 @@
 
 #include <termios.h>
 
-typedef enum {
+	typedef enum {
     SERIAL_RS422,  // or RS-232 fallback
-    SERIAL_RS485
+    SERIAL_RS485,
+	SERIAL_SDI12   // SDI-12 protocol, assuming USB adaptor.
 } SerialMode;
 
 // #define MAX_INPUT_STR 256
@@ -28,5 +29,6 @@ int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode);
 
 void safe_serial_write(int fd, const char *fmt, ...);
 void serial_utils_cleanup(void);
+void sdi12_wake_sensor(int fd);
 
 #endif

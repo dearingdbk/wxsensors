@@ -182,11 +182,6 @@ int is_valid_tty(const char *str) {
 // ---------------- Serial configuration ----------------
 
 
-/*typedef enum {
-    SERIAL_RS422,  // or RS-232 fallback
-    SERIAL_RS485
-} SerialMode;*/
-
 /*
  * Name:         get_mode
  * Purpose:      Checks if the given serial protocol is a standard value and returns its enum name.
@@ -205,11 +200,37 @@ SerialMode get_mode(const char *mode) {
         return SERIAL_RS422;
     } else if (strcmp(mode, "RS485") == 0) {
         return SERIAL_RS485;
+    } else if (strcmp(mode, "RS232") == 0) {
+		return SERIAL_RS422;
+    } else if (strcmp(mode, "SDI12") == 0) {
+		return SERIAL_SDI12;
     } else {
         return SERIAL_RS485;
     }
 }
 
+
+/*
+ * Name:         sdi12_wake_sensor
+ * Purpose:      sends a break signal to an SDI-12 sensor to wake it, before sending commands.
+ * Arguments:    fd the serial device file descriptor.
+ *
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      None.
+ * Assumptions:  None.
+ *
+ * Bugs:         None known.
+ * Notes:
+ */
+void sdi12_wake_sensor(int fd) {
+    // Send a break signal.
+    tcsendbreak(fd, 0);
+    // The SDI-12 standard requires at least 12ms of break
+    // followed by an 8.3ms "marking" (idle) period.
+    usleep(12000); // 12ms
+    usleep(8300);  // 8.3ms
+}
 
 
 /*
@@ -247,13 +268,28 @@ int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
     cfmakeraw(&tty);
 
     // Set baud rate
-    cfsetospeed(&tty, baud_rate);
-    cfsetispeed(&tty, baud_rate);
+	if (mode == SERIAL_SDI12) {
+        // SDI-12 is STRICTLY 1200 baud
+        cfsetospeed(&tty, B1200);
+        cfsetispeed(&tty, B1200);
 
-    // 8N1
-    tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
-    tty.c_cflag &= ~(PARENB | PARODD);
-    tty.c_cflag &= ~CSTOPB;
+        // SDI-12 is 7 bits, Even parity, 1 stop bit (7E1)
+        tty.c_cflag &= ~CSIZE;
+        tty.c_cflag |= CS7;      // 7 data bits
+        tty.c_cflag |= PARENB;   // Enable parity
+        tty.c_cflag &= ~PARODD;  // Even parity
+        tty.c_cflag &= ~CSTOPB;  // 1 stop bit
+    } else {
+        // Standard RS-485 / RS-422 logic (8N1)
+        cfsetospeed(&tty, baud_rate);
+        cfsetispeed(&tty, baud_rate);
+
+	    // 8N1
+        tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
+        tty.c_cflag &= ~(PARENB | PARODD);
+        tty.c_cflag &= ~CSTOPB;
+    }
+
     tty.c_cflag |= CLOCAL | CREAD; // ignore modem lines
 
     // No RTS/CTS hardware flow control
@@ -261,7 +297,20 @@ int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
 
 	// No software control
 	tty.c_iflag &= ~(IXON | IXOFF | IXANY); // Shut off software flow control
-	tty.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL);
+
+	// Start by clearing these for ALL modes to ensure raw input
+	tty.c_iflag &= ~(BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL);
+
+	if (mode == SERIAL_SDI12) {
+    	// For SDI-12, do NOT ignore breaks
+    	// the driver must respect the timing of the bus.
+    	tty.c_iflag &= ~IGNBRK;
+		tty.c_iflag |= BRKINT;   // Turn the break into an interrupt/event
+		tty.c_iflag |= PARMRK;   // Mark parity errors and breaks in the input stream
+	} else {
+    	// For RS-485/422, ignoring breaks is safer
+    	tty.c_iflag |= IGNBRK;
+	}
 
     // Non-blocking read with timeout
     tty.c_cc[VMIN]  = 0;
@@ -296,7 +345,15 @@ int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
 #else
     printf("RS-485 ioctl not supported — using RS-422 mode.\n");
 #endif
+	const char* mode_str;
+	if (mode == SERIAL_SDI12) mode_str = "SDI-12";
+	else if (mode == SERIAL_RS485) mode_str = "RS-485";
+	else mode_str = "RS-422/RS-232";
 
-    printf("Opened %s (%s, 8N1 @ baud)\n", portname, (mode == SERIAL_RS485) ? "RS-485" : "RS-422");
+	printf("Opened %s (%s, %s)\n",
+        				portname,
+        				mode_str,
+        				(mode == SERIAL_SDI12) ? "7E1 @ 1200 baud" : "8N1");
+    // printf("Opened %s (%s, 8N1 @ baud)\n", portname, (mode == SERIAL_RS485) ? "RS-485" : "RS-422");
     return fd;
 }

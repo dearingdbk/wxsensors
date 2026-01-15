@@ -59,6 +59,7 @@
 #include "serial_utils.h"
 #include "console_utils.h"
 #include "file_utils.h"
+#include "crc_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
@@ -79,7 +80,6 @@ char site_id = 'A';
 
 
 /* Synchronization primitives */
-// static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER; // protects serial writes
 static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  send_cond  = PTHREAD_COND_INITIALIZER;
@@ -105,32 +105,6 @@ void handle_signal(int sig) {
     pthread_cond_signal(&send_cond);
 }
 
-
-/*
- * Name:         check_sum
- * Purpose:      Takes a '\0' delimited string, and returns a checksum of the characters XOR.
- * Arguments:    str_to_chk the string that checksum will be calculated for
- *
- * Output:       None.
- * Modifies:     None.
- * Returns:      returns an unsigned 8 bit integer of the checksum of str_to_chk.
- * Assumptions:  Terminate is set to false.
- *
- * Bugs:         None known.
- * Notes:        To print in HEX utilize dprintf(serial_fd, "%c%s%c%02X\r\n",2, str_to_chk, check_sum(str_to_chk));
- */
-uint8_t check_sum(const char *str_to_chk) {
-
-    uint8_t checksum = 0;
-    if (str_to_chk == NULL) {
-        return 0;
-    }
-    while (*str_to_chk != '\0') {
-        checksum ^= (uint8_t)(*str_to_chk);
-        str_to_chk++;
-    }
-    return checksum;
-}
 
 // ---------------- Command handling ----------------
 
@@ -207,7 +181,7 @@ void handle_command(CommandType cmd) {
             resp_copy = get_next_line_copy(file_ptr, &file_mutex);
             if (resp_copy) {
                 // prints <Start of Line ASCII 2>, the string of data read, <EOL ASCII 3>, Checksum of the line read
-                safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", resp_copy, check_sum(resp_copy));
+                safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", resp_copy, checksumXOR(resp_copy));
                 free(resp_copy);
             } else {
                 safe_console_error("ERR: Empty file\r\n");
@@ -303,9 +277,7 @@ void* sender_thread(void* arg) {
             char *line = get_next_line_copy(file_ptr, &file_mutex);
             if (line) {
                 // prints <STX ASCII 2>, the string of data read, <ETX ASCII 3>, Checksum of the line read
-                safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", line, check_sum(line));
-				//safe_write_response("%c%s%c%02X\r\n", 2, line, 3, check_sum(line));
-                // safe_write_response("%s\r\n", line);
+                safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", line, checksumXOR(line));
                 free(line); // caller of get_next_line_copy() must free resource.
             }
 

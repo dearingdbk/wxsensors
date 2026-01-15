@@ -17,6 +17,7 @@
 #include <regex.h>
 #include "crc_utils.h"
 
+#define MAX_PACKET_LENGTH 256
 
 /*
  * Name:         crc16
@@ -77,4 +78,57 @@ unsigned int crc_ccitt(char *line_of_data) {
         crc = crc_new;
     }
     return (crc);
+}
+
+
+/*
+ * Name:         checksum_m256
+ * Purpose:      Takes a  string, and returns a checksum of the characters XOR.
+ * Arguments:    str_to_chk the string that checksum will be calculated for, it is set to uint_8 to eliminate any sign errors.
+ *				 length the length of the string to check.
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      returns an unsigned 8 bit integer of the checksum of str_to_chk.
+ * Assumptions:  Terminate is set to false.
+ *
+ * Bugs:         None known.
+ * Notes:        To print in HEX utilize dprintf(serial_fd, "%s%02X\r\n", str_to_chk, check_sum(str_to_chk));
+ */
+uint8_t checksum_m256(const uint8_t *str_to_chk, size_t length) {
+
+    uint8_t checksum = 0;
+    if (str_to_chk == NULL || length == 0 || length > MAX_PACKET_LENGTH) {
+        return -1;
+    }
+
+	for (size_t i = 0; i < length; i++) {
+		checksum += str_to_chk[i];
+	}
+    return (uint8_t)(checksum & 0xFF);
+}
+
+/*
+ * Name:         checksumXOR
+ * Purpose:      Takes a '\0' delimited string, and returns a checksum of the characters XOR.
+ * Arguments:    str_to_chk the string that checksum will be calculated for
+ *
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      returns an unsigned 8 bit integer of the checksum of str_to_chk.
+ * Assumptions:  Terminate is set to false.
+ *
+ * Bugs:         None known.
+ * Notes:        To print in HEX utilize dprintf(serial_fd, "%c%s%c%02X\r\n",2, str_to_chk, check_sum(str_to_chk));
+ */
+uint8_t checksumXOR(const char *str_to_chk) {
+
+    uint8_t checksum = 0;
+    if (str_to_chk == NULL) {
+        return 0;
+    }
+    while (*str_to_chk != '\0') {
+        checksum ^= (uint8_t)(*str_to_chk);
+        str_to_chk++;
+    }
+    return checksum;
 }

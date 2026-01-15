@@ -87,11 +87,12 @@
 #include "sensor_utils.h"
 #include "console_utils.h"
 #include "file_utils.h"
+#include "crc_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B2400	     // Adjust as needed, main has logic to take arguments for a new baud rate
 #define MAX_LINE_LENGTH 1024
-#define MAX_PACKET_LENGTH 25
+// #define MAX_PACKET_LENGTH 25
 
 FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
@@ -127,32 +128,6 @@ void handle_signal(int sig) {
     kill_flag = 1; // Sets the atomic var kill_flag to true, prompting the main loop to end.
 }
 
-
-/*
- * Name:         generate_check_sum
- * Purpose:      Takes a  string, and returns a checksum of the characters XOR.
- * Arguments:    str_to_chk the string that checksum will be calculated for, it is set to uint_8 to eliminate any sign errors.
- *				 length the length of the string to check.
- * Output:       None.
- * Modifies:     None.
- * Returns:      returns an unsigned 8 bit integer of the checksum of str_to_chk.
- * Assumptions:  Terminate is set to false.
- *
- * Bugs:         None known.
- * Notes:        To print in HEX utilize dprintf(serial_fd, "%s%02X\r\n", str_to_chk, check_sum(str_to_chk));
- */
-uint8_t generate_check_sum(const uint8_t *str_to_chk, size_t length) {
-
-    uint8_t checksum = 0;
-    if (str_to_chk == NULL || length == 0 || length > MAX_PACKET_LENGTH) {
-        return -1;
-    }
-
-	for (size_t i = 0; i < length; i++) {
-		checksum += str_to_chk[i];
-	}
-    return (uint8_t)(checksum & 0xFF);
-}
 
 /*
  * Name:         prepend_to_buffer
@@ -234,7 +209,7 @@ void handle_command(CommandType cmd) {
             resp_copy = get_next_line_copy(file_ptr, &file_mutex);
             if (resp_copy) {
 				char *msg = prepend_to_buffer(resp_copy);
-				uint8_t crc = generate_check_sum((const uint8_t *)msg, strlen(msg));
+				uint8_t crc = checksum_m256((const uint8_t *)msg, strlen(msg));
 		    	safe_serial_write(serial_fd, "%s%02X\x03\r\n", msg, crc);
 				free(msg);
 				msg = NULL;
@@ -247,7 +222,7 @@ void handle_command(CommandType cmd) {
 			}
         case CMD_Z3: {
 			char *msg = prepend_to_buffer("ZDOK51");
-			uint8_t crc = generate_check_sum((const uint8_t *)msg, strlen(msg));
+			uint8_t crc = checksum_m256((const uint8_t *)msg, strlen(msg));
 		    safe_serial_write(serial_fd, "%s%02X\x03\r\n", msg, crc); // Hardcoded response to Z3.
 			free(msg);
 			msg = NULL;
@@ -255,7 +230,7 @@ void handle_command(CommandType cmd) {
 			}
         case CMD_Z4: {
 			char* msg = prepend_to_buffer("ZP E3");
-			uint8_t crc = generate_check_sum((const uint8_t *)msg, strlen(msg));
+			uint8_t crc = checksum_m256((const uint8_t *)msg, strlen(msg));
 		    safe_serial_write(serial_fd, "%s%02X\x03\r\n", msg, crc); // Hardcoded response to Z4.
 			free(msg);
 			msg = NULL;
