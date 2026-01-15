@@ -47,10 +47,15 @@ TO BE POPULATED WITH COMMAND SETS PER SENSOR
 | :--- | :--- |
 |`{F00RDD}`| `<{> <ID> <Address> <RDD> <}>` |
 
-</details>
 
 ### {F00RDD} Response
 `{F00rdd 001;4.45;%RH;000;=;20.07;°C;000;=;nc;---.-;°C;000; ;001;V1.7;0060568338;HC2-S3;000}`
+
+</details>
+
+<details>
+
+<summary><h3> Sensor BTD-300 </h3></summary>
 
 ### Sensor [BTD-300](https://www.biral.com/wp-content/uploads/2023/04/106543.04F.pdf)
 | Command | Description |
@@ -63,6 +68,8 @@ TO BE POPULATED WITH COMMAND SETS PER SENSOR
 | `DISTDEF?` | Reset the flash distance limits to FAA Defaults 5,10,20,30 | 
 | `DISTx,yyyy` | Set Distance Limits x == 0-OH, 1-V, 2-ND, 3-FD. yyyy == decametres | 
 | `SN?` | Request sensor serial number | 
+
+</details>
 
 ## Output Format
 
