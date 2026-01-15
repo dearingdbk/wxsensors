@@ -39,13 +39,13 @@ All sensor emulators support a number of different command sets:
 TO BE POPULATED WITH COMMAND SETS PER SENSOR
 ```
 <details>
-	<summary>
+
+<summary> ### Sensor [HC2A-S3](https://s.campbellsci.com/documents/us/manuals/hc2s3.pdf) </summary>
+
 ### Sensor [HC2A-S3](https://s.campbellsci.com/documents/us/manuals/hc2s3.pdf)
 | Command | Description |
 | :--- | :--- |
 |`{F00RDD}`| `<{> <ID> <Address> <RDD> <}>` |
-
-</summary>
 
 </details>
 
