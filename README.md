@@ -40,7 +40,7 @@ TO BE POPULATED WITH COMMAND SETS PER SENSOR
 ```
 <details>
 
-<summary> ### Sensor [HC2A-S3](https://s.campbellsci.com/documents/us/manuals/hc2s3.pdf) </summary>
+<summary><h3> Sensor HC2A-S3 </h3></summary>
 
 ### Sensor [HC2A-S3](https://s.campbellsci.com/documents/us/manuals/hc2s3.pdf)
 | Command | Description |
