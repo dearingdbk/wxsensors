@@ -30,6 +30,8 @@ Each sensor emulator follows a common architecture:
 | SkyVUE8 | Campbell Scientific | Cloud Height | Cloud base height and sky condition sensor emulator |
 | BTD-300 | Biral | Lightning | Lightning detection sensor emulator |
 | 0872F1  | Goodrich | Ice Detector | Ultrasonic axially vibrating tube ice accumulation detector | 
+| CS700H  | Campbell Scientific | Rain | Tipping Bucket Rain Gauge | 
+
 ## Supported Commands
 
 All sensor emulators support a number of different command sets:
