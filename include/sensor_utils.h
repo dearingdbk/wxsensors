@@ -1,3 +1,4 @@
+
 /*
  * File:     sensor_utils.h
  * Author:   Bruce Dearing
@@ -12,32 +13,11 @@
 #ifndef SENSOR_UTILS_H
 #define SENSOR_UTILS_H
 
-#define MAX_INPUT_STR 256
-extern char units_of_measure[25][50];
-extern double coefficients[57];
-extern int current_u_of_m;
+#include <stdbool.h>
 
-typedef struct {
-    char unit_type[MAX_INPUT_STR];
-    char serial_number[MAX_INPUT_STR];
-    char style[MAX_INPUT_STR];
-    char min_pressure[MAX_INPUT_STR];
-    char max_pressure[MAX_INPUT_STR];
-    char manufacture_date[MAX_INPUT_STR];
-    char software_version[MAX_INPUT_STR];
-    int trans_interval;
-    char units_sent[MAX_INPUT_STR];
-    int measurement_speed;
-    int filter_factor;
-    char filter_step[MAX_INPUT_STR];
-    char user_message[MAX_INPUT_STR];
-    char units[MAX_INPUT_STR];
-    char pin_set[MAX_INPUT_STR];
-    char user_zero[MAX_INPUT_STR];
-    char user_fs[MAX_INPUT_STR];
-    char sensor_sn[MAX_INPUT_STR];
-    char internal_chksum[MAX_INPUT_STR];
-} bp_sensor;
+#define MAX_INPUT_STR 256
+
+/// WIND SENSOR ///
 
 typedef struct {
 	int a_val;
@@ -62,6 +42,13 @@ typedef struct {
 	int z_val;
 } wind_sensor;
 
+int init_wind(wind_sensor **ptr);
+char get_wind_units(int chk_val);
+
+/// END WIND SENSOR ///
+
+/// FLASH SENSOR ///
+
 typedef struct {
 	uint16_t overhead;
 	uint16_t vicinity;
@@ -71,20 +58,13 @@ typedef struct {
 } flash_sensor;
 
 
-void init_units();
-void init_coefficients();
-int init_sensor(bp_sensor **ptr);
-int update_message(bp_sensor **ptr, char *msg);
-int update_units(bp_sensor **ptr, uint8_t unit_id);
-
-int init_wind(wind_sensor **ptr);
-char get_wind_units(int chk_val);
-
-// BTD-300 Flash Sensor specific functions.
 time_t parse_btd_datetime(const char *date_str, const char *time_str);
 int format_btd_datetime(time_t t, char *date_str, char *time_str);
 int update_btd_timestamps(const char *input, char *output, size_t output_size);
 int init_flash(flash_sensor **ptr);
 int reset_flash(flash_sensor **ptr);
 int set_dist(flash_sensor **ptr, const char *buf);
+
+/// END FLASH SENSOR ///
+
 #endif

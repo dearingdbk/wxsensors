@@ -1,40 +1,98 @@
 /*
  * File:     barometric.c
  * Author:   Bruce Dearing
- * Date:     26/11/2025
+ * Date:     16/01/2026
  * Version:  1.0
- * Purpose:  Program to emulate a barometric presure sensor, using two threads
- *           one to listen, and one to respond over RS-485 / RS-422
- *           Two-thread serial handler:
- *            - Receiver thread parses and responds to commands
- *            - Sender thread periodically transmits data when active
- *           Program emulates a weather sensor - Druck DSP8100
- *           Commands supported:
- *           R - Requests current pressure reading.
- *           G - Request new pressure reading.
- *           Z - Read raw data.
- *           I - identify and setup information.
- *           A - Set automatic transmission interval, also used to set if units are output as text.
- *	 	     N - Set device address.
- *           Q - Pressure measurement speed.
- *           U - Pressure Units.
- *           C - Digital output calibration.
- *           H - Set full-scale. - Disabled for sensor emulation.
- *           M - User message.
- *           O - Communication Settings
- *           P - Change PIN.
- *           S - Set offset. - Disabled for sensor emulation.
- *           <CR> <CRLF> - Command Terminators.
- *           <A|N|Q|U|C|H|M|O|P|S|E|L|T|V|W>,? Query the value of those fields.
- *           *<A-Z> provides the reading and the units of measurement.
- *           All replies (ACKs, responses, errors) are sent out on the serial port.
- *           All incoming commands follow this format:
- *           Direct Mode: <SPACE><Command>,<P1>,<P2>,...,<Pn><CR>
- *           Addressed Mode: <SPACE><Address>:<Command>,<P1>,<P2>,...,<Pn><CR>
- *	     use case ' barometric <file_path> <serial_port_location> <baud_rate> <RS422|RS485> The serial port currently must match /dev/tty(S|USB)[0-9]+
- * 	     use case ' barometric <file_path> // The serial port, baud rate, and mode will be set to  defaults /dev/ttyUSB0, and B9600
- * Mods:
+ * Purpose:  Emulates a Druck DPS8100 Barometric Pressure Sensor over RS-485/RS-422/USB.
+ *           This program sets up a serial connection with two threads:
+ *            - Receiver thread: parses and responds to incoming commands
+ *            - Sender thread: periodically transmits pressure data when in auto-send mode
  *
+ *           Supported commands (per Druck DPS8000 series protocol):
+ *             Measurement Commands:
+ *               R        - Get current pressure reading
+ *               *R       - Get pressure reading with units
+ *
+ *             Information Commands:
+ *               I        - Get transducer identity and setup information
+ *               *I       - Get formatted identity information
+ *               0:I      - Global identity request (network mode, returns serial number)
+ *
+ *             General Setup Commands:
+ *               A,<interval>              - Set auto-send interval (0.01-9999 sec, 0=off)
+ *               A,<format>,<interval>     - Set output format and interval
+ *               A,?                       - Query auto-send settings
+ *               N,<address>               - Set device address (0-98, 0=direct mode)
+ *               N,?                       - Query device address
+ *               F,<filter>                - Set filter number (0-5)
+ *               F,<filter>,<prescaler>    - Set filter and measurement speed
+ *               F,?                       - Query filter settings
+ *               U,<unit>                  - Set pressure units (0-24)
+ *               U,?                       - Query pressure units
+ *               B,<wait>                  - Set global wait interval for network mode
+ *               B,?                       - Query wait interval
+ *               X,?                       - Status check
+ *
+ *             PIN-Protected Commands:
+ *               C,<PIN>,1,<P1>            - First calibration point
+ *               C,<PIN>,2,<P2>            - Second calibration point
+ *               C,?                       - Query calibration settings
+ *               H,<PIN>,<pressure>        - Change slope/span
+ *               H,?                       - Query slope
+ *               M,<PIN>,<message>         - Set user message (16 chars max)
+ *               M,?                       - Query user message
+ *               O,<PIN>,<baud>,<parity>,<databits>,<stopbits>,<termchars> - Set comm settings
+ *               O,?                       - Query communication settings
+ *               P,<old_PIN>,<new_PIN>     - Change PIN
+ *               P,?                       - Query if PIN is set
+ *               S,<PIN>,<pressure>        - Set offset
+ *               S,<PIN>,X                 - Clear offset
+ *               S,?                       - Query offset
+ *               W,<PIN>                   - Write settings to non-volatile memory
+ *
+ *           Output format:
+ *             Standard ASCII text: <Pressure value><CR> or <Pressure value><Units><CR>
+ *             Communication: 9600 baud (default), 8 data bits, 1 stop bit, no parity
+ *             Line termination: <CR> or <CR><LF>
+ *
+ *           Network mode:
+ *             Supports addressed mode with up to 98 devices on RS-485 bus
+ *             Address format: <address>:<command>
+ *             Global commands: 0:R, 0:I, 0:B (all devices respond with staggered timing)
+ *
+ *           Data includes: barometric pressure (mbar default), status
+ *
+ * Usage:    barometric <file_path> [serial_port] [baud_rate] [RS422|RS485]
+ *           barometric <file_path> // Defaults: /dev/ttyUSB0, 9600 baud, RS485
+ *
+ * Sensor:   Druck DPS8100 Barometric Pressure Sensor
+ *           - TERPS (Trench Etched Resonant Pressure Sensor) technology
+ *           - Digital pressure output with microprocessor
+ *           - Pressure range: 600-1100 mbar (typical barometric range)
+ *           - Accuracy: ±0.08 mbar (±0.008% FS typical)
+ *           - Resolution: 0.001 mbar
+ *           - Long-term stability: ±0.02 mbar/year
+ *           - Operating temperature: -40°C to +85°C
+ *           - Temperature compensation: Internal (automatic)
+ *           - Output: RS-232, RS-485, or USB
+ *           - Default baud rate: 9600
+ *           - Default protocol: RS-485 half-duplex
+ *           - Power: 5-32 VDC, 16 mA nominal (RS-485/RS-232), 20 mA (USB)
+ *           - Update rate: Configurable via filter settings (10ms to 50s)
+ *           - Available pressure units: 25 different units (mbar, Pa, kPa, psi, inHg, etc.)
+ *           - Non-volatile memory: Stores configuration, calibration, user message
+ *
+ * Note:     DPS models have integrated microprocessor and provide digital pressure output only.
+ *           RPS models provide raw frequency + diode voltage requiring external calculation.
+ *           Temperature is used internally for compensation but not output by DPS models.
+ *
+ * Aeronautical Parameters (for barometric sensors):
+ *           - QFE: Field elevation pressure
+ *           - QNH: Nautical height (sea level pressure)
+ *           - QFF: Local station pressure reduced to mean sea level
+ *           - MSL: Mean sea level pressure
+ *
+ * Mods:
  *
  */
 
@@ -55,15 +113,18 @@
 #include <stdatomic.h>
 #include <stdarg.h>
 #include <time.h>
-#include "sensor_utils.h"
+#include <ctype.h>
+#include <regex.h>
+#include "barometric_utils.h"
 #include "serial_utils.h"
 #include "console_utils.h"
 #include "file_utils.h"
+#include "crc_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
 #define MAX_LINE_LENGTH 1024
-
+#define MAX_CMD_LENGTH 256
 
 FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
@@ -73,14 +134,14 @@ int continuous = 0;
 volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
 
+// Global variables
 int serial_fd = -1;
-char site_id = 'A';
-uint8_t address = 0;
+uint8_t current_address = 0;
 int current_u_of_m = 6; // Global variable for the current units of measurement for the sensor, 6 (hPa) is the default.
 
 
 /* Synchronization primitives */
-static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
+static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  send_cond  = PTHREAD_COND_INITIALIZER;
 
@@ -89,6 +150,7 @@ bp_sensor *sensor_one; // Global pointer to struct for Barometric sensor 1.
 bp_sensor *sensor_two; // Global pointer to struct for Barometric sensor 2.
 bp_sensor *sensor_three; // Global pointer to struct for Barometric sensor 3.
 
+ParsedCommand p_cmd;
 
 /*
  * Name:         handle_signal
@@ -111,65 +173,131 @@ void handle_signal(int sig) {
 }
 
 
-/*
- * Name:         check_sum
- * Purpose:      Takes a '\0' delimited string, and returns a checksum of the characters XOR.
- * Arguments:    str_to_chk the string that checksum will be calculated for
- *
- * Output:       None.
- * Modifies:     None.
- * Returns:      returns an unsigned 8 bit integer of the checksum of str_to_chk.
- * Assumptions:  Terminate is set to false.
- *
- * Bugs:         None known.
- * Notes:        To print in HEX utilize dprintf(serial_fd, "%c%s%c%02X\r\n",2, str_to_chk, check_sum(str_to_chk));
- */
-uint8_t check_sum(const char *str_to_chk) {
-
-    uint8_t checksum = 0;
-    if (str_to_chk == NULL) {
-        return 0;
-    }
-    while (*str_to_chk != '\0') {
-        checksum ^= (uint8_t)(*str_to_chk);
-        str_to_chk++;
-    }
-    return checksum;
-}
-
 
 // ---------------- Command handling ----------------
-
-typedef enum {
-    CMD_UNKNOWN,
-    CMD_START, // ! received from the terminal
-    CMD_STOP,  // ? received from the terminal
-    CMD_SITE,  // & recieved from the terminal
-    CMD_POLL,  // <A-Z> received from the terminal
-    CMD_CONFIG // *<A-Z> received from the terminal
-} CommandType;
-
+	// see barometric_utils.h for CommandType enum.
 
 /*
  * Name:         parse_command
  * Purpose:      Translates a received string to command enum.
  * Arguments:    buf: the string to translate to a command enum.
+ *				 p_cmd: a global ParsedCommand struct that can hold values to pass to handle_command().
  *
  * Output:       None.
- * Modifies:     None.
+ * Modifies:     Sets all values of p_cmd to zero on call.
  * Returns:      returns an enum representing the correct command, or Unknown Command as the default.
  * Assumptions:  The string recieved is a string and should be able to translate to one of the commands.
  *
  * Bugs:         None known.
  * Notes:
  */
-CommandType parse_command(const char *buf) {
-    if (buf[0] == '!' && buf[1] == '\0')					return CMD_START;
-    if (buf[0] == '?' && buf[1] == '\0')					return CMD_STOP;
-    if (buf[0] == '&' && buf[1] == '\0')					return CMD_SITE;
-    if (buf[0] == '*' && buf[1] >= 'A' && buf[1] <= 'Z' && buf[2] =='\0') 	return CMD_CONFIG;
-    if (buf && buf[0] >= 'A' && buf[0] <= 'Z' && buf[1] == '\0') 		return CMD_POLL;
-    return CMD_UNKNOWN;
+CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
+	memset(p_cmd, 0, sizeof(ParsedCommand));
+	const char *ptr = buf;
+    // Skip leading whitespace
+    while (*ptr == ' ') ptr++;
+    // Check for formatter wildcard (*)
+    if (*ptr == '*') {
+        p_cmd->is_wildcard = true;
+        p_cmd->is_formatted = true;
+        ptr++;
+    }
+
+	    // Check for address (digits followed by colon)
+    if (isdigit(*ptr)) {
+        char addr_str[4] = {0}; // fill our address string with 0's.
+        int i = 0;
+        while (isdigit(*ptr) && i < 3) {
+            addr_str[i++] = *ptr++;
+        }
+        if (*ptr == ':') {
+            // This is an address
+            p_cmd->is_addressed = true;
+            p_cmd->address = atoi(addr_str); // convert that address string to an int and store in p_cmd struct.
+            ptr++; // skip ':'
+        } else {
+            // Not an address - invalid format
+            return CMD_UNKNOWN;
+        }
+    }
+
+    // Get command character
+    if (!isalpha(*ptr)) {
+        return CMD_UNKNOWN; // return unknown, if we get a non-aplha char. !A-Z
+    }
+
+	char command_char = toupper(*ptr); // Ensure the command char is in uppercase.
+    ptr++;
+
+	// The rest of the string (if any) will be the payload, i.e. A,1,2,4, or A? where the payload would be ?
+    const char *payload = ptr;
+
+    // Now parse based on command
+    if (*payload == ',') {
+        payload++; // skip comma
+        switch (command_char) {
+            case 'R':
+                // Check for R1, R2, etc.
+                if (isdigit(*payload)) {
+                    int variant = *payload - '0';
+                    if (p_cmd->is_formatted) {
+                        if (variant == 1) return CMD_R1_UNITS;
+                        if (variant == 2) return CMD_R2_UNITS;
+                    } else {
+                        if (variant == 1) return CMD_R1;
+                        if (variant == 2) return CMD_R2;
+                        if (variant == 3) return CMD_R3;
+                        if (variant == 4) return CMD_R4;
+                        if (variant == 5) return CMD_R5;
+                    }
+                } else if (*payload == '?') {
+                    return CMD_UNKNOWN;
+                }
+                return CMD_UNKNOWN;
+
+            case 'A':
+                if (*payload == '?') {
+                    return CMD_A_QUERY;
+                } else {
+                    // Parse interval and optional format
+                    if (strchr(payload, ',')) {
+                        sscanf(payload, "%hhu,%f",
+                               &p_cmd->params.auto_send.format,
+                               &p_cmd->params.auto_send.interval);
+                    } else {
+                        p_cmd->params.auto_send.format = 1;  // default
+                        sscanf(payload, "%f", &p_cmd->params.auto_send.interval);
+                    }
+                    return CMD_A_SET;
+                }
+                break;
+            case 'N':
+                if (*payload == '?') {
+                    return CMD_N_QUERY;
+                } else {
+                    p_cmd->params.set_address.address = atoi(payload);
+                    return CMD_N_SET;
+                }
+                break;
+            // ... more command parsing
+            default:
+                return CMD_UNKNOWN;
+        }
+    } else {
+        // No payload - simple commands
+        switch (command_char) {
+            case 'R':
+                return p_cmd->is_formatted ? CMD_R_UNITS : CMD_R;
+            case 'I':
+                return p_cmd->is_formatted ? CMD_I_FORMATTED : CMD_I;
+            case 'X':
+                return CMD_X_QUERY;
+            default:
+                return CMD_UNKNOWN;
+        }
+    }
+
+	return CMD_UNKNOWN;
 }
 
 
@@ -189,30 +317,37 @@ CommandType parse_command(const char *buf) {
 void handle_command(CommandType cmd) {
     char *resp_copy = NULL;
     switch (cmd) {
-        case CMD_START:
+        case CMD_A_SET:
 		    pthread_mutex_lock(&send_mutex);
             continuous = 1; // enable continuous sending
             pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
             pthread_mutex_unlock(&send_mutex);
             break;
 
-        case CMD_STOP:
+        case CMD_A_QUERY:
             pthread_mutex_lock(&send_mutex);
 		    continuous = 0; // disables continuous sending.
             pthread_cond_signal(&send_cond);   // Wake sender_thread to exit loop
             pthread_mutex_unlock(&send_mutex);
             break;
 
-        case CMD_SITE:
-            safe_serial_write(serial_fd, "%c\r\n", site_id);
+        case CMD_R:
+            safe_serial_write(serial_fd, "%c\r\n", 'A');
 			//safe_write_response("%c\r\n", site_id);
+
+			    //float pressure, temperature;
+                //sscanf(line, "%f,%f", &pressure, &temperature);
+                //sensor->current_pressure = pressure;
+                //sensor->current_temperature = temperature;*/
+                //safe_serial_write(serial_fd, "%.2f\r\n", pressure);
+                //free(line);
             break;
 
-        case CMD_POLL:
+        case CMD_I:
             resp_copy = get_next_line_copy(file_ptr, &file_mutex);
             if (resp_copy) {
                 // prints <Start of Line ASCII 2>, the string of data read, <EOL ASCII 3>, Checksum of the line read
-                safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", resp_copy, check_sum(resp_copy));
+                safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", resp_copy, resp_copy);
                 free(resp_copy);
             } else {
                 safe_console_error("ERR: Empty file\r\n");
@@ -243,7 +378,7 @@ void handle_command(CommandType cmd) {
  */
 void* receiver_thread(void* arg) {
     (void)arg;
-    char line[256];
+    char line[MAX_CMD_LENGTH];
     size_t len = 0;
 
     while (!terminate) {
@@ -253,7 +388,7 @@ void* receiver_thread(void* arg) {
 	    if (c == '\r' || c == '\n') {
                 if (len > 0) {
                     line[len] = '\0';
-		    handle_command(parse_command(line));
+		    handle_command(parse_command(line, &p_cmd));
                     len = 0;
                 } else { // empty line ignore
                   }
@@ -308,7 +443,7 @@ void* sender_thread(void* arg) {
         	char *line = get_next_line_copy(file_ptr, &file_mutex);
             if (line) {
             	// prints <STX ASCII 2>, the string of data read, <ETX ASCII 3>, Checksum of the line read
-                safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", line, check_sum(line));
+                safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", line, checksumXOR(line));
 				//safe_write_response("%c%s%c%02X\r\n", 2, line, 3, check_sum(line));
                  // safe_write_response("%s\r\n", line);
                  free(line); // caller of get_next_line_copy() must free resource.
@@ -413,6 +548,10 @@ int main(int argc, char *argv[]) {
     init_sensor(&sensor_three);
 
     safe_console_print("Press 'q' + Enter to quit.\n");
+	parse_command(" *R", &p_cmd);
+//	parse_command(" 98:R");
+//	parse_command("*R");
+//	parse_command(" A,1,3,5");
     while (!kill_flag) {
         char input[8];
         if (fgets(input, sizeof(input), stdin)) {

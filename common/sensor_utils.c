@@ -131,6 +131,30 @@ int init_sensor(bp_sensor **ptr) {
     return 1;
 }
 
+/*
+ * Name:         get_pressure_units_text
+ * Purpose:      gets matching text name of pressure units used.
+ * Arguments:    ptr - a pointer to a bp_sensor struct.
+ *
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      mbar, or the associated text value of the unit value provided.
+ * Assumptions:
+ *
+ * Bugs:         None known.
+ * Notes:
+ */
+const char* get_pressure_units_text(uint8_t code) {
+    static const char *units[] = {
+        "mbar", "Pa", "kPa", "MPa", "hPa", "bar",
+        "kg/cm2", "kg/m2", "mmHg", "cmHg", "mHg",
+        "mmH2O", "cmH2O", "mH2O", "torr", "atm",
+        "psi", "lb/ft2", "inHg", "inH2O4C", "ftH2O4C",
+        "mbar", "inH2O20C", "ftH2O20C", "mbar"
+    };
+    if (code < 25) return units[code];
+    return "mbar";
+}
 
 /*
  * Name:         init_flash

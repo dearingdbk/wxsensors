@@ -239,7 +239,7 @@ void handle_command(CommandType cmd) {
         case CMD_F4:
 			break;
         default:
-            safe_console_print("BAD CMD\r\n");
+            safe_console_print("BAD CMD:%s\r\n", cmd);
             break;
     }
 }
