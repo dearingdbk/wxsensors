@@ -13,58 +13,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 #include <regex.h>
 #include <time.h>
 #include <ctype.h>
 #include "barometric_utils.h"
 
+
+
 #define MAX_TOKENS 32
 #define DT_STRING 7
 char units_of_measure[25][50]; // Global array to hold the units of measurement available.
 double coefficients[57]; // Global array to hold K coefficients of float values.
 
-
-/*
- * Name:         init_units
- * Purpose:      Initializes a global array of measurement units.
- * Arguments:    None
- *
- * Output:       None.
- * Modifies:     units_of_measure array.
- * Returns:      None.
- * Assumptions:  units_of_measure has been allocated.
- *
- * Bugs:         None known.
- * Notes:
- */
-void init_units() {
-    snprintf(units_of_measure[0], 50, "mbar");
-    snprintf(units_of_measure[1], 50, "Pa");
-    snprintf(units_of_measure[2], 50, "kPa");
-    snprintf(units_of_measure[3], 50, "MPa");
-    snprintf(units_of_measure[4], 50, "hPa");
-    snprintf(units_of_measure[5], 50, "bar");
-    snprintf(units_of_measure[6], 50, "kg/cm\u00B2");
-    snprintf(units_of_measure[7], 50, "kg/m\u00B2");
-    snprintf(units_of_measure[8], 50, "mmHg");
-    snprintf(units_of_measure[9], 50, "cmHg");
-    snprintf(units_of_measure[10], 50, "mHg");
-    snprintf(units_of_measure[11], 50, "mmH\u2082O");
-    snprintf(units_of_measure[12], 50, "cmH\u2082O");
-    snprintf(units_of_measure[13], 50, "mH\u2082O");
-    snprintf(units_of_measure[14], 50, "torr");
-    snprintf(units_of_measure[15], 50, "atm");
-    snprintf(units_of_measure[16], 50, "psi");
-    snprintf(units_of_measure[17], 50, "lb/ft\u2082");
-    snprintf(units_of_measure[18], 50, "inHg");
-    snprintf(units_of_measure[19], 50, "inH\u2082O4\u00B0C");
-    snprintf(units_of_measure[20], 50, "ftH\u2082O4\u00B0C");
-    snprintf(units_of_measure[21], 50, "mbar");
-    snprintf(units_of_measure[22], 50, "inH\u2082O20\u00B0C");
-    snprintf(units_of_measure[23], 50, "ftH\u2082O20\u00B0C");
-    snprintf(units_of_measure[24], 50, "mbar");
-}
 
 /*
  * Name:         init_coefficients
@@ -123,11 +85,18 @@ int init_sensor(bp_sensor **ptr) {
         perror("Failed to allocate cur_sensor");
         return -1;
     }
-    snprintf((*ptr)->units, 50, units_of_measure[current_u_of_m]); // sets default unit of measurement to hPa.
-    snprintf((*ptr)->pin_set, 50, "000"); // sets the default pin to 000.
+    //snprintf((*ptr)->units, 50, units_of_measure[current_u_of_m]); // sets default unit of measurement to hPa.
+    //snprintf((*ptr)->pin_set, 50, "000"); // sets the default pin to 000.
     snprintf((*ptr)->user_message, 16, "%s", ""); // sets the default user message to empty string '\0'.
-    (*ptr)->trans_interval = 1; // sets the update rate to 1 reading/second
-    (*ptr)->filter_factor = 0; // sets the defualt filter factor to 0.
+    (*ptr)->transmission_interval = 1; // sets the update rate to 1 reading/second
+    (*ptr)->filter_number = 0; // sets the defualt filter factor to 0.
+	(*ptr)->pressure_units = 4;  // 0-24, see unit codes, default is hPa.
+	(*ptr)->device_address = 0;
+    (*ptr)->transmission_interval = 0.0f; // Default to OFF
+
+    // Initialize the timer
+    clock_gettime(CLOCK_MONOTONIC, &((*ptr)->last_send_time));
+
     return 1;
 }
 
@@ -191,9 +160,36 @@ int update_message(bp_sensor **ptr, char *msg) {
  */
 int update_units(bp_sensor **ptr, uint8_t unit_id) {
     if (unit_id < 25) {
-        snprintf((*ptr)->units, 50, "%s", units_of_measure[unit_id]); // sets default unit of measurement to unit ID.
+        (*ptr)->pressure_units = unit_id; // sets default unit of measurement to unit ID.
         return 1;
     }
     return -1;
 }
 
+
+/*
+ * Name:         is_ready_to_send
+ * Purpose:      checks if a sensor is within its window to send data.
+ * Arguments:    None
+ *
+ * Output:       None.
+ * Modifies:     The units value of the provided bp_sensor.
+ * Returns:      true if sensor is in the window, false if not enough time has gone by.
+ * Assumptions:
+ *
+ * Bugs:         None known.
+ * Notes:
+ */
+bool is_ready_to_send(bp_sensor *s) {
+    if (s == NULL || s->transmission_interval <= 0.0f) return false;
+
+    struct timespec now;
+    // CLOCK_MONOTONIC is immune to system time changes (DST, NTP updates)
+    clock_gettime(CLOCK_MONOTONIC, &now);
+
+    // Calculate the difference in seconds
+    double elapsed = (double)(now.tv_sec - s->last_send_time.tv_sec) +
+                     (double)(now.tv_nsec - s->last_send_time.tv_nsec) / 1.0e9;
+
+    return (elapsed >= (double)s->transmission_interval);
+}

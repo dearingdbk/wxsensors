@@ -138,7 +138,7 @@ volatile sig_atomic_t kill_flag = 0;
 int serial_fd = -1;
 uint8_t current_address = 0;
 int current_u_of_m = 6; // Global variable for the current units of measurement for the sensor, 6 (hPa) is the default.
-
+ParsedCommand p_cmd;
 
 /* Synchronization primitives */
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
@@ -150,7 +150,8 @@ bp_sensor *sensor_one; // Global pointer to struct for Barometric sensor 1.
 bp_sensor *sensor_two; // Global pointer to struct for Barometric sensor 2.
 bp_sensor *sensor_three; // Global pointer to struct for Barometric sensor 3.
 
-ParsedCommand p_cmd;
+// Array of 99 pointers (0-98), initialized to NULL to use as an address map.
+bp_sensor *sensor_map[99] = {NULL};
 
 /*
  * Name:         handle_signal
@@ -176,6 +177,36 @@ void handle_signal(int sig) {
 
 // ---------------- Command handling ----------------
 	// see barometric_utils.h for CommandType enum.
+
+/*
+ * Name:         reassign_sensor_address
+ * Purpose:      reassigns the bp_sensor address in the sensor_map if it changes.
+ * Arguments:    old_addr the previous address it was stored.
+ *				 new_addr the new adddress to move it to.
+ *
+ * Output:       None.
+ * Modifies:     Changes pointer addresses of sensor_map.
+ * Returns:      None.
+ * Assumptions:
+ *
+ * Bugs:         None known.
+ * Notes:
+ */
+void reassign_sensor_address(uint8_t old_addr, uint8_t new_addr) {
+
+	if (sensor_map[old_addr] == NULL) return; // Nothing to move
+
+    // Get the pointer
+    bp_sensor *s = sensor_map[old_addr];
+
+    // Update the internal struct value
+    s->device_address = new_addr;
+
+    // Update the Map
+    sensor_map[new_addr] = s;      // Put it in the new "slot"
+    sensor_map[old_addr] = NULL;   // Clear the old "slot"
+}
+
 
 /*
  * Name:         parse_command
@@ -237,7 +268,7 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
         payload++; // skip comma
         switch (command_char) {
             case 'R':
-                // Check for R1, R2, etc.
+                // Check for R1, R2, etc Note: These are for an RPS sensor not DPS.
                 if (isdigit(*payload)) {
                     int variant = *payload - '0';
                     if (p_cmd->is_formatted) {
@@ -257,7 +288,7 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
 
             case 'A':
                 if (*payload == '?') {
-                    return CMD_A_QUERY;
+	                return p_cmd->is_formatted ? CMD_A_FORMATTED : CMD_A_QUERY;
                 } else {
                     // Parse interval and optional format
                     if (strchr(payload, ',')) {
@@ -296,7 +327,6 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
                 return CMD_UNKNOWN;
         }
     }
-
 	return CMD_UNKNOWN;
 }
 
@@ -316,21 +346,43 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
  */
 void handle_command(CommandType cmd) {
     char *resp_copy = NULL;
+
     switch (cmd) {
         case CMD_A_SET:
-		    pthread_mutex_lock(&send_mutex);
             continuous = 1; // enable continuous sending
-            pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
-            pthread_mutex_unlock(&send_mutex);
+			pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
             break;
-
+		case CMD_A_FORMATTED:
+        	if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
+				safe_serial_write(serial_fd, "Format = %d\r,Interval = %d\r",
+											sensor_map[p_cmd.address]->output_format,
+											sensor_map[p_cmd.address]->transmission_interval);
+			} else {
+				safe_serial_write(serial_fd, "Format = %d\r,Interval = %d\rFormat = %d\r,Interval = %d\rFormat = %d\r,Interval = %d\r",
+												sensor_one->output_format,
+												sensor_one->transmission_interval,
+												sensor_two->output_format,
+												sensor_two->transmission_interval,
+												sensor_three->output_format,
+												sensor_three->transmission_interval);
+			}
+			break;
         case CMD_A_QUERY:
-            pthread_mutex_lock(&send_mutex);
-		    continuous = 0; // disables continuous sending.
-            pthread_cond_signal(&send_cond);   // Wake sender_thread to exit loop
-            pthread_mutex_unlock(&send_mutex);
-            break;
-
+		    // continuous = 0; // disables continuous sending.
+            // pthread_cond_signal(&send_cond);   // Wake sender_thread to exit loop
+        	if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
+				safe_serial_write(serial_fd, "%d,%d\r",
+											sensor_map[p_cmd.address]->output_format,
+											sensor_map[p_cmd.address]->transmission_interval);
+			} else {
+				safe_serial_write(serial_fd, "%d,%d\r%d,%d\r%d,%d\r",sensor_one->output_format,
+													sensor_one->transmission_interval,
+													sensor_two->output_format,
+													sensor_two->transmission_interval,
+													sensor_three->output_format,
+													sensor_three->transmission_interval);
+			}
+			break;
         case CMD_R:
             safe_serial_write(serial_fd, "%c\r\n", 'A');
 			//safe_write_response("%c\r\n", site_id);
@@ -388,8 +440,10 @@ void* receiver_thread(void* arg) {
 	    if (c == '\r' || c == '\n') {
                 if (len > 0) {
                     line[len] = '\0';
-		    handle_command(parse_command(line, &p_cmd));
-                    len = 0;
+					pthread_mutex_lock(&send_mutex);   // <--- LOCK HERE
+		    		handle_command(parse_command(line, &p_cmd));
+                    pthread_mutex_unlock(&send_mutex); // <--- UNLOCK HERE
+					len = 0;
                 } else { // empty line ignore
                   }
             } else {
@@ -425,7 +479,7 @@ void* receiver_thread(void* arg) {
  */
 void* sender_thread(void* arg) {
     (void)arg;
-    struct timespec requested_time;
+    // struct timespec requested_time;
 
     while (!terminate) {
         pthread_mutex_lock(&send_mutex);
@@ -442,20 +496,37 @@ void* sender_thread(void* arg) {
         while (!terminate && continuous) {
         	char *line = get_next_line_copy(file_ptr, &file_mutex);
             if (line) {
+				int count = sscanf(line, "%f,%f,%f",
+											&sensor_one->current_pressure,
+											&sensor_two->current_pressure,
+											&sensor_three->current_pressure);
+				if (count != 3) {
+					sensor_one->current_pressure = 0.0f;
+                    sensor_two->current_pressure = 0.0f;
+                    sensor_three->current_pressure = 0.0f;
+				}
+
+				// Inside sender_thread loop
+				for (int i = 0; i < 99; i++) {
+    				bp_sensor *s = sensor_map[i];
+    				if (s != NULL && is_ready_to_send(s)) {
+            			safe_serial_write(serial_fd, "%f\r\n", s->current_pressure);
+						clock_gettime(CLOCK_MONOTONIC, &s->last_send_time); // reset sensor timer.
+    				}
+				}
             	// prints <STX ASCII 2>, the string of data read, <ETX ASCII 3>, Checksum of the line read
                 safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", line, checksumXOR(line));
 				//safe_write_response("%c%s%c%02X\r\n", 2, line, 3, check_sum(line));
-                 // safe_write_response("%s\r\n", line);
-                 free(line); // caller of get_next_line_copy() must free resource.
-             }
+                free(line); // caller of get_next_line_copy() must free resource.
+            }
 
-             clock_gettime(CLOCK_REALTIME, &requested_time);
-             requested_time.tv_sec += 2;
-             pthread_cond_timedwait(&send_cond, &send_mutex, &requested_time);
+             // clock_gettime(CLOCK_REALTIME, &requested_time);
+			 // requested_time.tv_sec += 2;
+             // pthread_cond_timedwait(&send_cond, &send_mutex, &requested_time);
         }
 
         pthread_mutex_unlock(&send_mutex);
-
+		usleep(10000);
     }
     return NULL;
 }
@@ -542,13 +613,22 @@ int main(int argc, char *argv[]) {
     }
 
 	// Initialize BP Sensors
-    init_units();
     init_sensor(&sensor_one); // Calls malloc, these sensors must be freed upon exit.
     init_sensor(&sensor_two);
     init_sensor(&sensor_three);
 
+	// Assign hardware addresses (Example addresses)
+	sensor_one->device_address = 1;
+	sensor_two->device_address = 2;
+	sensor_three->device_address = 3;
+
+	// Register them in the lookup table
+	sensor_map[sensor_one->device_address] = sensor_one;
+	sensor_map[sensor_two->device_address] = sensor_two;
+	sensor_map[sensor_three->device_address] = sensor_three;
+
     safe_console_print("Press 'q' + Enter to quit.\n");
-	parse_command(" *R", &p_cmd);
+//	parse_command(" *R", &p_cmd);
 //	parse_command(" 98:R");
 //	parse_command("*R");
 //	parse_command(" A,1,3,5");

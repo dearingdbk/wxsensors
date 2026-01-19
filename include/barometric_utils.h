@@ -16,12 +16,16 @@
 #include <stdbool.h>
 
 #define MAX_INPUT_STR 256
+#define MAX_SERIAL_STR 16
+#define MAX_MODEL_NUM 32
+#define MAX_MSG_STR 17
+
 extern char units_of_measure[25][50];
 extern double coefficients[57];
 extern int current_u_of_m;
 
 /// BAROMETRIC PRESSURE SENSOR ///
-
+/*
 typedef struct {
     char unit_type[MAX_INPUT_STR];
     char serial_number[MAX_INPUT_STR];
@@ -42,13 +46,13 @@ typedef struct {
     char user_fs[MAX_INPUT_STR];
     char sensor_sn[MAX_INPUT_STR];
     char internal_chksum[MAX_INPUT_STR];
-} bp_sensor;
+} bp_sensor;*/
 
 typedef struct {
     // Sensor identification
-    char serial_number[16];
-    char model_number[32];
-    char user_message[17];  // 16 chars + null terminator
+    char serial_number[MAX_SERIAL_STR];
+    char model_number[MAX_MODEL_NUM];
+    char user_message[MAX_MSG_STR];  // 16 chars + null terminator
 
     // Pressure range
     float min_pressure;
@@ -60,7 +64,7 @@ typedef struct {
     uint8_t device_address;  // 0-98 (0 = direct mode)
     uint8_t filter_number;   // 0-5
     uint16_t filter_prescaler;  // 1-1000 ms
-    float transmission_interval;  // 0.01-9999 sec, 0=off
+    float transmission_interval; // 0.01-9999 sec, 0=off
     uint8_t output_format;   // 0-12
 
     // Communication settings
@@ -87,7 +91,10 @@ typedef struct {
     // Simulated data tracking
     float current_pressure;
     float current_temperature;
-} dps8000_sensor;
+
+	// Time stamping for interleaved sensor data sending.
+	struct timespec last_send_time;
+} bp_sensor;
 
 
 // Command type enumeration
@@ -112,6 +119,7 @@ typedef enum {
     // General setup (no PIN required)
     CMD_A_SET,          // Set auto-send
     CMD_A_QUERY,        // Query auto-send
+	CMD_A_FORMATTED,	// Query formatted
     CMD_N_SET,          // Set address
     CMD_N_QUERY,        // Query address
     CMD_F_SET,          // Set filter
@@ -147,7 +155,7 @@ typedef struct {
     bool is_formatted;          // true if starts with "*"
     bool is_wildcard;           // true if starts with "*" for global commands
     // Union to hold parameters for different command types
-    // Only one set of parameters is valid at a time
+    // Only one set of parameters is valid at a time in union
     union {
         // For A command (auto-send)
         struct {
@@ -216,12 +224,12 @@ typedef struct {
 
 const char* get_pressure_units_text(uint8_t code);
 
-void init_units();
 void init_coefficients();
 int init_sensor(bp_sensor **ptr);
 int update_message(bp_sensor **ptr, char *msg);
 int update_units(bp_sensor **ptr, uint8_t unit_id);
-
+void reassign_sensor_address(uint8_t old_addr, uint8_t new_addr);
+bool is_ready_to_send(bp_sensor *s);
 /// END BAROMETRIC PRESSURE SENSOR
 
 #endif
