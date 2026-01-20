@@ -87,12 +87,29 @@ int init_sensor(bp_sensor **ptr) {
     }
     //snprintf((*ptr)->units, 50, units_of_measure[current_u_of_m]); // sets default unit of measurement to hPa.
     //snprintf((*ptr)->pin_set, 50, "000"); // sets the default pin to 000.
-    snprintf((*ptr)->user_message, 16, "%s", ""); // sets the default user message to empty string '\0'.
-    (*ptr)->transmission_interval = 1; // sets the update rate to 1 reading/second
-    (*ptr)->filter_number = 0; // sets the defualt filter factor to 0.
+    snprintf((*ptr)->model_number, MAX_MODEL_NUM - 1, "%s", "DPS8100"); // sets the default model number.
+    snprintf((*ptr)->user_message, MAX_MSG_STR - 1, "%s", ""); // sets the default user message to empty string '\0'.
+    (*ptr)->min_pressure = 0.0f;
+    (*ptr)->max_pressure = 1100.0f;
 	(*ptr)->pressure_units = 4;  // 0-24, see unit codes, default is hPa.
-	(*ptr)->device_address = 0;
-    (*ptr)->transmission_interval = 0.0f; // Default to OFF
+	(*ptr)->sensor_type = 0;  // 0 gauge 1 absolute.
+	(*ptr)->device_address = 0; // This is direct mode, our main, will re-address these sensors.
+    (*ptr)->filter_number = 0; // sets the defualt filter factor to 0.
+	(*ptr)->filter_prescaler = 0; // sets the defualt filter pre-scaler to 0.
+	(*ptr)->transmission_interval = 1.0f; // sets the update rate to 1 reading/second
+    (*ptr)->output_format = 1; // sets the defualt format to 1 R.
+    (*ptr)->baud_rate = 9600; // Default to 9600
+    (*ptr)->parity = 'N'; // I, N, O, E
+    (*ptr)->data_bits = 8; // Default to 8
+    (*ptr)->stop_bits = 1; // 1 or 2.
+    (*ptr)->term_chars = 1; // 1 or 2.
+    (*ptr)->user_gain = 1.0f; // default 1.0f.
+    (*ptr)->user_offset = 0.0f; // default 0.0f
+    (*ptr)->slope = 0.0f; // ??
+    (*ptr)->set_point = 0.0f; //
+    (*ptr)->pin = 0; //
+    (*ptr)->pin_set = false; //
+
 
     // Initialize the timer
     clock_gettime(CLOCK_MONOTONIC, &((*ptr)->last_send_time));

@@ -530,9 +530,8 @@ void* sender_thread(void* arg) {
                 sensor_two->current_pressure = 0.0f;
                 sensor_three->current_pressure = 0.0f;
             }
-            free(line);
         }
-
+		free(line);
         // Iterate through the sensor map and check if any sensor is "due" for a transmission
         for (int i = 0; i < 99; i++) {
             bp_sensor *s = sensor_map[i];
@@ -653,10 +652,6 @@ int main(int argc, char *argv[]) {
 	sensor_map[sensor_three->device_address] = sensor_three;
 
     safe_console_print("Press 'q' + Enter to quit.\n");
-//	parse_command(" *R", &p_cmd);
-//	parse_command(" 98:R");
-//	parse_command("*R");
-//	parse_command(" A,1,3,5");
     while (!kill_flag) {
         char input[8];
         if (fgets(input, sizeof(input), stdin)) {
@@ -694,6 +689,7 @@ int main(int argc, char *argv[]) {
 	free(sensor_one);
 	free(sensor_two);
 	free(sensor_three);
+	memset(sensor_map, 0, sizeof(sensor_map));
 	safe_console_print("Program terminated.\n");
 	console_cleanup();
 	serial_utils_cleanup();
