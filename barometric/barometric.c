@@ -125,12 +125,16 @@
 #define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
 #define MAX_LINE_LENGTH 1024
 #define MAX_CMD_LENGTH 256
+#define MAX_FORMAT_NUM 12
+#define MIN_TRANS_INTERVAL 0.0f
+#define MAX_TRANS_INTERVAL 9999.0f
 
 FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
 
 // Shared state
 int continuous = 0;
+int direct_mode = 0;
 volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
 
@@ -150,12 +154,13 @@ bp_sensor *sensor_one; // Global pointer to struct for Barometric sensor 1.
 bp_sensor *sensor_two; // Global pointer to struct for Barometric sensor 2.
 bp_sensor *sensor_three; // Global pointer to struct for Barometric sensor 3.
 
-// Array of 99 pointers (0-98), initialized to NULL to use as an address map.
+// Array of 99 pointers (0-98), initialized to NULL to use as a bp_sensor address map.
 bp_sensor *sensor_map[99] = {NULL};
 
 /*
  * Name:         handle_signal
- * Purpose:      Captures any kill signals, and sets volitile bool 'terminate' and 'kill_flag' to true, allowing thw while loop to break, and threads to join.
+ * Purpose:      Captures any kill signals, and sets volitile bool 'terminate' and 'kill_flag' to true, allowing thw while loop to break,
+ *				 and threads to join.
  * Arguments:    None
  *
  * Output:       None.
@@ -291,10 +296,10 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
 	                return p_cmd->is_formatted ? CMD_A_FORMATTED : CMD_A_QUERY;
                 } else {
                     // Parse interval and optional format
-                    if (strchr(payload, ',')) {
-                        sscanf(payload, "%hhu,%f",
+                    if (sscanf(payload, "%hhu,%f",
                                &p_cmd->params.auto_send.format,
-                               &p_cmd->params.auto_send.interval);
+                               &p_cmd->params.auto_send.interval) == 2) {
+						// Both values were scanned in, nothing else to do here.
                     } else {
                         p_cmd->params.auto_send.format = 1;  // default
                         sscanf(payload, "%f", &p_cmd->params.auto_send.interval);
@@ -306,7 +311,7 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
                 if (*payload == '?') {
                     return CMD_N_QUERY;
                 } else {
-                    p_cmd->params.set_address.address = atoi(payload);
+                    p_cmd->params.set_address.address = atoi(payload); // update the address.
                     return CMD_N_SET;
                 }
                 break;
@@ -349,8 +354,23 @@ void handle_command(CommandType cmd) {
 
     switch (cmd) {
         case CMD_A_SET:
-            continuous = 1; // enable continuous sending
-			pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
+			if (p_cmd.params.auto_send.format <= MAX_FORMAT_NUM &&
+				p_cmd.params.auto_send.interval >= MIN_TRANS_INTERVAL &&
+				p_cmd.params.auto_send.interval <= MAX_TRANS_INTERVAL) {
+				if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
+					sensor_map[p_cmd.address]->output_format = p_cmd.params.auto_send.format;
+					sensor_map[p_cmd.address]->transmission_interval = p_cmd.params.auto_send.interval;
+				} else {
+					sensor_one->output_format = p_cmd.params.auto_send.format;
+					sensor_one->transmission_interval = p_cmd.params.auto_send.interval;
+					sensor_two->output_format = p_cmd.params.auto_send.format;
+					sensor_two->transmission_interval = p_cmd.params.auto_send.interval;
+					sensor_three->output_format = p_cmd.params.auto_send.format;
+					sensor_three->transmission_interval = p_cmd.params.auto_send.interval;
+				}
+			} else break;
+				// continuous = 1; // enable continuous sending
+				// pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
             break;
 		case CMD_A_FORMATTED:
         	if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
@@ -405,6 +425,12 @@ void handle_command(CommandType cmd) {
                 safe_console_error("ERR: Empty file\r\n");
             }
             break;
+		case CMD_N_SET:
+			reassign_sensor_address(p_cmd.address, p_cmd.params.set_address.address); // set the address of sensor to new address.
+			break;
+		case CMD_N_QUERY:
+			
+			break;
         default:
             safe_console_print("CMD: Unknown command\n");
             break;
@@ -441,7 +467,7 @@ void* receiver_thread(void* arg) {
                 if (len > 0) {
                     line[len] = '\0';
 					pthread_mutex_lock(&send_mutex);   // <--- LOCK HERE
-		    		handle_command(parse_command(line, &p_cmd));
+		    		handle_command(parse_command(line, &p_cmd)); // handle received command here.
                     pthread_mutex_unlock(&send_mutex); // <--- UNLOCK HERE
 					len = 0;
                 } else { // empty line ignore
