@@ -45,14 +45,14 @@ typedef struct {
 
 // Global sensor definitions
 static SensorDef sensor_defs[] = {
-    {"wind",        "Gill WindObserver 75",     "./data_files/wind/wind_data.txt /dev/ttyUSB0 9600 RS422"},
+    {"wind",        "Gill WindObserver 75",     "./data_files/wind/wind_data_P.txt /dev/ttyUSB0 9600 RS422"},
     {"rh_temp",     "Rotronic HC2A-S3",         "./data_files/rh_temp/rh_temp_data.txt /dev/ttyUSB1 9600 RS485"},
-    {"pres_weather","Campbell AtmosVue30",      "./data_files/pw_data.txt /dev/ttyUSB2 9600 RS485"},
-    {"barometric",  "Barometric Sensor",        "./data_files/barometric/baro_data.txt /dev/ttyUSB3 9600 RS485"},
-    {"ceilometer",  "Ceilometer",               "./data_files/ceilometer/ceil_data.txt /dev/ttyUSB4 9600 RS422"},
-    {"flash",       "Biral BTD-300",            "./data_files/flash/flash_data.txt /dev/ttyUSB0 9600 RS422"},
-    {"ice",         "Goodrich 0872F1",          "./data_files/ice/ice_data.txt /dev/ttyUSB6 2400 RS232"},
-    {"rain",        "Campbell CS700H",          "./data_files/rain/rain_data.txt /dev/ttyUSB6 1200 SDI-12"},
+    {"pres_weather","Campbell AtmosVue30",      "./data_files/pres_weather/pres_weather.txt /dev/ttyUSB6 9600 RS485"},
+    {"barometric",  "Barometric Sensor",        "./data_files/barometric/barometric_data.txt /dev/ttyUSB3 9600 RS485"},
+    {"ceilometer",  "Ceilometer",               "./data_files/ceilometer/ceil_data.txt /dev/ttyUSB5 9600 RS422"},
+    {"flash",       "Biral BTD-300",            "./data_files/flash/flash_data.txt /dev/ttyUSB4 9600 RS422"},
+    {"ice",         "Goodrich 0872F1",          "./data_files/ice/ice_data.txt /dev/ttyUSB2 2400 RS232"},
+    {"rain",        "Campbell CS700H",          "./data_files/rain/rain_data.txt /dev/ttyUSB7 1200 SDI-12"},
     {NULL, NULL, NULL}
 };
 

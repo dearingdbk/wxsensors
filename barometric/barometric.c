@@ -128,20 +128,19 @@
 #define MAX_FORMAT_NUM 12
 #define MIN_TRANS_INTERVAL 0.0f
 #define MAX_TRANS_INTERVAL 9999.0f
+#define CPU_WAIT_MILLISECONDS 10000
 
 FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
 
 // Shared state
-int continuous = 0;
-int direct_mode = 0;
 volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
 
 // Global variables
 int serial_fd = -1;
-uint8_t current_address = 0;
-int current_u_of_m = 6; // Global variable for the current units of measurement for the sensor, 6 (hPa) is the default.
+// uint8_t current_address = 0;
+// int current_u_of_m = 6; // Global variable for the current units of measurement for the sensor, 6 (hPa) is the default.
 ParsedCommand p_cmd;
 
 /* Synchronization primitives */
@@ -200,6 +199,7 @@ void handle_signal(int sig) {
 void reassign_sensor_address(uint8_t old_addr, uint8_t new_addr) {
 
 	if (sensor_map[old_addr] == NULL) return; // Nothing to move
+	if (old_addr >= 99 || new_addr >= 99) return; 
 
     // Get the pointer
     bp_sensor *s = sensor_map[old_addr];
@@ -311,7 +311,7 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
                 if (*payload == '?') {
                     return CMD_N_QUERY;
                 } else {
-                    p_cmd->params.set_address.address = atoi(payload); // update the address.
+                    p_cmd->params.set_address.address = atoi(payload); // update the new address.
                     return CMD_N_SET;
                 }
                 break;
@@ -350,7 +350,7 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
  * Notes:
  */
 void handle_command(CommandType cmd) {
-    char *resp_copy = NULL;
+    // char *resp_copy = NULL;
 
     switch (cmd) {
         case CMD_A_SET:
@@ -368,7 +368,7 @@ void handle_command(CommandType cmd) {
 					sensor_three->output_format = p_cmd.params.auto_send.format;
 					sensor_three->transmission_interval = p_cmd.params.auto_send.interval;
 				}
-			} else break;
+			} else perror("error");
 				// continuous = 1; // enable continuous sending
 				// pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
             break;
@@ -379,12 +379,12 @@ void handle_command(CommandType cmd) {
 											sensor_map[p_cmd.address]->transmission_interval);
 			} else {
 				safe_serial_write(serial_fd, "Format = %d\r,Interval = %d\rFormat = %d\r,Interval = %d\rFormat = %d\r,Interval = %d\r",
-												sensor_one->output_format,
-												sensor_one->transmission_interval,
-												sensor_two->output_format,
-												sensor_two->transmission_interval,
-												sensor_three->output_format,
-												sensor_three->transmission_interval);
+											sensor_one->output_format,
+											sensor_one->transmission_interval,
+											sensor_two->output_format,
+											sensor_two->transmission_interval,
+											sensor_three->output_format,
+											sensor_three->transmission_interval);
 			}
 			break;
         case CMD_A_QUERY:
@@ -404,32 +404,41 @@ void handle_command(CommandType cmd) {
 			}
 			break;
         case CMD_R:
-            safe_serial_write(serial_fd, "%c\r\n", 'A');
-			//safe_write_response("%c\r\n", site_id);
+        	if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
+        		bp_sensor *s = sensor_map[p_cmd.address];
+        		safe_serial_write(serial_fd, "%.3f\r\n", s->current_pressure);
+    		} else {
+        			// Direct mode - send first sensor's data
+        		safe_serial_write(serial_fd, "%.3f\r\n", sensor_one->current_pressure);
+        		safe_serial_write(serial_fd, "%.3f\r\n", sensor_two->current_pressure);
+        		safe_serial_write(serial_fd, "%.3f\r\n", sensor_three->current_pressure);
+    		}
+    		break;
 
-			    //float pressure, temperature;
-                //sscanf(line, "%f,%f", &pressure, &temperature);
-                //sensor->current_pressure = pressure;
-                //sensor->current_temperature = temperature;*/
-                //safe_serial_write(serial_fd, "%.2f\r\n", pressure);
-                //free(line);
-            break;
-
+		case CMD_R_UNITS:
+			if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
+        		bp_sensor *s = sensor_map[p_cmd.address];
+        		safe_serial_write(serial_fd, "%.3f %s\r\n",
+                         			s->current_pressure,
+                         			get_pressure_units_text(s->pressure_units));
+    		} else {
+        		safe_serial_write(serial_fd, "%.3f %s\r\n",
+                         			sensor_one->current_pressure,
+                         			get_pressure_units_text(sensor_one->pressure_units));
+        		safe_serial_write(serial_fd, "%.3f %s\r\n",
+                         			sensor_two->current_pressure,
+                         			get_pressure_units_text(sensor_one->pressure_units));
+        		safe_serial_write(serial_fd, "%.3f %s\r\n",
+                         			sensor_three->current_pressure,
+                         			get_pressure_units_text(sensor_one->pressure_units));
+    		}
+			break;
         case CMD_I:
-            resp_copy = get_next_line_copy(file_ptr, &file_mutex);
-            if (resp_copy) {
-                // prints <Start of Line ASCII 2>, the string of data read, <EOL ASCII 3>, Checksum of the line read
-                safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", resp_copy, resp_copy);
-                free(resp_copy);
-            } else {
-                safe_console_error("ERR: Empty file\r\n");
-            }
             break;
 		case CMD_N_SET:
 			reassign_sensor_address(p_cmd.address, p_cmd.params.set_address.address); // set the address of sensor to new address.
 			break;
 		case CMD_N_QUERY:
-			
 			break;
         default:
             safe_console_print("CMD: Unknown command\n");
@@ -505,54 +514,44 @@ void* receiver_thread(void* arg) {
  */
 void* sender_thread(void* arg) {
     (void)arg;
-    // struct timespec requested_time;
-
-    while (!terminate) {
+	while (!terminate) {
         pthread_mutex_lock(&send_mutex);
-        // wait until either terminate is set or continuous becomes 1
-        while (!terminate && !continuous) {
-            pthread_cond_wait(&send_cond, &send_mutex);
-        }
 
-        if (terminate) {
-            pthread_mutex_unlock(&send_mutex);
-            break;
-        }
-
-        while (!terminate && continuous) {
-        	char *line = get_next_line_copy(file_ptr, &file_mutex);
-            if (line) {
-				int count = sscanf(line, "%f,%f,%f",
-											&sensor_one->current_pressure,
-											&sensor_two->current_pressure,
-											&sensor_three->current_pressure);
-				if (count != 3) {
-					sensor_one->current_pressure = 0.0f;
-                    sensor_two->current_pressure = 0.0f;
-                    sensor_three->current_pressure = 0.0f;
-				}
-
-				// Inside sender_thread loop
-				for (int i = 0; i < 99; i++) {
-    				bp_sensor *s = sensor_map[i];
-    				if (s != NULL && is_ready_to_send(s)) {
-            			safe_serial_write(serial_fd, "%f\r\n", s->current_pressure);
-						clock_gettime(CLOCK_MONOTONIC, &s->last_send_time); // reset sensor timer.
-    				}
-				}
-            	// prints <STX ASCII 2>, the string of data read, <ETX ASCII 3>, Checksum of the line read
-                safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", line, checksumXOR(line));
-				//safe_write_response("%c%s%c%02X\r\n", 2, line, 3, check_sum(line));
-                free(line); // caller of get_next_line_copy() must free resource.
+        // Fetch simulated data from file to update global sensor states
+        char *line = get_next_line_copy(file_ptr, &file_mutex);
+        if (line) {
+            int count = sscanf(line, "%f,%f,%f",
+                               &sensor_one->current_pressure,
+                               &sensor_two->current_pressure,
+                               &sensor_three->current_pressure);
+            if (count != 3) {
+                // If the file line is malformed, we keep last known or zero out
+                sensor_one->current_pressure = 0.0f;
+                sensor_two->current_pressure = 0.0f;
+                sensor_three->current_pressure = 0.0f;
             }
+            free(line);
+        }
 
-             // clock_gettime(CLOCK_REALTIME, &requested_time);
-			 // requested_time.tv_sec += 2;
-             // pthread_cond_timedwait(&send_cond, &send_mutex, &requested_time);
+        // Iterate through the sensor map and check if any sensor is "due" for a transmission
+        for (int i = 0; i < 99; i++) {
+            bp_sensor *s = sensor_map[i];
+
+            // is_ready_to_send() handles the (interval > 0.0f) and timing logic internally
+            if (s != NULL && is_ready_to_send(s)) {
+                // Perform the serial write
+                safe_serial_write(serial_fd, "%f\r\n", s->current_pressure);
+
+                // Update the last_send_time to the current monotonic clock
+                clock_gettime(CLOCK_MONOTONIC, &s->last_send_time);
+            }
         }
 
         pthread_mutex_unlock(&send_mutex);
-		usleep(10000);
+
+        // Sleep for a short duration (10ms) to prevent CPU spiking.
+        // while maintaining 0.01s timing resolution.
+        usleep(CPU_WAIT_MILLISECONDS);
     }
     return NULL;
 }
