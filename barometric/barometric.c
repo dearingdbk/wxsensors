@@ -129,6 +129,7 @@
 #define MIN_TRANS_INTERVAL 0.0f
 #define MAX_TRANS_INTERVAL 9999.0f
 #define CPU_WAIT_MILLISECONDS 10000
+#define MAX_WAIT_INTERVAL 65535
 
 FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
@@ -307,7 +308,15 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
                     return CMD_A_SET;
                 }
                 break;
-            case 'N':
+            case 'B':
+                if (*payload == '?') {
+                    return CMD_B_QUERY;
+				} else {
+                    p_cmd->params.bus_wait.wait_interval = atoi(payload); // update the wait interval.
+					return CMD_B_SET;
+				}
+				break;
+			case 'N':
                 if (*payload == '?') {
                     return CMD_N_QUERY;
                 } else {
@@ -401,6 +410,25 @@ void handle_command(CommandType cmd) {
 													sensor_two->transmission_interval,
 													sensor_three->output_format,
 													sensor_three->transmission_interval);
+			}
+			break;
+
+		case CMD_B_SET:
+        		if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
+					sensor_map[p_cmd.address]->wait_interval = p_cmd.params.bus_wait.wait_interval;
+				} else {
+					sensor_one->wait_interval = p_cmd.params.bus_wait.wait_interval;
+					sensor_two->wait_interval = p_cmd.params.bus_wait.wait_interval;
+					sensor_three->wait_interval = p_cmd.params.bus_wait.wait_interval;
+				}
+			break;
+		case CMD_B_QUERY:
+			if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
+				safe_serial_write(serial_fd, "%d\r",sensor_map[p_cmd.address]->wait_interval);
+			} else {
+				safe_serial_write(serial_fd, "%d\r%d\r%d\r", sensor_one->wait_interval,
+															 sensor_two->wait_interval,
+															 sensor_three->wait_interval);
 			}
 			break;
         case CMD_R:

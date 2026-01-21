@@ -102,7 +102,8 @@ int init_sensor(bp_sensor **ptr) {
     (*ptr)->parity = 'N'; // I, N, O, E
     (*ptr)->data_bits = 8; // Default to 8
     (*ptr)->stop_bits = 1; // 1 or 2.
-    (*ptr)->term_chars = 1; // 1 or 2.
+	(*ptr)->wait_interval = 22; // Number of chars trasmitted at 9600 baud for each sensor to wait.
+	(*ptr)->term_chars = 1; // 1 or 2.
     (*ptr)->user_gain = 1.0f; // default 1.0f.
     (*ptr)->user_offset = 0.0f; // default 0.0f
     (*ptr)->slope = 0.0f; // ??

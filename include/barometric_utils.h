@@ -51,6 +51,7 @@ typedef struct {
     uint8_t data_bits;       // Always 8
     uint8_t stop_bits;       // 1 or 2
     uint8_t term_chars;      // 1 or 2
+	uint16_t wait_interval;   // Number of chars at 9600 baud to wait
 
     // Calibration data
     float user_gain;         // Default 1.0
