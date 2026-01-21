@@ -192,7 +192,7 @@ void handle_command(CommandType cmd) {
 
         case CMD_SITE:
             // safe_write_response("%c\r\n", site_id);
-            safe_serial_write(serial_fd, "\x02%c\x03\r\n", "", wnd_sensor->n_val);
+            safe_serial_write(serial_fd, "\x02%c\x03\r\n", wnd_sensor->n_val);
             break;
 
         case CMD_POLL: {

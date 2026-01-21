@@ -104,19 +104,12 @@
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <errno.h>
-#include <termios.h>
 #include <pthread.h>
-#include <sys/ioctl.h>
-#include <linux/serial.h>
-#include <regex.h>
 #include <signal.h>
 #include <stdatomic.h>
-#include <stdarg.h>
 #include <time.h>
 #include <ctype.h>
-#include <regex.h>
 #include "barometric_utils.h"
 #include "serial_utils.h"
 #include "console_utils.h"
@@ -143,8 +136,6 @@ volatile sig_atomic_t kill_flag = 0;
 
 // Global variables
 int serial_fd = -1;
-// uint8_t current_address = 0;
-// int current_u_of_m = 6; // Global variable for the current units of measurement for the sensor, 6 (hPa) is the default.
 ParsedCommand p_cmd;
 
 /* Synchronization primitives */
@@ -153,9 +144,9 @@ static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  send_cond  = PTHREAD_COND_INITIALIZER;
 
 // These need to be freed upon exit.
-bp_sensor *sensor_one; // Global pointer to struct for Barometric sensor 1.
-bp_sensor *sensor_two; // Global pointer to struct for Barometric sensor 2.
-bp_sensor *sensor_three; // Global pointer to struct for Barometric sensor 3.
+bp_sensor *sensor_one = NULL; // Global pointer to struct for Barometric sensor 1.
+bp_sensor *sensor_two = NULL; // Global pointer to struct for Barometric sensor 2.
+bp_sensor *sensor_three = NULL; // Global pointer to struct for Barometric sensor 3.
 
 // Array of 99 pointers (0-98), initialized to NULL to use as a bp_sensor address map.
 bp_sensor *sensor_map[MAX_SENSOR_ADDRESS] = {NULL};
@@ -204,8 +195,21 @@ void reassign_sensor_address(uint8_t old_addr, uint8_t new_addr) {
 
 	if (sensor_map[old_addr] == NULL) return; // Nothing to move
 	if (old_addr >= MAX_SENSOR_ADDRESS || new_addr >= MAX_SENSOR_ADDRESS) return; // Bad address >= 99
-	if (sensor_map[new_addr] != NULL) reassign_sensor_address(new_addr, new_addr + 1); // Recursive: If we tried to overwrite a sensor address push it up.
-
+	    // Find next available slot if we try to overwrite an existing sensor.
+    if (sensor_map[new_addr] != NULL) {
+        // Find an empty slot.
+        for (int i = 1; i < MAX_SENSOR_ADDRESS; i++) {
+            if (sensor_map[i] == NULL) {
+                new_addr = i;
+                break;
+            }
+        }
+        // If no empty slot found, cannot reassign
+        if (sensor_map[new_addr] != NULL) {
+            safe_console_error("Error: No available address slots\n");
+            return;
+        }
+    }
     // Get the pointer
     bp_sensor *s = sensor_map[old_addr];
 
@@ -217,6 +221,35 @@ void reassign_sensor_address(uint8_t old_addr, uint8_t new_addr) {
     sensor_map[old_addr] = NULL;   // Clear the old "slot"
 }
 
+/*
+ * Name:         cleanup_and_exit
+ * Purpose:      helper function to cleanup sensors, and arrays.
+ * Arguments:    exit_code, the exit code to send on close.
+ *
+ * Output:       None.
+ * Modifies:     Frees, sensors, sensor_map, closes file descriptors, and serial devices.
+ * Returns:      None.
+ * Assumptions:
+ *
+ * Bugs:         None known.
+ * Notes:
+ */
+void cleanup_and_exit(int exit_code) {
+    // Clear map first
+    memset(sensor_map, 0, sizeof(sensor_map));
+    // Free sensors if allocated
+    if (sensor_three) free(sensor_three);
+    if (sensor_two) free(sensor_two);
+    if (sensor_one) free(sensor_one);
+
+    // Close resources
+    if (serial_fd >= 0) close(serial_fd);
+    if (file_ptr) fclose(file_ptr);
+    // Cleanup utilities
+    console_cleanup();
+    serial_utils_cleanup();
+    exit(exit_code);
+}
 
 /*
  * Name:         parse_command
@@ -321,6 +354,7 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
 					p_cmd->params.units.unit_code = atoi(payload); // update the units type.
 					return CMD_U_SET;
 				}
+				break;
             default:
                 return CMD_UNKNOWN;
         }
@@ -394,15 +428,15 @@ void handle_command(CommandType cmd) {
 					sensor_three->output_format = p_cmd.params.auto_send.format;
 					sensor_three->transmission_interval = p_cmd.params.auto_send.interval;
 				}
-			} else perror("error");
+			} else safe_console_error("!006 Bad Param(s)\r\n");
             break;
 		case CMD_A_FORMATTED:
         	if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
-				safe_serial_write(serial_fd, "Format = %d\r,Interval = %d\r",
+				safe_serial_write(serial_fd, "Format = %d\r,Interval = %.2f\r",
 											sensor_map[p_cmd.address]->output_format,
 											sensor_map[p_cmd.address]->transmission_interval);
 			} else {
-				safe_serial_write(serial_fd, "Format = %d\r,Interval = %d\rFormat = %d\r,Interval = %d\rFormat = %d\r,Interval = %d\r",
+				safe_serial_write(serial_fd, "Format = %d\r,Interval = %.2f\rFormat = %d\r,Interval = %.2f\rFormat = %d\r,Interval = %.2f\r",
 											sensor_one->output_format,
 											sensor_one->transmission_interval,
 											sensor_two->output_format,
@@ -413,11 +447,11 @@ void handle_command(CommandType cmd) {
 			break;
         case CMD_A_QUERY:
         	if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
-				safe_serial_write(serial_fd, "%d,%d\r",
+				safe_serial_write(serial_fd, "%d,%.2f\r",
 											sensor_map[p_cmd.address]->output_format,
 											sensor_map[p_cmd.address]->transmission_interval);
 			} else {
-				safe_serial_write(serial_fd, "%d,%d\r%d,%d\r%d,%d\r",sensor_one->output_format,
+				safe_serial_write(serial_fd, "%d,%.2f\r%d,%.2f\r%d,%.2f\r",sensor_one->output_format,
 													sensor_one->transmission_interval,
 													sensor_two->output_format,
 													sensor_two->transmission_interval,
@@ -535,10 +569,10 @@ void handle_command(CommandType cmd) {
                          			get_pressure_units_text(sensor_one->pressure_units));
         		safe_serial_write(serial_fd, "%.3f %s\r\n",
                          			sensor_two->current_pressure,
-                         			get_pressure_units_text(sensor_one->pressure_units));
+                         			get_pressure_units_text(sensor_two->pressure_units));
         		safe_serial_write(serial_fd, "%.3f %s\r\n",
                          			sensor_three->current_pressure,
-                         			get_pressure_units_text(sensor_one->pressure_units));
+                         			get_pressure_units_text(sensor_three->pressure_units));
     		}
 			break;
 		case CMD_R1:
@@ -588,8 +622,8 @@ void handle_command(CommandType cmd) {
 				safe_serial_write(serial_fd, "Units = %d\r", sensor_map[p_cmd.address]->pressure_units);
 			} else {
 				safe_serial_write(serial_fd, "%d:Units = %d\r", sensor_one->device_address, sensor_one->pressure_units);
-				safe_serial_write(serial_fd, "%d:Units = %d\r", sensor_two->device_address, sensor_one->pressure_units);
-				safe_serial_write(serial_fd, "%d:Units = %d\r", sensor_three->device_address, sensor_one->pressure_units);
+				safe_serial_write(serial_fd, "%d:Units = %d\r", sensor_two->device_address, sensor_two->pressure_units);
+				safe_serial_write(serial_fd, "%d:Units = %d\r", sensor_three->device_address, sensor_three->pressure_units);
 			}
 			break;
 		case CMD_U_INTERACTIVE: // <SPACE>*U<CR>
@@ -687,8 +721,8 @@ void* sender_thread(void* arg) {
                 sensor_two->current_pressure = 0.0f;
                 sensor_three->current_pressure = 0.0f;
             }
+			free(line);
         }
-		free(line);
         // Iterate through the sensor map and check if any sensor is "due" for a transmission
         for (int i = 0; i < MAX_SENSOR_ADDRESS; i++) {
             bp_sensor *s = sensor_map[i];
@@ -741,7 +775,6 @@ int main(int argc, char *argv[]) {
 
     if (argc < 2) {
         safe_console_error("Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
-		// fprintf(stderr, "Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
         return 1;
     }
 
@@ -750,7 +783,7 @@ int main(int argc, char *argv[]) {
     file_ptr = fopen(file_path, "r");
     if (!file_ptr) {
         perror("Failed to open file");
-        return 1;
+    	cleanup_and_exit(1);
     }
     //ternary statement to set SERIAL_PORT if supplied in args or the default
     const char *device = (argc >= 3 && is_valid_tty(argv[2]) == 0) ? argv[2] : SERIAL_PORT;
@@ -763,9 +796,35 @@ int main(int argc, char *argv[]) {
     serial_fd = open_serial_port(device, baud, mode);
 
     if (serial_fd < 0) {
-        fclose(file_ptr);
-        return 1;
+    	cleanup_and_exit(1);
     }
+
+	    // Initialize BP Sensors BEFORE creating threads
+    if (init_sensor(&sensor_one) != 1) {
+        safe_console_error("Failed to initialize sensor_one\n");
+    	cleanup_and_exit(1);
+    }
+
+    if (init_sensor(&sensor_two) != 1) {
+        safe_console_error("Failed to initialize sensor_two\n");
+    	cleanup_and_exit(1);
+    }
+
+    if (init_sensor(&sensor_three) != 1) {
+        safe_console_error("Failed to initialize sensor_three\n");
+    	cleanup_and_exit(1);
+    }
+
+    // Assign hardware addresses
+    sensor_one->device_address = 1;
+    sensor_two->device_address = 2;
+    sensor_three->device_address = 3;
+
+    // Register them in the lookup table
+    sensor_map[1] = sensor_one;
+    sensor_map[2] = sensor_two;
+    sensor_map[3] = sensor_three;
+
     // define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
     // allowing our c program, to close its loop, join threads, and close our serial device.
     struct sigaction sa;
@@ -779,34 +838,15 @@ int main(int argc, char *argv[]) {
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
         perror("Failed to create receiver thread");
         terminate = 1;          // <- symmetrical, but not required
-        close(serial_fd);
-        fclose(file_ptr);
-        return 1;
+	    cleanup_and_exit(1);
     }
 
     if (pthread_create(&send_thread, NULL, sender_thread, NULL) != 0) {
         perror("Failed to create sender thread");
         terminate = 1;          // <- needed because recv_thread is running
         pthread_join(recv_thread, NULL);
-        close(serial_fd);
-        fclose(file_ptr);
-        return 1;
+	    cleanup_and_exit(1);
     }
-
-	// Initialize BP Sensors
-    init_sensor(&sensor_one); // Calls malloc, these sensors must be freed upon exit.
-    init_sensor(&sensor_two);
-    init_sensor(&sensor_three);
-
-	// Assign hardware addresses (Example addresses)
-	sensor_one->device_address = 1;
-	sensor_two->device_address = 2;
-	sensor_three->device_address = 3;
-
-	// Register them in the lookup table
-	sensor_map[sensor_one->device_address] = sensor_one;
-	sensor_map[sensor_two->device_address] = sensor_two;
-	sensor_map[sensor_three->device_address] = sensor_three;
 
     safe_console_print("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {
@@ -818,7 +858,7 @@ int main(int argc, char *argv[]) {
                 kill_flag = 1;
                 pthread_cond_signal(&send_cond);  // wake sender_thread
                 pthread_mutex_unlock(&send_mutex);
-		break;
+				break;
             }
         } else if (feof(stdin)) {  // keep an eye on the behaviour of this check.
             pthread_mutex_lock(&send_mutex);
@@ -841,14 +881,6 @@ int main(int argc, char *argv[]) {
 	pthread_mutex_destroy(&send_mutex);
 	pthread_cond_destroy(&send_cond);
 
-    close(serial_fd);
-    fclose(file_ptr);
-	free(sensor_one);
-	free(sensor_two);
-	free(sensor_three);
-	memset(sensor_map, 0, sizeof(sensor_map));
 	safe_console_print("Program terminated.\n");
-	console_cleanup();
-	serial_utils_cleanup();
-    return 0;
+	cleanup_and_exit(0);
 }
