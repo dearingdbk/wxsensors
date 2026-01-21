@@ -203,7 +203,7 @@ void handle_signal(int sig) {
 void reassign_sensor_address(uint8_t old_addr, uint8_t new_addr) {
 
 	if (sensor_map[old_addr] == NULL) return; // Nothing to move
-	if (old_addr >= MAX_SENSOR_ADDRESS || new_addr >= MAX_SENSOR_ADDRESS) return;
+	if (old_addr >= MAX_SENSOR_ADDRESS || new_addr >= MAX_SENSOR_ADDRESS) return; // Bad address >= 99
 	if (sensor_map[new_addr] != NULL) reassign_sensor_address(new_addr, new_addr + 1); // Recursive: If we tried to overwrite a sensor address push it up.
 
     // Get the pointer
@@ -246,14 +246,14 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
 
 	    // Check for address (digits followed by colon)
     if (isdigit(*ptr)) {
-        char addr_str[4] = {0}; // fill our address string with 0's.
+        char addr_str[4] = {0}; // fill our address string with '\0' this will ensure the string is terminated.
         int i = 0;
-        while (isdigit(*ptr) && i < 3) {
-            addr_str[i++] = *ptr++;
+        while (isdigit(*ptr) && i < 3) { // expect a max of 2 digits 0-98
+            addr_str[i++] = *ptr++; // add the digit from ptr to the address string.
         }
         if (*ptr == ':') {
             // This is an address
-            p_cmd->is_addressed = true;
+            p_cmd->is_addressed = true; // mark the 'is_addressed' value to true.
             p_cmd->address = atoi(addr_str); // convert that address string to an int and store in p_cmd struct.
             ptr++; // skip ':'
         } else {
@@ -268,34 +268,15 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
     }
 
 	char command_char = toupper(*ptr); // Ensure the command char is in uppercase.
-    ptr++;
+    ptr++; // Advance past command char.
 
-	// The rest of the string (if any) will be the payload, i.e. A,1,2,4, or A? where the payload would be ?
+	// The rest of the string (if any) will be the payload, i.e. A,1,2,4, or A,? where the payload would be ,1,2,3 or ,?
     const char *payload = ptr;
 
     // Now parse based on command
     if (*payload == ',') {
         payload++; // skip comma
         switch (command_char) {
-            case 'R':
-                // Check for R1, R2, etc Note: These are for an RPS sensor not DPS.
-                if (isdigit(*payload)) {
-                    int variant = *payload - '0';
-                    if (p_cmd->is_formatted) {
-                        if (variant == 1) return CMD_R1_UNITS;
-                        if (variant == 2) return CMD_R2_UNITS;
-                    } else {
-                        if (variant == 1) return CMD_R1;
-                        if (variant == 2) return CMD_R2;
-                        if (variant == 3) return CMD_R3;
-                        if (variant == 4) return CMD_R4;
-                        if (variant == 5) return CMD_R5;
-                    }
-                } else if (*payload == '?') {
-                    return CMD_UNKNOWN;
-                }
-                return CMD_UNKNOWN;
-
             case 'A':
                 if (*payload == '?') {
 	                return p_cmd->is_formatted ? CMD_A_FORMATTED : CMD_A_QUERY;
@@ -347,7 +328,27 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
         // No payload - simple commands
         switch (command_char) {
             case 'R':
-                return p_cmd->is_formatted ? CMD_R_UNITS : CMD_R;
+                // Check for R1, R2, etc Note: These are for an RPS sensor not DPS.
+                if (isdigit(*payload)) {
+                    int variant = *payload - '0'; // convert one char to int by subtracting ASCII 48
+                    if (p_cmd->is_formatted) {
+                        if (variant == 1) return CMD_R1_UNITS;
+                        if (variant == 2) return CMD_R2_UNITS;
+                    } else {
+                        if (variant == 1) return CMD_R1;
+                        if (variant == 2) return CMD_R2;
+                        if (variant == 3) return CMD_R3;
+                        if (variant == 4) return CMD_R4;
+                        if (variant == 5) return CMD_R5;
+                    }
+                } else {
+					if (*payload == '?') {
+                    	return CMD_UNKNOWN;
+					} else {
+						return p_cmd->is_formatted ? CMD_R_UNITS : CMD_R;
+					}
+				}
+				return CMD_UNKNOWN;
             case 'I':
                 return p_cmd->is_formatted ? CMD_I_FORMATTED : CMD_I;
             case 'X':
