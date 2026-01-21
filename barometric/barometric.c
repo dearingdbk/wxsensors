@@ -28,7 +28,9 @@
  *               F,<filter>,<prescaler>    - Set filter and measurement speed
  *               F,?                       - Query filter settings
  *               U,<unit>                  - Set pressure units (0-24)
+ *               *U 	                   - Interactive - Set pressure units (0-24)
  *               U,?                       - Query pressure units
+ *               *U,?                      - Query pressure units formatted.
  *               B,<wait>                  - Set global wait interval for network mode
  *               B,?                       - Query wait interval
  *               X,?                       - Status check
@@ -129,7 +131,8 @@
 #define MIN_TRANS_INTERVAL 0.0f
 #define MAX_TRANS_INTERVAL 9999.0f
 #define CPU_WAIT_MILLISECONDS 10000
-#define MAX_WAIT_INTERVAL 65535
+#define MAX_SENSOR_ADDRESS 99
+#define MAX_UNIT_TYPE 24
 
 FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
@@ -155,7 +158,7 @@ bp_sensor *sensor_two; // Global pointer to struct for Barometric sensor 2.
 bp_sensor *sensor_three; // Global pointer to struct for Barometric sensor 3.
 
 // Array of 99 pointers (0-98), initialized to NULL to use as a bp_sensor address map.
-bp_sensor *sensor_map[99] = {NULL};
+bp_sensor *sensor_map[MAX_SENSOR_ADDRESS] = {NULL};
 
 /*
  * Name:         handle_signal
@@ -200,7 +203,7 @@ void handle_signal(int sig) {
 void reassign_sensor_address(uint8_t old_addr, uint8_t new_addr) {
 
 	if (sensor_map[old_addr] == NULL) return; // Nothing to move
-	if (old_addr >= 99 || new_addr >= 99) return; 
+	if (old_addr >= MAX_SENSOR_ADDRESS || new_addr >= MAX_SENSOR_ADDRESS) return;
 
     // Get the pointer
     bp_sensor *s = sensor_map[old_addr];
@@ -324,7 +327,13 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
                     return CMD_N_SET;
                 }
                 break;
-            // ... more command parsing
+            case 'U':
+                if (*payload == '?') {
+	                return p_cmd->is_formatted ? CMD_U_FORMATTED : CMD_U_QUERY;
+				} else {
+					p_cmd->params.units.unit_code = atoi(payload); // update the units type.
+					return CMD_U_SET;
+				}
             default:
                 return CMD_UNKNOWN;
         }
@@ -337,6 +346,8 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
                 return p_cmd->is_formatted ? CMD_I_FORMATTED : CMD_I;
             case 'X':
                 return CMD_X_QUERY;
+			case 'U':
+				return p_cmd->is_formatted ? CMD_U_INTERACTIVE : CMD_UNKNOWN;
             default:
                 return CMD_UNKNOWN;
         }
@@ -359,7 +370,6 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
  * Notes:
  */
 void handle_command(CommandType cmd) {
-    // char *resp_copy = NULL;
 
     switch (cmd) {
         case CMD_A_SET:
@@ -378,8 +388,6 @@ void handle_command(CommandType cmd) {
 					sensor_three->transmission_interval = p_cmd.params.auto_send.interval;
 				}
 			} else perror("error");
-				// continuous = 1; // enable continuous sending
-				// pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
             break;
 		case CMD_A_FORMATTED:
         	if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
@@ -397,8 +405,6 @@ void handle_command(CommandType cmd) {
 			}
 			break;
         case CMD_A_QUERY:
-		    // continuous = 0; // disables continuous sending.
-            // pthread_cond_signal(&send_cond);   // Wake sender_thread to exit loop
         	if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
 				safe_serial_write(serial_fd, "%d,%d\r",
 											sensor_map[p_cmd.address]->output_format,
@@ -431,12 +437,45 @@ void handle_command(CommandType cmd) {
 															 sensor_three->wait_interval);
 			}
 			break;
+		case CMD_C_CAL:
+			break;
+		case CMD_C_QUERY:
+			break;
+		case CMD_F_SET:
+			break;
+		case CMD_F_QUERY:
+			break;
+		case CMD_H_SET:
+			break;
+		case CMD_H_QUERY:
+			break;
+		case CMD_I:
+			break;
+		case CMD_I_FORMATTED:
+			break;
+		case CMD_M_SET:
+			break;
+		case CMD_M_QUERY:
+			break;
+		case CMD_N_SET:
+			reassign_sensor_address(p_cmd.address, p_cmd.params.set_address.address); // set the address of sensor to new address.
+			break;
+		case CMD_N_QUERY:
+			break;
+		case CMD_O_SET:
+			break;
+		case CMD_O_QUERY:
+			break;
+		case CMD_P_SET:
+			break;
+		case CMD_P_QUERY:
+			break;
         case CMD_R:
         	if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
         		bp_sensor *s = sensor_map[p_cmd.address];
         		safe_serial_write(serial_fd, "%.3f\r\n", s->current_pressure);
     		} else {
-        			// Direct mode - send first sensor's data
+        			// Direct mode - send all 3 sensor's data
         		safe_serial_write(serial_fd, "%.3f\r\n", sensor_one->current_pressure);
         		safe_serial_write(serial_fd, "%.3f\r\n", sensor_two->current_pressure);
         		safe_serial_write(serial_fd, "%.3f\r\n", sensor_three->current_pressure);
@@ -461,18 +500,67 @@ void handle_command(CommandType cmd) {
                          			get_pressure_units_text(sensor_one->pressure_units));
     		}
 			break;
-        case CMD_I:
-            break;
-		case CMD_N_SET:
-			reassign_sensor_address(p_cmd.address, p_cmd.params.set_address.address); // set the address of sensor to new address.
+		case CMD_R1:
+			break; // RPS Sensor do not implement
+		case CMD_R1_UNITS:
+			break; // RPS Sensor do not implement
+		case CMD_R2:
+			break; // RPS Sensor do not implement
+		case CMD_R2_UNITS:
+			break; // RPS Sensor do not implement
+		case CMD_R3:
+			break; // RPS Sensor do not implement
+		case CMD_R4:
+			break; // RPS Sensor do not implement
+		case CMD_R5:
+			break; // RPS Sensor do not implement
+		case CMD_S_SET:
 			break;
-		case CMD_N_QUERY:
+		case CMD_S_CLEAR:
+			break;
+		case CMD_S_QUERY:
+			break;
+		case CMD_U_SET:
+			if (p_cmd.params.units.unit_code <= MAX_UNIT_TYPE) {
+				if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
+					sensor_map[p_cmd.address]->pressure_units = p_cmd.params.units.unit_code;
+				} else {
+					sensor_one->pressure_units = p_cmd.params.units.unit_code;
+					sensor_two->pressure_units = p_cmd.params.units.unit_code;
+					sensor_three->pressure_units = p_cmd.params.units.unit_code;
+				}
+			} else {
+				// unit type does not fall into 0-24 do nothing or send/set an error.
+			}
+			break;
+		case CMD_U_QUERY: // <SPACE>U,?<CR>
+			if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
+				safe_serial_write(serial_fd, "%d\r", sensor_map[p_cmd.address]->pressure_units);
+			} else {
+				safe_serial_write(serial_fd, "%d\r%d\r%d\r", sensor_one->pressure_units,
+															 sensor_two->pressure_units,
+															 sensor_three->pressure_units);
+			}
+			break;
+		case CMD_U_FORMATTED: // <SPACE>*U,?<CR>
+			if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
+				safe_serial_write(serial_fd, "Units = %d\r", sensor_map[p_cmd.address]->pressure_units);
+			} else {
+				safe_serial_write(serial_fd, "%d:Units = %d\r", sensor_one->device_address, sensor_one->pressure_units);
+				safe_serial_write(serial_fd, "%d:Units = %d\r", sensor_two->device_address, sensor_one->pressure_units);
+				safe_serial_write(serial_fd, "%d:Units = %d\r", sensor_three->device_address, sensor_one->pressure_units);
+			}
+			break;
+		case CMD_U_INTERACTIVE: // <SPACE>*U<CR>
+			break; // Complex interactive requirement, implement only if required.
+		case CMD_W_SAVE:
+			break;
+		case CMD_X_QUERY:
 			break;
         default:
             safe_console_print("CMD: Unknown command\n");
             break;
     }
-
 }
 
 
@@ -561,7 +649,7 @@ void* sender_thread(void* arg) {
         }
 		free(line);
         // Iterate through the sensor map and check if any sensor is "due" for a transmission
-        for (int i = 0; i < 99; i++) {
+        for (int i = 0; i < MAX_SENSOR_ADDRESS; i++) {
             bp_sensor *s = sensor_map[i];
 
             // is_ready_to_send() handles the (interval > 0.0f) and timing logic internally

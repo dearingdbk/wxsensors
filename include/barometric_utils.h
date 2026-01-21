@@ -105,7 +105,9 @@ typedef enum {
     CMD_F_QUERY,        // Query filter
     CMD_U_SET,          // Set units
     CMD_U_QUERY,        // Query units
-    CMD_B_SET,          // Set bus wait
+    CMD_U_FORMATTED,	// Query units formatted
+	CMD_U_INTERACTIVE,	// Set units interactive
+	CMD_B_SET,          // Set bus wait
     CMD_B_QUERY,        // Query bus wait
     CMD_X_QUERY,        // Status check
 
