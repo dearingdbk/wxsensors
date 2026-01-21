@@ -2,7 +2,7 @@
  * File:     barometric.c
  * Author:   Bruce Dearing
  * Date:     16/01/2026
- * Version:  1.0
+ * Version:  1.1
  * Purpose:  Emulates a Druck DPS8100 Barometric Pressure Sensor over RS-485/RS-422/USB.
  *           This program sets up a serial connection with two threads:
  *            - Receiver thread: parses and responds to incoming commands
@@ -204,6 +204,7 @@ void reassign_sensor_address(uint8_t old_addr, uint8_t new_addr) {
 
 	if (sensor_map[old_addr] == NULL) return; // Nothing to move
 	if (old_addr >= MAX_SENSOR_ADDRESS || new_addr >= MAX_SENSOR_ADDRESS) return;
+	if (sensor_map[new_addr] != NULL) reassign_sensor_address(new_addr, new_addr + 1); // Recursive: If we tried to overwrite a sensor address push it up.
 
     // Get the pointer
     bp_sensor *s = sensor_map[old_addr];
@@ -321,10 +322,15 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
 				break;
 			case 'N':
                 if (*payload == '?') {
-                    return CMD_N_QUERY;
+	                return p_cmd->is_formatted ? CMD_N_FORMATTED : CMD_N_QUERY;
                 } else {
-                    p_cmd->params.set_address.address = atoi(payload); // update the new address.
-                    return CMD_N_SET;
+					if (p_cmd->is_formatted) {
+						p_cmd->params.set_address.address = atoi(payload); // update the new address.
+						return CMD_N_LONG;
+					} else {
+						p_cmd->params.set_address.address = atoi(payload); // update the new address.
+                    	return CMD_N_SET;
+					}
                 }
                 break;
             case 'U':
@@ -458,9 +464,43 @@ void handle_command(CommandType cmd) {
 		case CMD_M_QUERY:
 			break;
 		case CMD_N_SET:
-			reassign_sensor_address(p_cmd.address, p_cmd.params.set_address.address); // set the address of sensor to new address.
+			if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
+				if (p_cmd.params.set_address.address == 0) {
+					sensor_map[p_cmd.address]->long_errors = false;
+				} else { // The sensor is addressed, and we want to change to the new address.
+					reassign_sensor_address(p_cmd.address, p_cmd.params.set_address.address);
+				}
+			} else { // Direct mode.
+				if (p_cmd.params.set_address.address == 0) {
+					sensor_one->long_errors = false;
+					sensor_two->long_errors = false;
+					sensor_three->long_errors = false;
+				} else {
+					// Here Direct mode trying to reassign sensors addresses would not work, so ignore or send error.
+				}
+			}
 			break;
 		case CMD_N_QUERY:
+			break;
+		case CMD_N_FORMATTED:
+			break;
+		case CMD_N_LONG:
+			if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
+				if (sensor_map[p_cmd.address]->device_address == p_cmd.params.set_address.address) {
+					sensor_map[p_cmd.address]->long_errors = true;
+				} else {
+					// The command was addressed, but address and new address were not the same, bad command. i.e. <SPACE>1:*N,0<CR>
+					// Here we expect the command to switch to long messages i.e. <SPACE>1:*N,1<CR>
+				}
+			} else { // Direct mode, target all sensors
+				if (p_cmd.params.set_address.address == 0) { // A zero here triggers a long error message change.
+					sensor_one->long_errors = true;
+					sensor_two->long_errors = true;
+					sensor_three->long_errors = true;
+				} else {
+					// The command was not expected i.e. <SPACE>*N,1<CR>
+				}
+			}
 			break;
 		case CMD_O_SET:
 			break;

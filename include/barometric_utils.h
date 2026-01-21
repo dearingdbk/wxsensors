@@ -101,6 +101,8 @@ typedef enum {
 	CMD_A_FORMATTED,	// Query formatted
     CMD_N_SET,          // Set address
     CMD_N_QUERY,        // Query address
+	CMD_N_LONG,			// Change to Long Error Messages
+	CMD_N_FORMATTED,	// Query address formatted
     CMD_F_SET,          // Set filter
     CMD_F_QUERY,        // Query filter
     CMD_U_SET,          // Set units
