@@ -1,3 +1,13 @@
+# List of required packages
+REQUIRED_PKGS = gtk+-3.0
+
+# Check if packages exist
+PKG_CHECK := $(shell pkg-config --exists $(REQUIRED_PKGS) || echo "missing")
+
+ifeq ($(PKG_CHECK), missing)
+$(error "Error: Required libraries not found. Please install: $(REQUIRED_PKGS)")
+endif
+
 CC = gcc
 CFLAGS = -fsanitize=address -g -Wall -Wextra -Iinclude -MMD -MP -ffunction-sections -fdata-sections
 LDFLAGS = -Wl,--gc-sections

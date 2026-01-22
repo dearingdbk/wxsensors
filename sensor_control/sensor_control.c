@@ -20,6 +20,22 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+/* AddressSanitizer suppression for GTK/GLib internal leaks.
+ * This function is automatically called by the LeakSanitizer at startup.
+ */
+#if defined(__has_feature)
+#  if __has_feature(address_sanitizer) || defined(__SANITIZE_ADDRESS__)
+extern const char* __lsan_default_suppressions() {
+    return "leak:libgtk-3.so\n"
+           "leak:libglib-2.0.so\n"
+           "leak:libgobject-2.0.so\n"
+           "leak:libfontconfig.so\n"
+           "leak:libdbus-1.so\n";
+}
+#  endif
+#endif
+
+
 #define MAX_SENSORS 10
 #define MAX_PATH_LEN 256
 #define MAX_FLAGS_LEN 512
@@ -43,7 +59,8 @@ typedef struct {
     guint timeout_id;
 } SensorState;
 
-// Global sensor definitions
+// Global sensor definitions *** Make all changes and additions here, the code will handle the rest.
+// {<NAME_OF_EXECUTABLE>, <GUI_SENSOR_LABEL>, <FLAGS_PROVIDED_TO_SENSOR>}
 static SensorDef sensor_defs[] = {
     {"wind",        "Gill WindObserver 75",     "./data_files/wind/wind_data_P.txt /dev/ttyUSB0 9600 RS422"},
     {"rh_temp",     "Rotronic HC2A-S3",         "./data_files/rh_temp/rh_temp_data.txt /dev/ttyUSB1 9600 RS485"},
@@ -399,11 +416,11 @@ static GtkWidget *create_main_window(void) {
                          "<span size='large' weight='bold'>Weather Sensor Emulator Control</span>");
     gtk_box_pack_start(GTK_BOX(main_vbox), header_label, FALSE, FALSE, 10);
 
-    /* Separator */
+    // Separator
     separator = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_box_pack_start(GTK_BOX(main_vbox), separator, FALSE, FALSE, 5);
 
-    /* Column headers */
+    // Column headers
     header_hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     gtk_widget_set_margin_start(header_hbox, 10);
     gtk_widget_set_margin_end(header_hbox, 10);
@@ -426,7 +443,7 @@ static GtkWidget *create_main_window(void) {
 
     gtk_box_pack_start(GTK_BOX(main_vbox), header_hbox, FALSE, FALSE, 5);
 
-    // Scrolled window for sensor list
+    // Scrolled window for sensor list: Note This should be sized appropriately for all sensors.
     scrolled_window = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled_window),
                                    GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);

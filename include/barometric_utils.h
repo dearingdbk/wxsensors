@@ -117,7 +117,7 @@ typedef enum {
 	CMD_BAD_CMD,		// !004 Bad Command
 	CMD_NULL_PARAM,		// !009 Missing Param
 	CMD_BAD_VALUE,		// !011 Bad Value
-	CMD_BAD_FMT,
+	CMD_BAD_FMT,		// !008 Bad Format
 
     // PIN-protected setup
     CMD_C_CAL,          // Calibration

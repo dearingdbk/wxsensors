@@ -124,6 +124,7 @@
 #define MIN_TRANS_INTERVAL 0.0f
 #define MAX_TRANS_INTERVAL 9999.0f
 #define CPU_WAIT_MILLISECONDS 10000
+#define CPU_WAIT_NANOSECONDS 10000000
 #define MAX_SENSOR_ADDRESS 99
 #define MAX_UNIT_TYPE 24
 
@@ -138,7 +139,7 @@ volatile sig_atomic_t kill_flag = 0;
 int serial_fd = -1;
 ParsedCommand p_cmd;
 
-/* Synchronization primitives */
+// Synchronization primitives
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  send_cond  = PTHREAD_COND_INITIALIZER;
@@ -213,7 +214,7 @@ void reassign_sensor_address(uint8_t old_addr, uint8_t new_addr) {
     // Get the pointer
     bp_sensor *s = sensor_map[old_addr];
 
-    // Update the internal struct value
+    // Update the internal struct value to the new address.
     s->device_address = new_addr;
 
     // Update the Map
@@ -222,7 +223,7 @@ void reassign_sensor_address(uint8_t old_addr, uint8_t new_addr) {
 }
 
 /*
- * Name:         information_print
+ * Name:         information_print_f
  * Purpose:      helper function to print response to '*I' command.
  * Arguments:    bp_sensor s a pointer to a bp_sensor to read the data from.
  *
@@ -234,7 +235,7 @@ void reassign_sensor_address(uint8_t old_addr, uint8_t new_addr) {
  * Bugs:         None known.
  * Notes:
  */
-void information_print(bp_sensor *s) {
+void information_print_f(bp_sensor *s) {
 	if (s != NULL) {
 		safe_serial_write(serial_fd, "Unit Type = %d\r"
 									 "Serial Number = %s\r"
@@ -275,7 +276,43 @@ void information_print(bp_sensor *s) {
 									 s->serial_number,
 									 14);
 	} else return;
-
+}
+/*
+ * Name:         information_print
+ * Purpose:      helper function to print response to 'I' command.
+ * Arguments:    bp_sensor s a pointer to a bp_sensor to read the data from.
+ *
+ * Output:       Prints to serial device the sensor information.
+ * Modifies:     None.
+ * Returns:      None.
+ * Assumptions:
+ *
+ * Bugs:         None known.
+ * Notes:
+ */
+void information_print(bp_sensor *s) {
+	if (s != NULL) {
+		safe_serial_write(serial_fd, "%d,%s,%s,%s,%.2f,%.2f,%s,%s,%.2f,%c,%d,%hhu,%s,%hhu,%c,%c,%c,%s,%d\r",
+									 s->sensor_type,
+									 s->serial_number,
+									 "Style",
+									 "Calibration Unit",
+									 s->min_pressure,
+									 s->max_pressure,
+									 "12/23/2005",
+									 "10.7.8",
+									 s->transmission_interval,
+									 s->units_sent ? 'Y' : 'N',
+									 s->filter_prescaler,
+									 s->filter_number,
+									 s->user_message,
+									 s->pressure_units,
+									 s->pin_set ? 'Y' : 'N',
+									 'Y',
+									 'Y',
+									 s->serial_number,
+									 14);
+	} else return;
 }
 
 /*
@@ -354,7 +391,7 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
 
     // Get command character
     if (!isalpha(*ptr)) {
-        return CMD_BAD_CMD; // return unknown, if we get a non-aplha char. !A-Z
+        return CMD_BAD_CMD; // return Bad Command, if we get a non-aplha char. !A-Z
     }
 
 	char command_char = toupper(*ptr); // Ensure the command char is in uppercase.
@@ -378,9 +415,13 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
 						// Both values were scanned in, nothing else to do here.
                     } else {
                         p_cmd->params.auto_send.format = 1;  // default
-                        sscanf(payload, "%f", &p_cmd->params.auto_send.interval);
+                        if (sscanf(payload, "%f", &p_cmd->params.auto_send.interval) == 1) {
+							return CMD_A_SET;
+						} else {
+							return CMD_BAD_CMD;
+						}
                     }
-                    return CMD_A_SET;
+                    return CMD_A_SET; // Should not reach here, but covers a pedantic fall through msg.
                 }
                 break;
             case 'B':
@@ -548,28 +589,9 @@ void handle_command(CommandType cmd) {
 			break;
 		case CMD_I:
 			if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
-				safe_serial_write(serial_fd, "%d,%s,%s,%s,%.2f,%.2f,%s,%s,%.2f,%c,%d,%hhu,%s,%hhu,%c,%c,%c,%s,%d\r",
-													sensor_map[p_cmd.address]->sensor_type,
-												    sensor_map[p_cmd.address]->serial_number,
-													"Style",
-													"Calibration Unit",
-													sensor_map[p_cmd.address]->min_pressure,
-													sensor_map[p_cmd.address]->max_pressure,
-													"12/23/2005",
-													"10.7.8",
-													sensor_map[p_cmd.address]->transmission_interval,
-													sensor_map[p_cmd.address]->units_sent ? 'Y' : 'N',
-													sensor_map[p_cmd.address]->filter_prescaler,
-													sensor_map[p_cmd.address]->filter_number,
-													sensor_map[p_cmd.address]->user_message,
-													sensor_map[p_cmd.address]->pressure_units,
-													sensor_map[p_cmd.address]->pin_set ? 'Y' : 'N',
-													'Y',
-													'Y',
-													sensor_map[p_cmd.address]->serial_number,
-													14);
+				information_print(sensor_map[p_cmd.address]);
 			} else {
-
+				safe_serial_write(serial_fd, "%s\r%s\r%s\r", sensor_one->serial_number, sensor_two->serial_number, sensor_three->serial_number);
 			}
 			break;
 		case CMD_I_FORMATTED:
@@ -726,6 +748,9 @@ void handle_command(CommandType cmd) {
 		case CMD_BAD_CMD:
 			safe_serial_write(serial_fd, "ERROR !004 Bad Command");
 			break;
+		case CMD_BAD_FMT:
+			safe_serial_write(serial_fd, "ERROR !008 Bad Format");
+			break;
         default:
             safe_console_print("CMD: Unknown command\n");
             break;
@@ -799,8 +824,26 @@ void* receiver_thread(void* arg) {
  */
 void* sender_thread(void* arg) {
     (void)arg;
+	struct timespec ts;
 	while (!terminate) {
         pthread_mutex_lock(&send_mutex);
+
+		// Calculate the next wakeup time (Current time + 10ms)
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_nsec += (CPU_WAIT_NANOSECONDS); // 10000000
+        if (ts.tv_nsec >= 1000000000L) {
+            ts.tv_sec += 1;
+            ts.tv_nsec -= 1000000000L;
+        }
+
+        // Wait until signaled OR timeout reached.
+        // This automatically unlocks send_mutex while waiting.
+        pthread_cond_timedwait(&send_cond, &send_mutex, &ts);
+
+        if (terminate) {
+            pthread_mutex_unlock(&send_mutex);
+            break;
+        }
 
         // Fetch simulated data from file to update global sensor states
         char *line = get_next_line_copy(file_ptr, &file_mutex);
@@ -835,7 +878,7 @@ void* sender_thread(void* arg) {
 
         // Sleep for a short duration (10ms) to prevent CPU spiking.
         // while maintaining 0.01s timing resolution.
-        usleep(CPU_WAIT_MILLISECONDS);
+        // usleep(CPU_WAIT_MILLISECONDS); //10000
     }
     return NULL;
 }
