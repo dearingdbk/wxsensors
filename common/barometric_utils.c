@@ -25,7 +25,7 @@
 #define MAX_TOKENS 32
 #define DT_STRING 7
 char units_of_measure[25][50]; // Global array to hold the units of measurement available.
-double coefficients[57]; // Global array to hold K coefficients of float values.
+double coefficients[58]; // Global array to hold K coefficients of float values.
 
 
 /*
@@ -85,8 +85,6 @@ int init_sensor(bp_sensor **ptr) {
         perror("Failed to allocate cur_sensor");
         return -1;
     }
-    //snprintf((*ptr)->units, 50, units_of_measure[current_u_of_m]); // sets default unit of measurement to hPa.
-    //snprintf((*ptr)->pin_set, 50, "000"); // sets the default pin to 000.
     snprintf((*ptr)->model_number, MAX_MODEL_NUM - 1, "%s", "DPS8100"); // sets the default model number.
     snprintf((*ptr)->user_message, MAX_MSG_STR - 1, "%s", ""); // sets the default user message to empty string '\0'.
     (*ptr)->min_pressure = 0.0f;
@@ -99,7 +97,7 @@ int init_sensor(bp_sensor **ptr) {
 	(*ptr)->transmission_interval = 1.0f; // sets the update rate to 1 reading/second
     (*ptr)->output_format = 1; // sets the defualt format to 1 R.
     (*ptr)->baud_rate = 9600; // Default to 9600
-    (*ptr)->parity = 'N'; // I, N, O, E
+    (*ptr)->parity = 'N'; // I = Ignore, N = None, O = Odd, E = Even
     (*ptr)->data_bits = 8; // Default to 8
     (*ptr)->stop_bits = 1; // 1 or 2.
 	(*ptr)->wait_interval = 22; // Number of chars trasmitted at 9600 baud for each sensor to wait.

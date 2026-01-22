@@ -21,7 +21,7 @@
 #define MAX_MSG_STR 17
 
 extern char units_of_measure[25][50];
-extern double coefficients[57];
+extern double coefficients[58];
 extern int current_u_of_m;
 
 /// BAROMETRIC PRESSURE SENSOR ///
@@ -112,6 +112,12 @@ typedef enum {
 	CMD_B_SET,          // Set bus wait
     CMD_B_QUERY,        // Query bus wait
     CMD_X_QUERY,        // Status check
+
+	// Error commands
+	CMD_BAD_CMD,		// !004 Bad Command
+	CMD_NULL_PARAM,		// !009 Missing Param
+	CMD_BAD_VALUE,		// !011 Bad Value
+	CMD_BAD_FMT,
 
     // PIN-protected setup
     CMD_C_CAL,          // Calibration

@@ -221,6 +221,51 @@ void reassign_sensor_address(uint8_t old_addr, uint8_t new_addr) {
     sensor_map[old_addr] = NULL;   // Clear the old "slot"
 }
 
+
+void information_print(bp_sensor *s) {
+	if (s != NULL) {
+		safe_serial_write(serial_fd, "Unit Type = %d\r"
+									 "Serial Number = %s\r"
+									 "Style = %s\r"
+									 "Minimum Pressure = %.2f\r"
+									 "Maximum Pressure = %.2f\r"
+									 "Manufacture Date = %s\r"
+									 "Software Version = %s\r"
+									 "Transmission Interval = %.2f\r"
+									 "Units Sent = %c\r"
+									 "Measurement Speed = %d\r"
+									 "Filter Factor = %d\r"
+									 "Filter Step = %hhu\r"
+									 "User Message = %s\r"
+									 "Units = %s\r"
+									 "PIN Set  = %c\r"
+									 "User Zero = %c\r"
+									 "User FS = %c\r"
+									 "Sensor SN = %s\r"
+									 "Internal Checksum = %d\r\n",
+									 s->sensor_type,
+									 s->serial_number,
+									 "Style",
+									 s->min_pressure,
+									 s->max_pressure,
+									 "12/23/2005",
+									 "10.7.8",
+									 s->transmission_interval,
+									 s->units_sent ? 'Y' : 'N',
+									 s->filter_prescaler,
+									 s->filter_prescaler,
+									 s->filter_number,
+									 s->user_message,
+					 				 get_pressure_units_text(s->pressure_units),
+									 sensor_one->pin_set ? 'Y' : 'N',
+									 'Y',
+									 'Y',
+									 s->serial_number,
+									 14);
+	} else return;
+
+}
+
 /*
  * Name:         cleanup_and_exit
  * Purpose:      helper function to cleanup sensors, and arrays.
@@ -291,13 +336,13 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
             ptr++; // skip ':'
         } else {
             // Not an address - invalid format
-            return CMD_UNKNOWN;
+            return CMD_NULL_PARAM;
         }
     }
 
     // Get command character
     if (!isalpha(*ptr)) {
-        return CMD_UNKNOWN; // return unknown, if we get a non-aplha char. !A-Z
+        return CMD_BAD_CMD; // return unknown, if we get a non-aplha char. !A-Z
     }
 
 	char command_char = toupper(*ptr); // Ensure the command char is in uppercase.
@@ -356,7 +401,7 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
 				}
 				break;
             default:
-                return CMD_UNKNOWN;
+                return CMD_BAD_CMD;
         }
     } else {
         // No payload - simple commands
@@ -377,12 +422,12 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
                     }
                 } else {
 					if (*payload == '?') {
-                    	return CMD_UNKNOWN;
+                    	return CMD_BAD_CMD;
 					} else {
 						return p_cmd->is_formatted ? CMD_R_UNITS : CMD_R;
 					}
 				}
-				return CMD_UNKNOWN;
+				return CMD_NULL_PARAM;
             case 'I':
                 return p_cmd->is_formatted ? CMD_I_FORMATTED : CMD_I;
             case 'X':
@@ -390,10 +435,10 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
 			case 'U':
 				return p_cmd->is_formatted ? CMD_U_INTERACTIVE : CMD_UNKNOWN;
             default:
-                return CMD_UNKNOWN;
+                return CMD_BAD_CMD;
         }
     }
-	return CMD_UNKNOWN;
+	return CMD_BAD_FMT;
 }
 
 
@@ -428,7 +473,7 @@ void handle_command(CommandType cmd) {
 					sensor_three->output_format = p_cmd.params.auto_send.format;
 					sensor_three->transmission_interval = p_cmd.params.auto_send.interval;
 				}
-			} else safe_console_error("!006 Bad Param(s)\r\n");
+			} else safe_console_error("!011 Bad Value\r\n");
             break;
 		case CMD_A_FORMATTED:
         	if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
@@ -459,7 +504,6 @@ void handle_command(CommandType cmd) {
 													sensor_three->transmission_interval);
 			}
 			break;
-
 		case CMD_B_SET:
         		if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
 					sensor_map[p_cmd.address]->wait_interval = p_cmd.params.bus_wait.wait_interval;
@@ -491,8 +535,39 @@ void handle_command(CommandType cmd) {
 		case CMD_H_QUERY:
 			break;
 		case CMD_I:
+			if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
+				safe_serial_write(serial_fd, "%d,%s,%s,%s,%.2f,%.2f,%s,%s,%.2f,%c,%d,%hhu,%s,%hhu,%c,%c,%c,%s,%d\r",
+													sensor_map[p_cmd.address]->sensor_type,
+												    sensor_map[p_cmd.address]->serial_number,
+													"Style",
+													"Calibration Unit",
+													sensor_map[p_cmd.address]->min_pressure,
+													sensor_map[p_cmd.address]->max_pressure,
+													"12/23/2005",
+													"10.7.8",
+													sensor_map[p_cmd.address]->transmission_interval,
+													sensor_map[p_cmd.address]->units_sent ? 'Y' : 'N',
+													sensor_map[p_cmd.address]->filter_prescaler,
+													sensor_map[p_cmd.address]->filter_number,
+													sensor_map[p_cmd.address]->user_message,
+													sensor_map[p_cmd.address]->pressure_units,
+													sensor_map[p_cmd.address]->pin_set ? 'Y' : 'N',
+													'Y',
+													'Y',
+													sensor_map[p_cmd.address]->serial_number,
+													14);
+			} else {
+
+			}
 			break;
 		case CMD_I_FORMATTED:
+			if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
+				information_print(sensor_map[p_cmd.address]);
+			} else {
+				information_print(sensor_one);
+				information_print(sensor_two);
+				information_print(sensor_three);
+			}
 			break;
 		case CMD_M_SET:
 			break;
@@ -511,7 +586,7 @@ void handle_command(CommandType cmd) {
 					sensor_two->long_errors = false;
 					sensor_three->long_errors = false;
 				} else {
-					// Here Direct mode trying to reassign sensors addresses would not work, so ignore or send error.
+					safe_serial_write(serial_fd, "ERROR !004 Bad Command\r\n");
 				}
 			}
 			break;
@@ -525,7 +600,8 @@ void handle_command(CommandType cmd) {
 					sensor_map[p_cmd.address]->long_errors = true;
 				} else {
 					// The command was addressed, but address and new address were not the same, bad command. i.e. <SPACE>1:*N,0<CR>
-					// Here we expect the command to switch to long messages i.e. <SPACE>1:*N,1<CR>
+					// Here we expect the command to switch to long error messages i.e. <SPACE>1:*N,1<CR>
+					safe_serial_write(serial_fd, "ERROR !004 Bad Command\r\n");
 				}
 			} else { // Direct mode, target all sensors
 				if (p_cmd.params.set_address.address == 0) { // A zero here triggers a long error message change.
@@ -534,6 +610,7 @@ void handle_command(CommandType cmd) {
 					sensor_three->long_errors = true;
 				} else {
 					// The command was not expected i.e. <SPACE>*N,1<CR>
+					safe_serial_write(serial_fd, "ERROR !009 Missing Param(s)\r\n");
 				}
 			}
 			break;
@@ -631,6 +708,11 @@ void handle_command(CommandType cmd) {
 		case CMD_W_SAVE:
 			break;
 		case CMD_X_QUERY:
+			break;
+		case CMD_UNKNOWN:
+			break;
+		case CMD_BAD_CMD:
+			safe_serial_write(serial_fd, "ERROR !004 Bad Command");
 			break;
         default:
             safe_console_print("CMD: Unknown command\n");
