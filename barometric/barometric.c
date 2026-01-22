@@ -221,7 +221,19 @@ void reassign_sensor_address(uint8_t old_addr, uint8_t new_addr) {
     sensor_map[old_addr] = NULL;   // Clear the old "slot"
 }
 
-
+/*
+ * Name:         information_print
+ * Purpose:      helper function to print response to '*I' command.
+ * Arguments:    bp_sensor s a pointer to a bp_sensor to read the data from.
+ *
+ * Output:       Prints to serial device the sensor information.
+ * Modifies:     None.
+ * Returns:      None.
+ * Assumptions:
+ *
+ * Bugs:         None known.
+ * Notes:
+ */
 void information_print(bp_sensor *s) {
 	if (s != NULL) {
 		safe_serial_write(serial_fd, "Unit Type = %d\r"

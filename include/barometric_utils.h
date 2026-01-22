@@ -219,6 +219,7 @@ int update_message(bp_sensor **ptr, char *msg);
 int update_units(bp_sensor **ptr, uint8_t unit_id);
 void reassign_sensor_address(uint8_t old_addr, uint8_t new_addr);
 bool is_ready_to_send(bp_sensor *s);
+
 /// END BAROMETRIC PRESSURE SENSOR
 
 #endif
