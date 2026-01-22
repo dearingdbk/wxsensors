@@ -122,6 +122,5 @@ char *get_next_line_copy(FILE *file_ptr, pthread_mutex_t *file_mutex) {
  *               Future versions might add cleanup logic here.
  */
 void file_utils_cleanup(void) {
-    // Currently nothing to clean up
-    // This function is provided for:
+    // Currently nothing to clean up.
 }
