@@ -340,7 +340,7 @@ float simulate_humidity(void);
 float calculate_wet_bulb(float temp, float rh);
 
 // Command parsing and response
-CommandType parse_command(const char *input, ParsedCommand *cmd, av30_sensor *sensor);
+//CommandType parse_command(const char *input, ParsedCommand *cmd, av30_sensor *sensor);
 int generate_response(av30_sensor *sensor, ParsedCommand *cmd, char *output, size_t max_len);
 
 // Message formatting

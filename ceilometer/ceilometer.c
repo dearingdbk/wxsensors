@@ -206,6 +206,8 @@
 #include "crc_utils.h"
 #include "atmosvue30_utils.h"
 
+#include <inttypes.h>
+
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B38400	     // Adjust as needed, main has logic to take arguments for a new baud rate
 #define MAX_LINE_LENGTH 1024
@@ -269,11 +271,11 @@ void handle_signal(int sig) {
  * Notes:
  */
 CommandType parse_command(const char *buf) {
-    if (buf[0] == '!' && buf[1] == '\0')					return CMD_START;
-    if (buf[0] == '?' && buf[1] == '\0')					return CMD_STOP;
-    if (buf[0] == '&' && buf[1] == '\0')					return CMD_SITE;
-    if (buf[0] == '*' && buf[1] >= 'A' && buf[1] <= 'Z' && buf[2] =='\0') 	return CMD_CONFIG;
-    if (buf && buf[0] >= 'A' && buf[0] <= 'Z' && buf[1] == '\0') 		return CMD_POLL;
+    if (buf[0] == '!' && buf[1] == '\0')					return CMD_POLL;
+    if (buf[0] == '?' && buf[1] == '\0')					return CMD_GET;
+    if (buf[0] == '&' && buf[1] == '\0')					return CMD_SET;
+    if (buf[0] == '*' && buf[1] >= 'A' && buf[1] <= 'Z' && buf[2] =='\0') 	return CMD_SETNC;
+    if (buf && buf[0] >= 'A' && buf[0] <= 'Z' && buf[1] == '\0') 		return CMD_MSGSET;
     return CMD_UNKNOWN;
 }
 
@@ -294,27 +296,27 @@ CommandType parse_command(const char *buf) {
 void handle_command(CommandType cmd) {
     char *resp_copy = NULL;
     switch (cmd) {
-        case CMD_START:
+        case CMD_POLL:
 		    pthread_mutex_lock(&send_mutex);
             continuous = 1; // enable continuous sending
             pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
             pthread_mutex_unlock(&send_mutex);
             break;
 
-        case CMD_STOP:
+        case CMD_GET:
             pthread_mutex_lock(&send_mutex);
 		    continuous = 0; // disables continuous sending.
             pthread_cond_signal(&send_cond);   // Wake sender_thread to exit loop
             pthread_mutex_unlock(&send_mutex);
             break;
 
-        case CMD_SITE:
+        case CMD_SET:
             // safe_console_print("CMD: SITE -> Sending site info\n");
             safe_serial_write(serial_fd, "%c\r\n", site_id);
 			//safe_write_response("%c\r\n", site_id);
             break;
 
-        case CMD_POLL:
+        case CMD_SETNC:
             resp_copy = get_next_line_copy(file_ptr, &file_mutex);
             if (resp_copy) {
                 // prints <Start of Line ASCII 2>, the string of data read, <EOL ASCII 3>, Checksum of the line read
@@ -324,6 +326,20 @@ void handle_command(CommandType cmd) {
                 safe_console_error("ERR: Empty file\r\n");
             }
             break;
+		case CMD_MSGSET:
+			break;
+		case CMD_ACCRES:
+			break;
+		case CMD_ERROR:
+			break;
+		case CMD_INVALID_CRC:
+			break;
+		case CMD_INVALID_ID:
+			break;
+		case CMD_INVALID_FORMAT:
+			break;
+		case CMD_UNKNOWN:
+			break;
         default:
             safe_console_print("CMD: Unknown command\n");
             break;
@@ -428,6 +444,7 @@ void* sender_thread(void* arg) {
     }
     return NULL;
 }
+
 
 /*
  * Name:         Main
