@@ -1,44 +1,183 @@
 /*
  * File:     pres_weather.c
  * Author:   Bruce Dearing
- * Date:     28/11/2025
+ * Date:     23/01/2026
  * Version:  1.0
- * Purpose:  Emulates a Campbell Scientific AtmosVue30 present weather sensor over RS-485/RS-232.
+ * Purpose:  Emulates a Campbell Scientific AtmosVUE 30 Aviation Weather System over RS-232/RS-485.
  *           This program sets up a serial connection with two threads:
  *            - Receiver thread: parses and responds to incoming commands
- *            - Sender thread: periodically transmits weather data when in continuous mode
+ *            - Sender thread: periodically transmits weather data in continuous mode
  *
- *           Supported commands:
- *             !        - Enable continuous data output mode
- *             ?        - Disable continuous mode (switch to polled mode)
- *             <A-Z>    - Poll sensor at unit address (e.g., 'A' polls unit A)
- *             *<A-Z>   - Enter configuration mode for specified unit
- *             &        - Request unit identifier (returns configured address A-Z)
+ *           Supported commands (per Campbell Scientific AtmosVUE 30 protocol):
+ *             Measurement Commands:
+ *               POLL:0:0:3A3B:            - Request current visibility/weather data
+ *               POLL:1:0:0D0B:            - Poll device with sensor ID 1
+ *               POLL:2:0:545B:            - Poll device with sensor ID 2
+ *
+ *             Information Commands:
+ *               GET:0:0:2C67:             - Retrieve all current user settings
+ *               GET:1:0:F957:             - Get settings from device with sensor ID 1
+ *
+ *             General Setup Commands:
+ *               SET:ID:<params>:<CRC>:    - Configure settings and save to flash
+ *               SETNC:ID:<params>:<CRC>:  - Configure settings (temporary, no flash save)
+ *               MSGSET:ID:<hex>:<CRC>:    - Configure custom message format
+ *               ACCRES:ID:0:<CRC>:        - Reset precipitation accumulation to zero
+ *
+ *             SET/SETNC Parameters (space-delimited):
+ *               <sensor_id> <alarm1_set> <alarm1_active> <alarm1_dist>
+ *               <alarm2_set> <alarm2_active> <alarm2_dist> <baud_rate>
+ *               <serial_number> <units> <interval> <mode> <msg_format>
+ *               <comm_type> <avg_period> <sample_timing> <dew_heater>
+ *               <hood_heater> <dirty_window_comp> <crc_check> <power_down_v>
+ *               <rh_threshold> <data_format>
+ *
+ *             Configuration Values:
+ *               Sensor ID: 0-9
+ *               Baud rate: 0=1200, 1=2400, 2=38400 (default), 3=19200, 4=57600, 5=115200
+ *               Units: M=meters, F=feet
+ *               Mode: 0=continuous, 1=polling
+ *               Message format: 0-14 (14=RVR Output for AtmosVUE 30)
+ *               Comm type: 0=RS-232, 1=RS-485
+ *               Averaging: 1=1-minute, 10=10-minute
  *
  *           Output format:
- *             <STX>data<ETX>checksum<CR><LF>
- *           Where STX=0x02, ETX=0x03, checksum is XOR of data bytes (2 hex digits)
+ *             Message 14 (RVR Output) - space-delimited fields:
+ *             <STX><Msg_ID> <Sensor_ID> <Status> <Interval> <Visibility> <Units>
+ *             <MOR_Format> <EXCO> <Avg_Period> <12_Alarms> <Particles> <Intensity>
+ *             <SYNOP> <METAR> <Temp> <RH> BLM <Luminance> <BLM_Status>
+ *             <Day_Night> <BLM_Units> <Checksum><ETX><CR><LF>
  *
- *           Data output includes: WMO weather code, visibility (m), precipitation type,
- *           precipitation intensity (mm/hr), and checksum
+ *             Communication: 38400 baud (default), 8 data bits, 1 stop bit, no parity
+ *             Line termination: <CR><LF>
+ *             Framing: STX (0x02), ETX (0x03)
+ *             Checksum: CCITT CRC-16
  *
- * Usage:    use case ' pres_weather <file_path> <serial_port_location> <baud_rate> <RS422|RS485> The serial port currently must match /dev/tty(S|USB)[0-9]+
- * 	     use case ' pres_weather <file_path> // The serial port, baud rate, and mode will be set to  defaults /dev/ttyUSB0, and B38400
+ *           Network mode:
+ *             Supports addressed mode with sensor IDs 0-9 on RS-485 bus
+ *             Address format: <command>:<sensor_id>:<reserved>:<checksum>:
+ *             Example: POLL:0:0:3A3B: (polls sensor ID 0)
  *
- *           Serial port must match pattern: /dev/tty(S|USB)[0-9]+
+ *           Data includes: visibility (MOR), present weather codes (SYNOP/METAR),
+ *                         background luminance, temperature, humidity, precipitation
  *
- * Sensor:   Campbell Scientific AtmosVue30 Present Weather Sensor
- *           - Multi-variable present weather and visibility sensor
- *           - Technology: forward-scatter visibility with optical precipitation detection
- *           - Visibility range: 10 m to 30 km (MOR - Meteorological Optical Range)
- *           - Precipitation types: rain, snow, mixed, drizzle, freezing rain
- *           - Precipitation intensity: 0-200 mm/hr
- *           - Weather codes: WMO 4677 (SYNOP) and WMO 4680 (METAR) formats
- *           - Operating temperature: -40°C to +60°C
- *           - Output: RS-485, SDI-12
- *           - Default baud rate: 38400
- *           - Default protocol: RS-485 half-duplex
- *           - Integrated heater for lens de-icing
+ * Usage:    pres_weather <file_path> [serial_port] [baud_rate] [RS232|RS485]
+ *           pres_weather <file_path> // Defaults: /dev/ttyUSB0, 38400 baud, RS232
+ *
+ * Sensor:   Campbell Scientific AtmosVUE 30 Aviation Weather System
+ *           - CS125 forward-scatter present weather and visibility sensor
+ *           - AtmosVUE-BLM background luminance sensor
+ *           - AtmosVUE-HV temperature and humidity sensor (optional)
+ *           - Visibility range: 5 m to 100 km (16.4 ft to 62.1 miles)
+ *           - Visibility accuracy: ±8% (<600m), ±10% (<10km), ±15% (<15km), ±20% (<100km)
+ *           - Resolution: 1 m over entire range
+ *           - Background luminance: 0 to 45,000 cd/m²
+ *           - Luminance accuracy: ±0.2 cd/m² (<2), ±10% (>2)
+ *           - Luminance resolution: 0.1 cd/m²
+ *           - Field of view: 6° (FAA specified)
+ *           - Spectral response: CIE 1931 (photopic)
+ *           - LED wavelength: 850 nm ± 35 nm (near infrared)
+ *           - Light pulse rate: 1 kHz
+ *           - Temperature range: -40°C to +70°C (operating)
+ *           - Extended range: -50°C to +70°C
+ *           - Temperature accuracy: ±3°C (internal sensor)
+ *           - Humidity range: 0 to 100% RH
+ *           - Precipitation intensity: 0 to 999.9 mm/hr
+ *           - Precipitation accumulation: 0 to 999.9 mm (±15% accuracy)
+ *           - Accumulation resolution: 0.1 mm
+ *           - Present weather codes: 57 SYNOP codes, METAR codes
+ *           - MOR calculation: Koschmieder law (MOR = 3/EXCO)
+ *           - Sample rate: 1 Hz (1-second samples)
+ *           - Output averaging: 1-minute or 10-minute rolling average
+ *           - IP rating: IP66 / NEMA 4X
+ *           - Output: RS-232 (full duplex) or RS-485 (half duplex)
+ *           - Default baud rate: 38400 bps
+ *           - Baud rates: 1200, 2400, 9600, 19200, 38400, 57600, 115200 bps
+ *           - Data format: 8N1 or 7E1 (8-bit no parity, 1 stop bit default)
+ *           - Power (main electronics): 7-30 VDC, 12V nominal
+ *           - Current: 110-248 mA (continuous sampling, RS-232)
+ *           - Hood heaters: 24 VAC/DC nominal (30V max), 60W total (2x30W)
+ *           - Dew heaters: 1.2W total (2x0.6W, auto-controlled)
+ *           - Hood heater control: On <15°C, Off >25°C
+ *           - Dew heater control: On <35°C, Off >40°C
+ *           - Weight (CS125): 3 kg (6.6 lb)
+ *           - Weight (BLM): 2.4 kg (5.3 lb)
+ *           - Non-volatile memory: Stores configuration, calibration, user message
+ *           - Update rate: Configurable (0-36000 seconds interval)
+ *           - Dirty window detection: Built-in with 3 alarm levels
+ *           - Dirty window compensation: Optional (configurable)
+ *
+ * Note:     AtmosVUE 30 combines CS125 sensor with BLM and optional HV sensors.
+ *           Temperature from internal sensor used unless AtmosVUE-HV connected.
+ *           Wet-bulb temperature calculated only when AtmosVUE-HV connected.
+ *           Hood heater override should be OFF when heaters not used.
+ *           If AtmosVUE-HV used, supply voltage must not exceed 28 VDC.
+ *
+ * Aeronautical Parameters (for visibility and present weather):
+ *           - MOR: Meteorological Optical Range
+ *           - EXCO: Extinction Coefficient (km⁻¹)
+ *           - RVR: Runway Visual Range
+ *           - METAR: Aviation Routine Weather Report codes
+ *           - SYNOP: Surface Synoptic Observations codes
+ *           - BLM: Background Luminance Measurement
+ *
+ * Technology:
+ *           - TERPS-like forward-scatter optical technology
+ *           - Particle size/speed analysis for precipitation type identification
+ *           - Avalanche photodiode (APD) detector
+ *           - Pulsed near-infrared LED emitter
+ *           - Sample volume: Overlap of emitter beam and detector field of view
+ *           - Scattering angle: Forward scatter (optimized for visibility)
+ *           - Microprocessor-based digital processing
+ *           - Temperature compensation: Automatic (internal and external sensors)
+ *
+ * Calibration:
+ *           - Visibility calibration: Every 2 years with calibration disk
+ *           - Dirty window zero offset: Every 2 years or after cleaning
+ *           - Calibration disk required: Factory-supplied with serial number and EXCO value
+ *           - Calibration bungs: Foam bungs for dark level calibration
+ *
+ * Maintenance:
+ *           - Lens cleaning interval: 6 months (clean sites) to monthly (contaminated)
+ *           - Cleaning method: Lint-free lens cloth with isopropyl alcohol only
+ *           - Enclosure screw lubrication: Anti-seize grease at regular intervals
+ *           - Avoid excessive pressure when cleaning (prevents scratches)
+ *
+ * Connectors:
+ *           Connector 1 (M12 Male A-coded 8-way): Main power + RS-232/RS-485 comms
+ *             Pin 1: RX (White)
+ *             Pin 3: 0V comms (Green, 100Ω to 0V)
+ *             Pin 5: 12V (Gray) - Main power input
+ *             Pin 7: TX (Blue)
+ *             Pin 8: 0V (Red) - Main power return
+ *
+ *           Connector 2 (RD24 Male 3+earth): 24V hood heater power input
+ *             Pin 2: 24V (Red) - 16 AWG recommended
+ *             Pin 3: 0V (Black) - 16 AWG recommended
+ *             Pin 4: Shield/Earth
+ *
+ *           Connector 3 (M12 Female A-coded 8-way): AtmosVUE-HV T/RH sensor (SDI-12)
+ *             Pin 5: 12V (Gray) - Power output
+ *             Pin 6: SDI-12 comms (Pink)
+ *             Pin 8: 0V (Red) - Ground reference
+ *
+ *           Connector 4 (RD24 Female 3+earth): AtmosVUE-BLM 24V heater output
+ *             Pin 2: 24V (Red)
+ *             Pin 3: 0V (Black)
+ *             Pin 4: Shield
+ *
+ *           Connector 5 (M12 Female A-coded 8-way): AtmosVUE-BLM comms + 12V output
+ *             Pin 1: RX (White)
+ *             Pin 3: 0V comms (Green)
+ *             Pin 5: 12V (Gray) - Power to BLM
+ *             Pin 7: TX (Blue)
+ *             Pin 8: 0V (Red)
+ *
+ * Internal Switches:
+ *           SW1: Factory reset (ON = reset to defaults, requires stable power)
+ *           SW2: Reserved (set to OFF)
+ *           SW3: Temporary RS-232 @ 38400 bps (ON = override to RS-232, temporary)
+ *           SW4: Must be OFF for AtmosVUE 30 operation
  *
  * Mods:
  *
@@ -65,6 +204,7 @@
 #include "serial_utils.h"
 #include "console_utils.h"
 #include "file_utils.h"
+#include "atmosvue30_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B38400	     // Adjust as needed, main has logic to take arguments for a new baud rate
@@ -140,17 +280,6 @@ uint8_t check_sum(const char *str_to_chk) {
 
 // ---------------- Command handling ----------------
 
-typedef enum {
-    CMD_UNKNOWN,
-    CMD_START, // ! received from the terminal
-    CMD_STOP,  // ? received from the terminal
-    CMD_SITE,  // & recieved from the terminal
-    CMD_POLL,  // POLL received from the terminal
-    CMD_CONFIG, // *<A-Z> received from the terminal
-    CMD_GET,	// GET command recived from the terminal
-    CMD_SET	// SET command recieved from the terminal
-} CommandType;
-
 
 /*
  * Name:         parse_command
@@ -166,13 +295,11 @@ typedef enum {
  * Notes:
  */
 CommandType parse_command(const char *buf) {
-    if (buf[0] == '!' && buf[1] == '\0')					return CMD_START;
-    if (buf[0] == '?' && buf[1] == '\0')					return CMD_STOP;
-    if (buf[0] == '&' && buf[1] == '\0')					return CMD_SITE;
-    if (buf[0] == '*' && buf[1] >= 'A' && buf[1] <= 'Z' && buf[2] =='\0') 	return CMD_CONFIG;
-    if (buf[0] == 0x02 && strncmp(buf + 1, "POLL", 4) == 0)			return CMD_POLL;
-    if (buf[0] == 0x02 && strncmp(buf + 1, "GET", 3) == 0)			return CMD_GET;
-    if (buf[0] == 0x02 && strncmp(buf + 1, "SET", 3) == 0)			return CMD_SET;
+    if (buf[0] == '!' && buf[1] == '\0')					return CMD_POLL;
+    if (buf[0] == '?' && buf[1] == '\0')					return CMD_GET;
+    if (buf[0] == '&' && buf[1] == '\0')					return CMD_SET;
+    if (buf[0] == '*' && buf[1] >= 'A' && buf[1] <= 'Z' && buf[2] =='\0') 	return CMD_SETNC;
+    if (buf && buf[0] >= 'A' && buf[0] <= 'Z' && buf[1] == '\0') 		return CMD_MSGSET;
     return CMD_UNKNOWN;
 }
 
@@ -191,52 +318,54 @@ CommandType parse_command(const char *buf) {
  * Bugs:         None known.
  * Notes:
  */
-void handle_command(CommandType cmd, const char *buf) {
+void handle_command(CommandType cmd) {
     char *resp_copy = NULL;
-    switch (cmd) {
-        case CMD_START:
+
+	 switch (cmd) {
+        case CMD_POLL:
 		    pthread_mutex_lock(&send_mutex);
             continuous = 1; // enable continuous sending
             pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
             pthread_mutex_unlock(&send_mutex);
             break;
 
-        case CMD_STOP:
+        case CMD_GET:
             pthread_mutex_lock(&send_mutex);
 		    continuous = 0; // disables continuous sending.
             pthread_cond_signal(&send_cond);   // Wake sender_thread to exit loop
             pthread_mutex_unlock(&send_mutex);
             break;
 
-        case CMD_SITE:
+        case CMD_SET:
+            // safe_console_print("CMD: SITE -> Sending site info\n");
             safe_serial_write(serial_fd, "%c\r\n", site_id);
+			//safe_write_response("%c\r\n", site_id);
             break;
 
-        case CMD_POLL:
+        case CMD_SETNC:
             resp_copy = get_next_line_copy(file_ptr, &file_mutex);
             if (resp_copy) {
                 // prints <Start of Line ASCII 2>, the string of data read, <EOL ASCII 3>, Checksum of the line read
-                safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", resp_copy, check_sum(resp_copy));
+                safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", resp_copy, checksumXOR(resp_copy));
                 free(resp_copy);
-				resp_copy = NULL;
             } else {
                 safe_console_error("ERR: Empty file\r\n");
             }
             break;
-	case CMD_GET:
-	    resp_copy = get_next_line_copy(file_ptr, &file_mutex);
-	    if (resp_copy) {
-                // prints <Start of Line ASCII 2>, the string of data read, <EOL ASCII 3>, Checksum of the line read
-                safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", resp_copy, check_sum(resp_copy));
-                free(resp_copy);
-	    } else {
-                safe_console_error("ERR: Empty file\r\n");
-	    }
-	    break;
-	case CMD_SET:
-		// prints the SET command recieved by the terminal, retaining the <STX> and <ETX>.
-                safe_serial_write(serial_fd,"%s\r\n", buf);
-	    break;
+		case CMD_MSGSET:
+			break;
+		case CMD_ACCRES:
+			break;
+		case CMD_ERROR:
+			break;
+		case CMD_INVALID_CRC:
+			break;
+		case CMD_INVALID_ID:
+			break;
+		case CMD_INVALID_FORMAT:
+			break;
+		case CMD_UNKNOWN:
+			break;
         default:
             safe_console_print("CMD: Unknown command\n");
             break;
@@ -269,7 +398,7 @@ void* receiver_thread(void* arg) {
 	    if (c == '\r' || c == '\n') {
                 if (len > 0) {
                     line[len] = '\0';
-		    handle_command(parse_command(line), line);
+		    handle_command(parse_command(line));
                     len = 0;
                 } else { // empty line ignore
                   }
