@@ -55,12 +55,10 @@ int serial_fd = -1;
 char site_id = 'A';
 //uint8_t address = 0;
 
-
 /* Synchronization primitives */
 static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  send_cond  = PTHREAD_COND_INITIALIZER;
-
 
 /*
  * Name:         handle_signal
@@ -81,7 +79,6 @@ void handle_signal(int sig) {
     kill_flag = 1; // Sets the atomic var kill_flag to true, prompting the main loop to end.
     pthread_cond_signal(&send_cond);
 }
-
 
 // ---------------- Command handling ----------------
 
