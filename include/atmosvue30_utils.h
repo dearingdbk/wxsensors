@@ -247,7 +247,6 @@ typedef struct {
     bool first_minute_elapsed;    // True after sensor powered for 1 minute
 } av30_sensor;
 
-
 // Command type enumeration
 typedef enum {
     CMD_UNKNOWN,
@@ -268,55 +267,57 @@ typedef enum {
     CMD_INVALID_FORMAT  // Command format error
 } CommandType;
 
+
 // Parsed command structure
 typedef struct {
     CommandType type;
     uint8_t sensor_id;           // Target sensor ID (0-9)
-    bool crc_valid;              // Was CRC correct?
-    uint16_t received_crc;       // CRC from command
-    uint16_t calculated_crc;     // Calculated CRC
+    bool crc_valid;
+    uint16_t received_crc;
+    uint16_t calculated_crc;
 
-    // Union for different command parameters
     union {
-        // For POLL command
-        struct {
-            uint8_t reserved;    // Always 0
-        } poll;
-        // For GET command
-        struct {
-            uint8_t reserved;    // Always 0
-        } get;
-        // For SET/SETNC commands
+        // POLL, GET, and ACCRES usually just need the sensor_id (already in the outer struct)
+        // so their internal structs can remain empty or reserved.
+
+        // For SET and SETNC commands
         struct {
             uint8_t new_sensor_id;
-            UserAlarms user_alarms;
-            BaudRateCode baud_rate;
-            VisibilityUnits visibility_units;
-            uint16_t continuous_interval;
-            OperatingMode mode;
-            MessageFormat message_format;
-            CommType comm_type;
-            AveragingPeriod averaging_period;
-            uint8_t sample_timing;
-            bool dew_heater_override;
-            bool hood_heater_override;
-            bool dirty_window_compensation;
-            bool crc_checking;
-            float power_down_voltage;
+
+            // User Alarms
+            uint8_t alarm1_set;      // 0 or 1
+            uint8_t alarm1_active;   // 0 or 1
+            uint16_t alarm1_dist;    // distance
+            uint8_t alarm2_set;
+            uint8_t alarm2_active;
+            uint16_t alarm2_dist;
+
+            // System Config
+            uint32_t baud_rate;      // Actual value or Code
+            char serial_num[16];     // Sensor serial
+            uint8_t vis_units;       // 0=m, 1=ft
+            uint16_t continuous_interval;       // Continuous interval
+            uint8_t op_mode;         // 0=Cont, 1=Poll
+            uint8_t msg_format;      // 0-14
+            uint8_t comm_mode;       // 0=232, 1=485
+            uint8_t averaging_period;// 1 or 10
+            uint8_t sample_timing;   // default 1
+
+            // Heaters & Logic
+            uint8_t dew_heater_override;
+            uint8_t hood_heater_override;
+            uint8_t dirty_window_compensation;
+            uint8_t crc_check_en;
+            float pwr_down_volt;
             uint8_t rh_threshold;
-            DataFormat data_format;
+            uint8_t data_format;     // 8N1 etc
         } set_params;
-        // For MSGSET command
+
         struct {
-            uint16_t field_bitmap;  // Hex value of fields to include
+            uint16_t field_bitmap;   // For MSGSET
         } msgset;
-        // For ACCRES command
-        struct {
-            uint8_t reserved;    // Always 0
-        } accres;
     } params;
 } ParsedCommand;
-
 
 // Function prototypes
 

@@ -227,6 +227,8 @@ uint8_t address = 0;
 // These need to be freed upon exit.
 av30_sensor *sensor_one = NULL; // Global pointer to struct for atmosvue30 sensor .
 
+ParsedCommand p_cmd;
+
 /* Synchronization primitives */
 static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -268,13 +270,8 @@ void handle_signal(int sig) {
  * Notes:
  */
 void cleanup_and_exit(int exit_code) {
-    // Clear map first
-//    memset(sensor_map, 0, sizeof(sensor_map));
-    // Free sensors if allocated
-  //  if (sensor_three) free(sensor_three);
-    //if (sensor_two) free(sensor_two);
-    //if (sensor_one) free(sensor_one);
 
+    if (sensor_one) free(sensor_one);
     // Close resources
     if (serial_fd >= 0) close(serial_fd);
     if (file_ptr) fclose(file_ptr);
@@ -324,7 +321,8 @@ void strip_whitespace(char* s) {
  * Bugs:         None known.
  * Notes:
  */
-CommandType parse_command(const char *buf) {
+CommandType parse_command(const char *buf, ParsedCommand *cmd) {
+	memset(cmd, 0, sizeof(ParsedCommand));
 	char *stx = strchr(buf, 0x02);
     char *etx = strchr(buf, 0x03);
     if (!stx || !etx) return CMD_UNKNOWN;
@@ -364,29 +362,102 @@ CommandType parse_command(const char *buf) {
 	// Limit it to our buffer size (4 hex digits, plus 2 possible spaces)
 	if (hex_len > 6) hex_len = 6;
 
-	char hex_tmp[7] = {0}; // Extra space for safety
+	char hex_tmp[7] = {0}; // 7 for one extra space for '\0'
 	memcpy(hex_tmp, p2 + 1, hex_len);
 
 	// Now strip the spaces so strtol only sees "8AB9"
 	strip_whitespace(hex_tmp);
 	uint16_t received = (uint16_t)strtol(hex_tmp, NULL, 16);
-    //char hex_tmp[5] = {8};
-    //memcpy(hex_tmp, p2 + 1, 4);
-	//strip_whitespace(hex_tmp);
-    //uint16_t received = (uint16_t)strtol(hex_tmp, NULL, 16);
 
     if (calculated != received) return CMD_INVALID_CRC;
 
-    // --- IDENTIFY ENUM ---
-    // Skip spaces after STX // Alterniatively here we can strip all whitespace, but not within a SET command.
-    const char *cmd = stx + 1;
-    while(*cmd == ' ') cmd++;
+    // --- IDENTIFY ENUM & PARSE CONTENT ---
+    // Create a temporary work buffer for tokenization
+    // This prevents strtok from mangling the original 'buf'
+    char work_buf[512] = {0};
+    if (data_len >= sizeof(work_buf)) data_len = sizeof(work_buf) - 1;
+    memcpy(work_buf, data_start, data_len);
+    work_buf[data_len] = '\0';
 
-	// Here we need to implement catches for address, and anything
-    if (strncmp(cmd, "GET", 3) == 0)    return CMD_GET;
-    if (strncmp(cmd, "POLL", 4) == 0)   return CMD_POLL;
-    if (strncmp(cmd, "SETNC", 5) == 0)  return CMD_SETNC;
-    if (strncmp(cmd, "SET", 3) == 0)    return CMD_SET;
+    char *saveptr;
+    /* Get the first token (The Command: GET, SET, etc.)
+	   Byte Index	0	1	2	3	4	5	6	7	8	9	10	11	12	13
+	   Original		G	E	T		:		0		:		0		:	\0
+	   After Call	G	E	T	\0	:		0		:		0		:	\0
+	   cmd_name		^
+	   saveptr						^
+    */
+	char *cmd_name = strtok_r(work_buf, " :", &saveptr);
+    if (!cmd_name) return CMD_UNKNOWN;
+
+	if (cmd_name != NULL) {
+    	// Map the string name to the CMD Enum
+    	if (strcmp(cmd_name, "SET") == 0) {
+        	cmd->type = CMD_SET;
+    	} else if (strcmp(cmd_name, "SETNC") == 0) {
+        	cmd->type = CMD_SETNC;
+    	} else if (strcmp(cmd_name, "GET") == 0) {
+        	cmd->type = CMD_GET;
+    	} else if (strcmp(cmd_name, "POLL") == 0) {
+			cmd->type = CMD_POLL;
+		}
+	}
+
+	// Get the sensor address from the command for future use.
+	char *addr_str = strtok_r(NULL, " :", &saveptr);
+	if (addr_str) {
+    	cmd->sensor_id = (uint8_t)atoi(addr_str); // This sets the address
+    }
+
+    if (cmd->type == CMD_GET) {
+        // GET format: GET : 0 : 0 ;
+        return CMD_GET;
+    }
+
+    if (cmd->type == CMD_POLL) {
+        // Process POLL address...
+        return CMD_POLL;
+    }
+
+	if (cmd->type == CMD_SET || cmd->type == CMD_SETNC) {
+    	char *t;
+    	char *s = saveptr;
+    	#define NEXT_T strtok_r(NULL, " ", &s) // Small macro to keep the code below cleaner.
+
+    	// IDs and Alarms
+   		if ((t = NEXT_T)) cmd->params.set_params.new_sensor_id = atoi(t);
+	    if ((t = NEXT_T)) cmd->params.set_params.alarm1_set    = atoi(t);
+    	if ((t = NEXT_T)) cmd->params.set_params.alarm1_active = atoi(t);
+	    if ((t = NEXT_T)) cmd->params.set_params.alarm1_dist   = atoi(t);
+	    if ((t = NEXT_T)) cmd->params.set_params.alarm2_set    = atoi(t);
+	    if ((t = NEXT_T)) cmd->params.set_params.alarm2_active = atoi(t);
+	    if ((t = NEXT_T)) cmd->params.set_params.alarm2_dist = atoi(t);
+
+    	// Comms and Serial
+    	if ((t = NEXT_T)) cmd->params.set_params.baud_rate = (BaudRateCode)atoi(t);
+    	if ((t = NEXT_T)) strncpy(cmd->params.set_params.serial_num, t, MAX_SERIAL_STR - 1);
+
+    	// Operation Modes
+	    if ((t = NEXT_T)) cmd->params.set_params.vis_units = (VisibilityUnits)atoi(t);
+	    if ((t = NEXT_T)) cmd->params.set_params.continuous_interval = atoi(t);
+	    if ((t = NEXT_T)) cmd->params.set_params.op_mode = (OperatingMode)atoi(t);
+	    if ((t = NEXT_T)) cmd->params.set_params.msg_format = (MessageFormat)atoi(t);
+	    if ((t = NEXT_T)) cmd->params.set_params.comm_mode = (CommType)atoi(t);
+	    if ((t = NEXT_T)) cmd->params.set_params.averaging_period = (AveragingPeriod)atoi(t);
+	    if ((t = NEXT_T)) cmd->params.set_params.sample_timing = atoi(t);
+
+    	// Overrides and Advanced
+	    if ((t = NEXT_T)) cmd->params.set_params.dew_heater_override = atoi(t);
+	    if ((t = NEXT_T)) cmd->params.set_params.hood_heater_override = atoi(t);
+	    if ((t = NEXT_T)) cmd->params.set_params.dirty_window_compensation = atoi(t);
+	    if ((t = NEXT_T)) cmd->params.set_params.crc_check_en = atoi(t);
+	    if ((t = NEXT_T)) cmd->params.set_params.pwr_down_volt = atof(t); // Use atof for float
+	    if ((t = NEXT_T)) cmd->params.set_params.rh_threshold = atoi(t);
+	    if ((t = NEXT_T)) cmd->params.set_params.data_format = (DataFormat)atoi(t);
+
+    	#undef NEXT_T
+		return cmd->type; // Returns CMD_SET or CMD_SETNC
+	}
     return CMD_UNKNOWN;
 }
 
@@ -484,7 +555,7 @@ void* receiver_thread(void* arg) {
 	    if (c == '\r' || c == '\n') {
                 if (len > 0) {
                     line[len] = '\0';
-		    handle_command(parse_command(line));
+		    handle_command(parse_command(line, &p_cmd));
                     len = 0;
                 } else { // empty line ignore
                   }
