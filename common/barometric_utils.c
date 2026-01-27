@@ -94,7 +94,7 @@ int init_sensor(bp_sensor **ptr) {
 	(*ptr)->device_address = 0; // This is direct mode, our main, will re-address these sensors.
     (*ptr)->filter_number = 0; // sets the defualt filter factor to 0.
 	(*ptr)->filter_prescaler = 0; // sets the defualt filter pre-scaler to 0.
-	(*ptr)->transmission_interval = 1.0f; // sets the update rate to 1 reading/second
+	(*ptr)->transmission_interval = 0.0f; // sets the update rate to 1 reading/second
     (*ptr)->output_format = 1; // sets the defualt format to 1 R.
     (*ptr)->baud_rate = 9600; // Default to 9600
     (*ptr)->parity = 'N'; // I = Ignore, N = None, O = Odd, E = Even

@@ -200,6 +200,7 @@
 #include <stdatomic.h>
 #include <stdarg.h>
 #include <time.h>
+#include <ctype.h>
 #include "crc_utils.h"
 #include "serial_utils.h"
 #include "console_utils.h"
@@ -223,6 +224,8 @@ int serial_fd = -1;
 char site_id = 'A';
 uint8_t address = 0;
 
+// These need to be freed upon exit.
+av30_sensor *sensor_one = NULL; // Global pointer to struct for atmosvue30 sensor .
 
 /* Synchronization primitives */
 static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
@@ -247,36 +250,63 @@ void handle_signal(int sig) {
     (void)sig;
     terminate = 1; // Sets the atmoic var terminate to true, prompting the R & T threads to join.
     kill_flag = 1; // Sets the atomic var kill_flag to true, prompting the main loop to end.
-    pthread_cond_signal(&send_cond);
+    pthread_cond_signal(&send_cond); // Wakes up the sender thread, in the event it is waiting.
 }
 
 
 /*
- * Name:         check_sum
- * Purpose:      Takes a '\0' delimited string, and returns a checksum of the characters XOR.
- * Arguments:    str_to_chk the string that checksum will be calculated for
+ * Name:         cleanup_and_exit
+ * Purpose:      helper function to cleanup sensors, and arrays.
+ * Arguments:    exit_code, the exit code to send on close.
  *
  * Output:       None.
- * Modifies:     None.
- * Returns:      returns an unsigned 8 bit integer of the checksum of str_to_chk.
- * Assumptions:  Terminate is set to false.
+ * Modifies:     Frees, sensors, sensor_map, closes file descriptors, and serial devices.
+ * Returns:      None.
+ * Assumptions:
  *
  * Bugs:         None known.
- * Notes:        To print in HEX utilize dprintf(serial_fd, "%c%s%c%02X\r\n",2, str_to_chk, check_sum(str_to_chk));
+ * Notes:
  */
-uint8_t check_sum(const char *str_to_chk) {
+void cleanup_and_exit(int exit_code) {
+    // Clear map first
+//    memset(sensor_map, 0, sizeof(sensor_map));
+    // Free sensors if allocated
+  //  if (sensor_three) free(sensor_three);
+    //if (sensor_two) free(sensor_two);
+    //if (sensor_one) free(sensor_one);
 
-    uint8_t checksum = 0;
-    if (str_to_chk == NULL) {
-        return 0;
-    }
-    while (*str_to_chk != '\0') {
-        checksum ^= (uint8_t)(*str_to_chk);
-        str_to_chk++;
-    }
-    return checksum;
+    // Close resources
+    if (serial_fd >= 0) close(serial_fd);
+    if (file_ptr) fclose(file_ptr);
+    // Cleanup utilities
+    console_cleanup();
+    serial_utils_cleanup();
+    exit(exit_code);
 }
 
+
+/*
+ * Name:         strip_whitespace
+ * Purpose:      helper function to strip all whitespace from the string.
+ * Arguments:    s the destination string pointer.
+ *
+ * Output:       None.
+ * Modifies:     s.
+ * Returns:      None.
+ * Assumptions:
+ *
+ * Bugs:         None known.
+ * Notes:		 s and d point to the same string pointer, advancing s if it is a space, moves non-space chars up the string.
+ */
+void strip_whitespace(char* s) {
+    char* d = s; // Destination pointer
+    do {
+        // isspace checks for ' ', \t, \n, \v, \f, \r
+        while (isspace((unsigned char)*s)) {
+            s++;
+        }
+    } while ((*d++ = *s++));
+}
 
 // ---------------- Command handling ----------------
 
@@ -295,11 +325,68 @@ uint8_t check_sum(const char *str_to_chk) {
  * Notes:
  */
 CommandType parse_command(const char *buf) {
-    if (buf[0] == '!' && buf[1] == '\0')					return CMD_POLL;
-    if (buf[0] == '?' && buf[1] == '\0')					return CMD_GET;
-    if (buf[0] == '&' && buf[1] == '\0')					return CMD_SET;
-    if (buf[0] == '*' && buf[1] >= 'A' && buf[1] <= 'Z' && buf[2] =='\0') 	return CMD_SETNC;
-    if (buf && buf[0] >= 'A' && buf[0] <= 'Z' && buf[1] == '\0') 		return CMD_MSGSET;
+	char *stx = strchr(buf, 0x02);
+    char *etx = strchr(buf, 0x03);
+    if (!stx || !etx) return CMD_UNKNOWN;
+
+    // Search backward from ETX for the second colon
+    // String: "... : 8AB9 : <ETX>"
+    // Index:       ^      ^  ^
+    //              p2     p1 etx
+    char *p1 = NULL;
+    char *p2 = NULL;
+
+    for (char *p = etx - 1; p > stx; p--) {
+        if (*p == ':') {
+            if (!p1) p1 = p;      // Found the colon right before ETX
+            else { p2 = p; break; } // Found the colon before the CRC
+        }
+    }
+
+    if (!p1 || !p2) return CMD_UNKNOWN;
+
+    // --- CRC VALIDATION ---
+    // Data: From char after <STX> up to the space before checksum. (p2 included)
+    // Length: (Pointer to p2) minus (Start)
+    const char *data_start = stx + 1;
+
+    // String: "<STX> GET : 0 : 0 : 8AB9 : <ETX>"
+    // Index:     ^  ^         	   ^         ^
+    //           stx data_start    p2+1     etx
+    size_t data_len = (p2 + 1) - data_start;
+
+    uint16_t calculated = crc16_ccitt((uint8_t*)data_start, data_len);
+    // Convert the 4 characters between p2 and p1
+
+	// Find distance between the two colons
+	size_t hex_len = p1 - (p2 + 1);
+
+	// Limit it to our buffer size (4 hex digits, plus 2 possible spaces)
+	if (hex_len > 6) hex_len = 6;
+
+	char hex_tmp[7] = {0}; // Extra space for safety
+	memcpy(hex_tmp, p2 + 1, hex_len);
+
+	// Now strip the spaces so strtol only sees "8AB9"
+	strip_whitespace(hex_tmp);
+	uint16_t received = (uint16_t)strtol(hex_tmp, NULL, 16);
+    //char hex_tmp[5] = {8};
+    //memcpy(hex_tmp, p2 + 1, 4);
+	//strip_whitespace(hex_tmp);
+    //uint16_t received = (uint16_t)strtol(hex_tmp, NULL, 16);
+
+    if (calculated != received) return CMD_INVALID_CRC;
+
+    // --- IDENTIFY ENUM ---
+    // Skip spaces after STX // Alterniatively here we can strip all whitespace, but not within a SET command.
+    const char *cmd = stx + 1;
+    while(*cmd == ' ') cmd++;
+
+	// Here we need to implement catches for address, and anything
+    if (strncmp(cmd, "GET", 3) == 0)    return CMD_GET;
+    if (strncmp(cmd, "POLL", 4) == 0)   return CMD_POLL;
+    if (strncmp(cmd, "SETNC", 5) == 0)  return CMD_SETNC;
+    if (strncmp(cmd, "SET", 3) == 0)    return CMD_SET;
     return CMD_UNKNOWN;
 }
 
@@ -370,7 +457,6 @@ void handle_command(CommandType cmd) {
             safe_console_print("CMD: Unknown command\n");
             break;
     }
-
 }
 
 
@@ -453,7 +539,7 @@ void* sender_thread(void* arg) {
              char *line = get_next_line_copy(file_ptr, &file_mutex);
              if (line) {
                  // prints <STX ASCII 2>, the string of data read, <ETX ASCII 3>, Checksum of the line read
-                 safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", line, check_sum(line));
+                 // safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", line, line);
                  free(line); // caller of get_next_line_copy() must free resource.
 				 line = NULL;
              }
@@ -505,6 +591,7 @@ int main(int argc, char *argv[]) {
     file_ptr = fopen(file_path, "r");
     if (!file_ptr) {
         safe_console_error("Failed to open file: %s\n", strerror(errno));
+		cleanup_and_exit(1);
         return 1;
     }
     //ternary statement to set SERIAL_PORT if supplied in args or the default
@@ -518,9 +605,15 @@ int main(int argc, char *argv[]) {
     serial_fd = open_serial_port(device, baud, mode);
 
     if (serial_fd < 0) {
-        fclose(file_ptr);
+        cleanup_and_exit(1);
         return 1;
     }
+
+
+//	if (init_av30_sensor(&sensor_one) != 1) {
+//        safe_console_error("Failed to initialize sensor_one\n");
+//    	cleanup_and_exit(1);
+//    }
     /* define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
        allowing our c program, to close its loop, join threads, and close our serial device. */
     struct sigaction sa;
@@ -547,6 +640,8 @@ int main(int argc, char *argv[]) {
         fclose(file_ptr);
         return 1;
     }
+
+//	printf("%02X\n", crc16_ccitt("123456789", 9));
 
     safe_console_print("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {

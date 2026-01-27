@@ -15,6 +15,8 @@
 unsigned short crc16(char *buffer, int length);
 unsigned int crc_ccitt(char *line_of_data);
 
+uint16_t crc16_ccitt(const uint8_t *data, size_t length);
+
 // Checksum 8 Modulo 256
 uint8_t checksum_m256(const uint8_t *str_to_chk, size_t length);
 

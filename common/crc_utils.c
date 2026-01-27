@@ -81,14 +81,25 @@ unsigned int crc_ccitt(char *line_of_data) {
 }
 
 
-/* Polynomial: 0x1021 (x^16 + x^12 + x^5 + 1)
- * Initial Value: 0xFFFF
+/*
+ * Name:         crc16_ccitt
+ * Purpose:      Returns the CRC value of the buffer string provided.
+ * Arguments:    line_of_date - the string to calculate the CRC from.
+ *				 length - the length of the string.
+ *
+ * Output:       None.
+ * Modifies:     uint16_t crc.
+ * Returns:      the calculated crc value of the string provided.
+ * Assumptions:
+ *
+ * Bugs:         None known.
+ * Notes:
  */
 uint16_t crc16_ccitt(const uint8_t *data, size_t length) {
     uint16_t crc = 0x0000; // Initial value
 
     for (size_t i = 0; i < length; i++) {
-        crc ^= (uint16_t)data[i] << 8; // Move byte into MSB of 16-bit CRC
+        crc ^= (uint16_t)data[i] << 8;
 
         for (int j = 0; j < 8; j++) {
             if (crc & 0x8000) {

@@ -10,7 +10,7 @@ endif
 
 CC = gcc
 CFLAGS = -fsanitize=address -g -Wall -Wextra -Iinclude -MMD -MP -ffunction-sections -fdata-sections
-LDFLAGS = -Wl,--gc-sections
+LDFLAGS = -Wl,--gc-sections -lm
 SRC_DIR = ../wxsensors
 BIN_DIR = bin
 OBJ_DIR = obj

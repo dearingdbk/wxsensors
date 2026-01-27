@@ -321,7 +321,7 @@ typedef struct {
 // Function prototypes
 
 // Initialization and cleanup
-int init_sensor(av30_sensor **ptr);
+int init_av30_sensor(av30_sensor **ptr);
 void free_sensor(av30_sensor *sensor);
 
 // Configuration management
@@ -349,7 +349,7 @@ int format_get_response(av30_sensor *sensor, char *output, size_t max_len);
 int format_poll_response(av30_sensor *sensor, char *output, size_t max_len);
 
 // CRC calculation (CCITT CRC-16)
-uint16_t calculate_crc16_ccitt(const char *data, size_t length);
+//uint16_t calculate_crc16_ccitt(const char *data, size_t length);
 bool verify_crc(const char *command);
 
 // Utility functions
@@ -359,7 +359,7 @@ BaudRateCode get_baud_rate_code(uint32_t baud);
 const char* get_message_format_name(MessageFormat format);
 const char* get_synop_description(uint8_t code);
 const char* get_system_status_string(SystemStatus status);
-bool is_ready_to_send(av30_sensor *sensor);
+bool av30_is_ready_to_send(av30_sensor *sensor);
 
 // Alarm management
 void update_system_alarms(av30_sensor *sensor);
