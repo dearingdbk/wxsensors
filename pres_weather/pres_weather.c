@@ -1,4 +1,4 @@
-/*
+ /*
  * File:     pres_weather.c
  * Author:   Bruce Dearing
  * Date:     23/01/2026
@@ -352,10 +352,11 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
     // Index:     ^  ^         	   ^         ^
     //           stx data_start    p2+1     etx
     size_t data_len = (p2 + 1) - data_start;
-
+	safe_console_print("String from <stx> = %s\n", data_start);
+	printf("The isolated portion is: %.*s\n", (int)data_len, data_start);
     uint16_t calculated = crc16_ccitt((uint8_t*)data_start, data_len);
     // Convert the 4 characters between p2 and p1
-
+	safe_console_print("Calculated CRC = %02X\n", calculated);
 	// Find distance between the two colons
 	size_t hex_len = p1 - (p2 + 1);
 
@@ -368,13 +369,15 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 	// Now strip the spaces so strtol only sees "8AB9"
 	strip_whitespace(hex_tmp);
 	uint16_t received = (uint16_t)strtol(hex_tmp, NULL, 16);
+	safe_console_print("Received CRC = %02X\n", received);
 
-    if (calculated != received) return CMD_INVALID_CRC;
+ 	// The CRC calculation is different for the SET/SETNC commands from the GET or POLL commands. SET strips the colon from assessment.
+	if (calculated != received) return CMD_INVALID_CRC;
 
     // --- IDENTIFY ENUM & PARSE CONTENT ---
     // Create a temporary work buffer for tokenization
     // This prevents strtok from mangling the original 'buf'
-    char work_buf[512] = {0};
+    char work_buf[MAX_INPUT_STR] = {0};
     if (data_len >= sizeof(work_buf)) data_len = sizeof(work_buf) - 1;
     memcpy(work_buf, data_start, data_len);
     work_buf[data_len] = '\0';
@@ -400,6 +403,8 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
         	cmd->type = CMD_GET;
     	} else if (strcmp(cmd_name, "POLL") == 0) {
 			cmd->type = CMD_POLL;
+		} else if (strcmp(cmd_name, "MSGSET") == 0) {
+			cmd->type = CMD_MSGSET;
 		}
 	}
 
@@ -410,14 +415,31 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
     }
 
     if (cmd->type == CMD_GET) {
+		safe_console_print("Command GET\n");
         // GET format: GET : 0 : 0 ;
         return CMD_GET;
     }
 
     if (cmd->type == CMD_POLL) {
         // Process POLL address...
+		safe_console_print("Command Poll\n");
         return CMD_POLL;
     }
+
+	if (cmd->type == CMD_MSGSET) {
+		char *t;
+    	char *s = saveptr;
+
+    	// Grab the Hex Bitmap
+    	// We use " :" to skip the colon and get to the hex string
+    	t = strtok_r(NULL, " :", &s);
+    	if (t) {
+        	// strtol(string, endptr, base)
+        	// Base 16 handles "1FFF" correctly
+        	cmd->params.msgset.field_bitmap = (uint16_t)strtol(t, NULL, 16);
+  		}
+		return CMD_MSGSET;
+	}
 
 	if (cmd->type == CMD_SET || cmd->type == CMD_SETNC) {
     	char *t;
@@ -492,8 +514,39 @@ void handle_command(CommandType cmd) {
 		    continuous = 0; // disables continuous sending.
             pthread_cond_signal(&send_cond);   // Wake sender_thread to exit loop
             pthread_mutex_unlock(&send_mutex);
-            break;
-
+			// GET FORMAT: 0	1	1	1000	1	0	15000	2	32000	M	60	1	2	0	1	1	0	0	0	1	7.0	80	0	CC8D
+			//			sensor_id
+			//			  %hhu
+			char crc_work_buffer[MAX_INPUT_STR];
+			int length = snprintf(crc_work_buffer, sizeof(crc_work_buffer), "%hhu %d %d %hu %d %d %hu %d %s %c %hu %hu %d %d %d %d %d %d %d %d %.2f %hhu %d",
+														sensor_one->sensor_id,
+														!!sensor_one->user_alarms.alarm1_set,
+														!!sensor_one->user_alarms.alarm1_active,
+														sensor_one->user_alarms.alarm1_distance,
+														!!sensor_one->user_alarms.alarm2_set,
+														!!sensor_one->user_alarms.alarm2_active,
+														sensor_one->user_alarms.alarm2_distance,
+														sensor_one->baud_rate,
+														sensor_one->serial_number,
+														sensor_one->visibility_units ? 'F' : 'M',
+														sensor_one->continuous_interval,
+														sensor_one->mode,
+														sensor_one->message_format,
+														sensor_one->comm_type,
+														sensor_one->averaging_period,
+														sensor_one->sample_timing,
+														sensor_one->dew_heater_override,
+														sensor_one->hood_heater_override,
+														sensor_one->dirty_window_compensation,
+														sensor_one->crc_checking_enabled,
+														sensor_one->power_down_voltage,
+														sensor_one->rh_threshold,
+														sensor_one->data_format);
+			//safe_console_print("The String used for the CRC = %s\n", crc_work_buffer);
+			uint16_t calculated_crc = crc16_ccitt((uint8_t*)crc_work_buffer, length);
+			safe_console_print("\x02%s %02X\x03\r\n", crc_work_buffer, calculated_crc);
+			safe_serial_write(serial_fd, "\x02%s %02X\x03\r\n", crc_work_buffer, calculated_crc);
+			break;
         case CMD_SET:
             // safe_console_print("CMD: SITE -> Sending site info\n");
             safe_serial_write(serial_fd, "%c\r\n", site_id);
@@ -681,10 +734,10 @@ int main(int argc, char *argv[]) {
     }
 
 
-//	if (init_av30_sensor(&sensor_one) != 1) {
-//        safe_console_error("Failed to initialize sensor_one\n");
-//    	cleanup_and_exit(1);
-//    }
+	if (init_av30_sensor(&sensor_one) != 0) {
+        safe_console_error("Failed to initialize sensor_one\n");
+	  	cleanup_and_exit(1);
+    }
     /* define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
        allowing our c program, to close its loop, join threads, and close our serial device. */
     struct sigaction sa;
@@ -712,8 +765,19 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-//	printf("%02X\n", crc16_ccitt("123456789", 9));
-
+	safe_console_print("Checking the parse_command\n");
+	// <STX><SP> 'G'   'E'  'T' <SP>  ':' <SP> '0'  <SP>  ':' <SP>  '0' <SP>  ':' <SP>  '8'  '2'  '7'  '7' <SP>  ':' <SP> <ETX>
+	// \x02 \x20 \x47 \x45 \x54 \x20 \x3A \x20 \x30 \x20 \x3A \x20 \x30 \x20 \x3A \x20 \x38 \x32 \x37 \x37 \x20 \x3A \x20 \x03
+	char *hex_str = "\x02\x20\x47\x45\x54\x20\x3A\x20\x30\x20\x3A\x20\x30\x20\x3A\x20\x38\x32\x37\x37\x20\x3A\x20\x03";
+	char *hex_str2 = "\x30\x20\x31\x20\x31\x20\x31\x30\x30\x30\x20\x31\x20\x30\x20\x31\x35\x30\x30\x30\x20\x32\x20\x33\x32\x30\x30\x30\x20\x4D\x20\x36\x30\x20\x31\x20\x32\x20\x30\x20\x31\x20\x31\x20\x30\x20\x30\x20\x30\x20\x31\x20\x37\x2E\x30\x20\x38\x30\x20\x30";
+	char *hex_str3 = "\x02\x30\x20\x31\x20\x31\x20\x31\x30\x30\x30\x20\x31\x20\x30\x20\x31\x35\x30\x30\x30\x20\x32\x20\x33\x32\x30\x30\x30\x20\x4D\x20\x36\x30\x20\x31\x20\x32\x20\x30\x20\x31\x20\x31\x20\x30\x20\x30\x20\x30\x20\x31\x20\x37\x2E\x30\x20\x38\x30\x20\x30\x20\x43\x43\x38\x44\x20\x30\x03";
+	// char *hex_str = "\x02\x20\x47\x45\x54\x20\x3A\x20\x30\x20\x3A\x20\x30\x20\x3A\x03";43433844
+	char *hex_str4 = "\x53\x45\x54\x3A\x30\x3A\x30\x20\x31\x20\x31\x20\x31\x30\x30\x30\x20\x31\x20\x30\x20\x31\x35\x30\x30\x30\x20\x32\x20\x30\x20\x4D\x20\x36\x30\x20\x31\x20\x32\x20\x30\x20\x31\x20\x31\x20\x30\x20\x30\x20\x30\x20\x31\x20\x37\x20\x37\x30\x20\x30\x20";
+	//handle_command(parse_command(hex_str, &p_cmd));
+    uint16_t calculated2 = crc16_ccitt((uint8_t*)hex_str4, strlen(hex_str4));
+    // Convert the 4 characters between p2 and p1
+	safe_console_print("Calculated CRC = %02X\n", calculated2);
+	//handle_command(parse_command(hex_str3, &p_cmd));
     safe_console_print("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {
         char input[8];
@@ -745,11 +809,7 @@ int main(int argc, char *argv[]) {
 	pthread_mutex_destroy(&send_mutex);
 	pthread_cond_destroy(&send_cond);
 
-    close(serial_fd);
-    fclose(file_ptr);
-
     safe_console_print("Program terminated.\n");
-	console_cleanup();
-	serial_utils_cleanup();
+	cleanup_and_exit(0);
 	return 0;
 }
