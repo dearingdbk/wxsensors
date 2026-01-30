@@ -1,4 +1,4 @@
- /*
+/*
  * File:     pres_weather.c
  * Author:   Bruce Dearing
  * Date:     23/01/2026
@@ -63,7 +63,7 @@
  *
  * Usage:    pres_weather <file_path> [serial_port] [baud_rate] [RS232|RS485]
  *           pres_weather <file_path> // Defaults: /dev/ttyUSB0, 38400 baud, RS232
- *
+. *
  * Sensor:   Campbell Scientific AtmosVUE 30 Aviation Weather System
  *           - CS125 forward-scatter present weather and visibility sensor
  *           - AtmosVUE-BLM background luminance sensor
@@ -329,58 +329,64 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 
     // Search backward from ETX for the second colon
     // String: "... : 8AB9 : <ETX>"
-    // Index:       ^      ^  ^
+    // Index:       ^      ^   ^
     //              p2     p1 etx
     char *p1 = NULL;
     char *p2 = NULL;
 
     for (char *p = etx - 1; p > stx; p--) {
         if (*p == ':') {
-            if (!p1) p1 = p;      // Found the colon right before ETX
-            else { p2 = p; break; } // Found the colon before the CRC
+            if (!p1) p1 = p;      // the colon right before ETX
+            else { p2 = p; break; } // the colon before the CRC
         }
     }
 
-    if (!p1 || !p2) return CMD_UNKNOWN;
+    if (!p1 || !p2) return CMD_UNKNOWN; // Both pointers are NULL
 
     // --- CRC VALIDATION ---
-    // Data: From char after <STX> up to the space before checksum. (p2 included)
+    // Data: From char after <STX> up to the space before checksum. (p2 not included i.e. Colon exlcluded)
     // Length: (Pointer to p2) minus (Start)
     const char *data_start = stx + 1;
 
     // String: "<STX> GET : 0 : 0 : 8AB9 : <ETX>"
-    // Index:     ^  ^         	   ^         ^
-    //           stx data_start    p2+1     etx
-    size_t data_len = (p2 + 1) - data_start;
-	safe_console_print("String from <stx> = %s\n", data_start);
-	printf("The isolated portion is: %.*s\n", (int)data_len, data_start);
-    uint16_t calculated = crc16_ccitt((uint8_t*)data_start, data_len);
+    // Index:     ^   ^           ^          ^
+    //           stx data_start   p2        etx
+    size_t data_len = (p2) - data_start;  // If the colon is included p2 + 1
+    uint16_t calculated = crc16_ccitt((uint8_t*)data_start, data_len); // From data_start to p2.
     // Convert the 4 characters between p2 and p1
-	safe_console_print("Calculated CRC = %02X\n", calculated);
+	 safe_console_print("Calculated CRC = %02X\n", calculated);
 	// Find distance between the two colons
-	size_t hex_len = p1 - (p2 + 1);
+
+    // String: "<STX> GET : 0 : 0 :8AB9: <ETX>"
+    // Index:     ^   ^            ^   ^   ^
+    //           stx data_start  p2+1  p1 etx
+	size_t hex_len = p1 - (p2 + 1); // this should be equal to 4, 6 if there are spaces.
+	//printf("The isolated portion is: %.*s\n", (int)data_len, data_start);
 
 	// Limit it to our buffer size (4 hex digits, plus 2 possible spaces)
 	if (hex_len > 6) hex_len = 6;
 
 	char hex_tmp[7] = {0}; // 7 for one extra space for '\0'
-	memcpy(hex_tmp, p2 + 1, hex_len);
+
+    // String: "<STX> GET : 0 : 0 :8AB9: <ETX>"
+    // Index:     ^   ^            ^   ^   ^
+    //           stx data_start  p2+1  p1 etx
+	memcpy(hex_tmp, p2 + 1, hex_len); // Copy the 4 chars of the CRC into hex_tmp.
 
 	// Now strip the spaces so strtol only sees "8AB9"
 	strip_whitespace(hex_tmp);
 	uint16_t received = (uint16_t)strtol(hex_tmp, NULL, 16);
-	safe_console_print("Received CRC = %02X\n", received);
 
- 	// The CRC calculation is different for the SET/SETNC commands from the GET or POLL commands. SET strips the colon from assessment.
-	if (calculated != received) return CMD_INVALID_CRC;
+ 	// Check if the CRC received is the same as the data sent with it.
+	if (calculated != received && sensor_one->crc_checking_enabled) return CMD_INVALID_CRC;
 
     // --- IDENTIFY ENUM & PARSE CONTENT ---
     // Create a temporary work buffer for tokenization
     // This prevents strtok from mangling the original 'buf'
     char work_buf[MAX_INPUT_STR] = {0};
-    if (data_len >= sizeof(work_buf)) data_len = sizeof(work_buf) - 1;
+    if (data_len >= sizeof(work_buf)) data_len = sizeof(work_buf) - 1; // Safety check, only copy to the size of the buffer -1 for '\0'.
     memcpy(work_buf, data_start, data_len);
-    work_buf[data_len] = '\0';
+    work_buf[data_len] = '\0'; // technically redundant as we filled the whole buffer with '\0' when we initialized with {0}.
 
     char *saveptr;
     /* Get the first token (The Command: GET, SET, etc.)
@@ -390,7 +396,8 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 	   cmd_name		^
 	   saveptr						^
     */
-	char *cmd_name = strtok_r(work_buf, " :", &saveptr);
+	// strtok parses each char as a delimiter, so any space or colon are consumed.
+	char *cmd_name = strtok_r(work_buf, " :", &saveptr);  // stores CMD name in saveptr buffer.
     if (!cmd_name) return CMD_UNKNOWN;
 
 	if (cmd_name != NULL) {
@@ -409,20 +416,18 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 	}
 
 	// Get the sensor address from the command for future use.
-	char *addr_str = strtok_r(NULL, " :", &saveptr);
+	char *addr_str = strtok_r(NULL, " :", &saveptr); // Subsequent calls to strtok_r with NULL returns the next token from work_buf.
 	if (addr_str) {
     	cmd->sensor_id = (uint8_t)atoi(addr_str); // This sets the address
-    }
+    } else cmd->sensor_id = 0;
 
     if (cmd->type == CMD_GET) {
-		safe_console_print("Command GET\n");
         // GET format: GET : 0 : 0 ;
         return CMD_GET;
     }
 
     if (cmd->type == CMD_POLL) {
         // Process POLL address...
-		safe_console_print("Command Poll\n");
         return CMD_POLL;
     }
 
@@ -444,6 +449,9 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 	if (cmd->type == CMD_SET || cmd->type == CMD_SETNC) {
     	char *t;
     	char *s = saveptr;
+		size_t full_length = strlen(buf); // Use strlen() here to count the full length of the buf.
+		if (full_length >= MAX_INPUT_STR) full_length = MAX_INPUT_STR - 1; // Safety check, only copy to the size of the buffer -1 for '\0'.
+		memcpy(cmd->params.set_params.full_cmd_string, buf, full_length); // Store the full buf CMD string to echo back to the SET command.
     	#define NEXT_T strtok_r(NULL, " ", &s) // Small macro to keep the code below cleaner.
 
     	// IDs and Alarms
@@ -457,8 +465,10 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 
     	// Comms and Serial
     	if ((t = NEXT_T)) cmd->params.set_params.baud_rate = (BaudRateCode)atoi(t);
-    	if ((t = NEXT_T)) strncpy(cmd->params.set_params.serial_num, t, MAX_SERIAL_STR - 1);
-
+    	if ((t = NEXT_T)) {
+			strncpy(cmd->params.set_params.serial_num, t, MAX_SERIAL_STR - 1);
+       		cmd->params.set_params.serial_num[MAX_SERIAL_STR - 1] = '\0';
+		}
     	// Operation Modes
 	    if ((t = NEXT_T)) cmd->params.set_params.vis_units = (VisibilityUnits)atoi(t);
 	    if ((t = NEXT_T)) cmd->params.set_params.continuous_interval = atoi(t);
@@ -514,11 +524,9 @@ void handle_command(CommandType cmd) {
 		    continuous = 0; // disables continuous sending.
             pthread_cond_signal(&send_cond);   // Wake sender_thread to exit loop
             pthread_mutex_unlock(&send_mutex);
-			// GET FORMAT: 0	1	1	1000	1	0	15000	2	32000	M	60	1	2	0	1	1	0	0	0	1	7.0	80	0	CC8D
-			//			sensor_id
-			//			  %hhu
+
 			char crc_work_buffer[MAX_INPUT_STR];
-			int length = snprintf(crc_work_buffer, sizeof(crc_work_buffer), "%hhu %d %d %hu %d %d %hu %d %s %c %hu %hu %d %d %d %d %d %d %d %d %.2f %hhu %d",
+			int length = snprintf(crc_work_buffer, sizeof(crc_work_buffer), "%hhu %d %d %hu %d %d %hu %d %s %c %hu %hu %d %d %d %d %d %d %d %d %.1f %hhu %d",
 														sensor_one->sensor_id,
 														!!sensor_one->user_alarms.alarm1_set,
 														!!sensor_one->user_alarms.alarm1_active,
@@ -542,15 +550,123 @@ void handle_command(CommandType cmd) {
 														sensor_one->power_down_voltage,
 														sensor_one->rh_threshold,
 														sensor_one->data_format);
-			//safe_console_print("The String used for the CRC = %s\n", crc_work_buffer);
+			safe_console_print("The String used for the CRC = %s\n", crc_work_buffer);
 			uint16_t calculated_crc = crc16_ccitt((uint8_t*)crc_work_buffer, length);
-			safe_console_print("\x02%s %02X\x03\r\n", crc_work_buffer, calculated_crc);
+			safe_console_print("Our Sent data would be -> \x02%s %02X\x03\r\n", crc_work_buffer, calculated_crc);
 			safe_serial_write(serial_fd, "\x02%s %02X\x03\r\n", crc_work_buffer, calculated_crc);
 			break;
         case CMD_SET:
-            // safe_console_print("CMD: SITE -> Sending site info\n");
-            safe_serial_write(serial_fd, "%c\r\n", site_id);
-			//safe_write_response("%c\r\n", site_id);
+            safe_console_print("The return to SET Command is -> %s\n", p_cmd.params.set_params.full_cmd_string);
+			// Update sensor id if a change is required.
+			if (p_cmd.sensor_id != p_cmd.params.set_params.new_sensor_id && p_cmd.params.set_params.new_sensor_id <= MAX_ADDRESS_NUM) {
+				sensor_one->sensor_id = p_cmd.params.set_params.new_sensor_id;
+			}
+			// Update if alarm 1 is set TRUE/FALSE
+			if (sensor_one->user_alarms.alarm1_set != p_cmd.params.set_params.alarm1_set) {
+				sensor_one->user_alarms.alarm1_set = p_cmd.params.set_params.alarm1_set;
+			}
+			// Update if alarm 1 is active TRUE/FALSE
+			if (sensor_one->user_alarms.alarm1_active != p_cmd.params.set_params.alarm1_active) {
+				sensor_one->user_alarms.alarm1_active = p_cmd.params.set_params.alarm1_active;
+			}
+			// Update alarm 1 distance.
+			if (sensor_one->user_alarms.alarm1_distance != p_cmd.params.set_params.alarm1_dist) {
+				if (1) {
+					// We need a check here if the distance is within 100,000 M if the setting is Metres
+					// Or a check if the distance is within 328,084 F if the setting is in Feet.
+					sensor_one->user_alarms.alarm1_distance = p_cmd.params.set_params.alarm1_dist;
+				}
+			}
+			// Update if alarm 2 is set TRUE/FALSE
+			if (sensor_one->user_alarms.alarm2_set != p_cmd.params.set_params.alarm2_set) {
+				sensor_one->user_alarms.alarm2_set = p_cmd.params.set_params.alarm2_set;
+			}
+			// Update if alarm 2 is active TRUE/FALSE
+			if (sensor_one->user_alarms.alarm2_active != p_cmd.params.set_params.alarm2_active) {
+				sensor_one->user_alarms.alarm2_active = p_cmd.params.set_params.alarm2_active;
+			}
+			// Update alarm 2 distance.
+			if (sensor_one->user_alarms.alarm2_distance != p_cmd.params.set_params.alarm2_dist) {
+				if (1) {
+					// We need a check here if the distance is within 100,000 M if the setting is Metres
+					// Or a check if the distance is within 328,084 F if the setting is in Feet.
+					sensor_one->user_alarms.alarm2_distance = p_cmd.params.set_params.alarm2_dist;
+				}
+			}
+			// Update baud rate of sensor if required. Likely will implement changes to anything in our serial settings.
+			if (sensor_one->baud_rate != p_cmd.params.set_params.baud_rate && p_cmd.params.set_params.baud_rate <= 5) {
+				sensor_one->baud_rate = p_cmd.params.set_params.baud_rate;
+			}
+			// Update sensor serial number if required.
+			if (p_cmd.params.set_params.serial_num[0] != '\0') {
+
+		    	if (strncmp(sensor_one->serial_number, p_cmd.params.set_params.serial_num, MAX_SERIAL_STR - 1) != 0) {
+		        	strncpy(sensor_one->serial_number, p_cmd.params.set_params.serial_num, MAX_SERIAL_STR - 1);
+		        	sensor_one->serial_number[MAX_SERIAL_STR - 1] = '\0';
+			    }
+			}
+			// Update Visibility Units if required
+			if (sensor_one->visibility_units != p_cmd.params.set_params.vis_units &&
+				p_cmd.params.set_params.vis_units <= 1) {
+				sensor_one->visibility_units = p_cmd.params.set_params.vis_units;
+			}
+			// Update the continuous sending interval.
+			if (sensor_one->continuous_interval != p_cmd.params.set_params.continuous_interval &&
+				p_cmd.params.set_params.continuous_interval <= MAX_CONT_INTERVAL) {
+				sensor_one->continuous_interval = p_cmd.params.set_params.continuous_interval;
+			}
+			// Update the Operating Mode if required.
+			if (sensor_one->mode != p_cmd.params.set_params.op_mode && p_cmd.params.set_params.op_mode <=1) {
+				sensor_one->mode = p_cmd.params.set_params.op_mode;
+			}
+			// Update message format if required.
+			if (sensor_one->message_format != p_cmd.params.set_params.msg_format && p_cmd.params.set_params.msg_format <= 14) {
+				sensor_one->message_format = p_cmd.params.set_params.msg_format;
+			}
+			// Update Communications Type.
+			if (sensor_one->comm_type != p_cmd.params.set_params.comm_mode && p_cmd.params.set_params.comm_mode <=1) {
+				sensor_one->comm_type = p_cmd.params.set_params.comm_mode;
+			}
+			// Update Averaging period if required.
+			// abs(2 * 10 - 11) = 9 || abs(2 * 1 - 11) = 9
+			if (sensor_one->averaging_period != p_cmd.params.set_params.averaging_period &&
+				(abs(2 * p_cmd.params.set_params.averaging_period - 11) == 9)) { // mathmatic equation equal to 9 if it is either a 1 or a 10.
+				sensor_one->averaging_period = p_cmd.params.set_params.averaging_period;
+			}
+			// Update sample timing if required
+			if (sensor_one->sample_timing != p_cmd.params.set_params.sample_timing) {
+				sensor_one->sample_timing = p_cmd.params.set_params.sample_timing;
+			}
+			// Update dew_heater_override TRUE/FALSE
+			if (sensor_one->dew_heater_override != p_cmd.params.set_params.dew_heater_override) {
+				sensor_one->dew_heater_override = p_cmd.params.set_params.dew_heater_override;
+			}
+			// Update hood_heater_override TRUE/FALSE
+			if (sensor_one->hood_heater_override != p_cmd.params.set_params.hood_heater_override) {
+				sensor_one->hood_heater_override = p_cmd.params.set_params.hood_heater_override;
+			}
+			// Update dirty window compensation TRUE/FALSE
+			if (sensor_one->dirty_window_compensation != p_cmd.params.set_params.dirty_window_compensation) {
+				sensor_one->dirty_window_compensation = p_cmd.params.set_params.dirty_window_compensation;
+			}
+			// Update CRC checking
+			if (sensor_one->crc_checking_enabled != p_cmd.params.set_params.crc_check_en) {
+				sensor_one->crc_checking_enabled = p_cmd.params.set_params.crc_check_en;
+			}
+			// Update power down voltage.
+			if (sensor_one->power_down_voltage != p_cmd.params.set_params.pwr_down_volt) {
+				sensor_one->power_down_voltage = p_cmd.params.set_params.pwr_down_volt;
+			}
+			// Update RH Threshold
+			if (sensor_one->rh_threshold != p_cmd.params.set_params.rh_threshold && p_cmd.params.set_params.rh_threshold <= 100) {
+				sensor_one->rh_threshold = p_cmd.params.set_params.rh_threshold;
+			}
+
+			if (sensor_one->data_format != p_cmd.params.set_params.data_format) {
+				sensor_one->data_format = p_cmd.params.set_params.data_format;
+			}
+			safe_serial_write(serial_fd, "%s", p_cmd.params.set_params.full_cmd_string);
+
             break;
 
         case CMD_SETNC:
@@ -768,15 +884,18 @@ int main(int argc, char *argv[]) {
 	safe_console_print("Checking the parse_command\n");
 	// <STX><SP> 'G'   'E'  'T' <SP>  ':' <SP> '0'  <SP>  ':' <SP>  '0' <SP>  ':' <SP>  '8'  '2'  '7'  '7' <SP>  ':' <SP> <ETX>
 	// \x02 \x20 \x47 \x45 \x54 \x20 \x3A \x20 \x30 \x20 \x3A \x20 \x30 \x20 \x3A \x20 \x38 \x32 \x37 \x37 \x20 \x3A \x20 \x03
-	char *hex_str = "\x02\x20\x47\x45\x54\x20\x3A\x20\x30\x20\x3A\x20\x30\x20\x3A\x20\x38\x32\x37\x37\x20\x3A\x20\x03";
-	char *hex_str2 = "\x30\x20\x31\x20\x31\x20\x31\x30\x30\x30\x20\x31\x20\x30\x20\x31\x35\x30\x30\x30\x20\x32\x20\x33\x32\x30\x30\x30\x20\x4D\x20\x36\x30\x20\x31\x20\x32\x20\x30\x20\x31\x20\x31\x20\x30\x20\x30\x20\x30\x20\x31\x20\x37\x2E\x30\x20\x38\x30\x20\x30";
-	char *hex_str3 = "\x02\x30\x20\x31\x20\x31\x20\x31\x30\x30\x30\x20\x31\x20\x30\x20\x31\x35\x30\x30\x30\x20\x32\x20\x33\x32\x30\x30\x30\x20\x4D\x20\x36\x30\x20\x31\x20\x32\x20\x30\x20\x31\x20\x31\x20\x30\x20\x30\x20\x30\x20\x31\x20\x37\x2E\x30\x20\x38\x30\x20\x30\x20\x43\x43\x38\x44\x20\x30\x03";
+	//char *hex_str = "\x02\x20\x47\x45\x54\x20\x3A\x20\x30\x20\x3A\x20\x30\x20\x3A\x20\x38\x32\x37\x37\x20\x3A\x20\x03";
+	//char *hex_str2 = "\x30\x20\x31\x20\x31\x20\x31\x30\x30\x30\x20\x31\x20\x30\x20\x31\x35\x30\x30\x30\x20\x32\x20\x33\x32\x30\x30\x30\x20\x4D\x20\x36\x30\x20\x31\x20\x32\x20\x30\x20\x31\x20\x31\x20\x30\x20\x30\x20\x30\x20\x31\x20\x37\x2E\x30\x20\x38\x30\x20\x30";
+	//char *hex_str3 = "\x02\x30\x20\x31\x20\x31\x20\x31\x30\x30\x30\x20\x31\x20\x30\x20\x31\x35\x30\x30\x30\x20\x32\x20\x33\x32\x30\x30\x30\x20\x4D\x20\x36\x30\x20\x31\x20\x32\x20\x30\x20\x31\x20\x31\x20\x30\x20\x30\x20\x30\x20\x31\x20\x37\x2E\x30\x20\x38\x30\x20\x30\x20\x43\x43\x38\x44\x20\x30\x03";
 	// char *hex_str = "\x02\x20\x47\x45\x54\x20\x3A\x20\x30\x20\x3A\x20\x30\x20\x3A\x03";43433844
-	char *hex_str4 = "\x53\x45\x54\x3A\x30\x3A\x30\x20\x31\x20\x31\x20\x31\x30\x30\x30\x20\x31\x20\x30\x20\x31\x35\x30\x30\x30\x20\x32\x20\x30\x20\x4D\x20\x36\x30\x20\x31\x20\x32\x20\x30\x20\x31\x20\x31\x20\x30\x20\x30\x20\x30\x20\x31\x20\x37\x20\x37\x30\x20\x30\x20";
-	//handle_command(parse_command(hex_str, &p_cmd));
-    uint16_t calculated2 = crc16_ccitt((uint8_t*)hex_str4, strlen(hex_str4));
+	//char *hex_str4 = "\x53\x45\x54\x3A\x30\x3A\x30\x20\x31\x20\x31\x20\x31\x30\x30\x30\x20\x31\x20\x30\x20\x31\x35\x30\x30\x30\x20\x32\x20\x30\x20\x4D\x20\x36\x30\x20\x31\x20\x32\x20\x30\x20\x31\x20\x31\x20\x30\x20\x30\x20\x30\x20\x31\x20\x37\x20\x37\x30\x20\x30\x20";
+	handle_command(parse_command("\x02GET:0:0:2C67:\x03\r\n", &p_cmd));
+
+	handle_command(parse_command("\x02SET:0:0 1 1 1000 1 0 15000 2 0 M 60 1 2 0 1 1 0 0 0 1 7 70 0 :8AB9:\x03", &p_cmd));
+
+    //uint16_t calculated2 = crc16_ccitt((uint8_t*)hex_str4, strlen(hex_str4));
     // Convert the 4 characters between p2 and p1
-	safe_console_print("Calculated CRC = %02X\n", calculated2);
+	//safe_console_print("Calculated CRC = %02X\n", calculated2);
 	//handle_command(parse_command(hex_str3, &p_cmd));
     safe_console_print("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {

@@ -22,7 +22,7 @@
 #define MAX_SERIAL_STR 16
 #define MAX_MODEL_NUM 32
 #define MAX_USER_MSG 17
-
+#define MAX_ADDRESS_NUM 9
 // AtmosVUE 30 constants
 #define MIN_VISIBILITY_M 5
 #define MAX_VISIBILITY_M 100000
@@ -34,7 +34,7 @@
 #define MAX_HUMIDITY 100
 #define MAX_PRECIP_RATE 999.9
 #define MAX_PRECIP_ACCUM 999.9
-
+#define MAX_CONT_INTERVAL 36000
 // Message format types
 extern const char* message_format_names[15];
 
@@ -294,7 +294,7 @@ typedef struct {
 
             // System Config
             uint32_t baud_rate;      // Actual value or Code
-            char serial_num[16];     // Sensor serial
+            char serial_num[MAX_SERIAL_STR];     // Sensor serial
             uint8_t vis_units;       // 0=m, 1=ft
             uint16_t continuous_interval;       // Continuous interval
             uint8_t op_mode;         // 0=Cont, 1=Poll
@@ -311,6 +311,8 @@ typedef struct {
             float pwr_down_volt;
             uint8_t rh_threshold;
             uint8_t data_format;     // 8N1 etc
+
+			char full_cmd_string[MAX_INPUT_STR]; // Holds the full command string to echo back to SET command.
         } set_params;
 
         struct {
