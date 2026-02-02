@@ -356,12 +356,10 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
     // Convert the 4 characters between p2 and p1
 	 safe_console_print("Calculated CRC = %02X\n", calculated);
 	// Find distance between the two colons
-
     // String: "<STX> GET : 0 : 0 :8AB9: <ETX>"
     // Index:     ^   ^            ^   ^   ^
     //           stx data_start  p2+1  p1 etx
 	size_t hex_len = p1 - (p2 + 1); // this should be equal to 4, 6 if there are spaces.
-	//printf("The isolated portion is: %.*s\n", (int)data_len, data_start);
 
 	// Limit it to our buffer size (4 hex digits, plus 2 possible spaces)
 	if (hex_len > 6) hex_len = 6;
@@ -374,7 +372,7 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 	memcpy(hex_tmp, p2 + 1, hex_len); // Copy the 4 chars of the CRC into hex_tmp.
 
 	// Now strip the spaces so strtol only sees "8AB9"
-	strip_whitespace(hex_tmp);
+	strip_whitespace(hex_tmp); // This is liekly not a required step, the string does not have spaces.
 	uint16_t received = (uint16_t)strtol(hex_tmp, NULL, 16);
 
  	// Check if the CRC received is the same as the data sent with it.
@@ -389,13 +387,13 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
     work_buf[data_len] = '\0'; // technically redundant as we filled the whole buffer with '\0' when we initialized with {0}.
 
     char *saveptr;
-    /* Get the first token (The Command: GET, SET, etc.)
-	   Byte Index	0	1	2	3	4	5	6	7	8	9	10	11	12	13
-	   Original		G	E	T		:		0		:		0		:	\0
-	   After Call	G	E	T	\0	:		0		:		0		:	\0
-	   cmd_name		^
-	   saveptr						^
-    */
+    // Get the first token (The Command: GET, SET, etc.)
+	// Byte Index	0	1	2	3	4	5	6	7	8	9	10	11	12	13
+	// Original		G	E	T		:		0		:		0		:	\0
+	// After Call	G	E	T	\0	:		0		:		0		:	\0
+	// cmd_name		^
+	// saveptr						^
+
 	// strtok parses each char as a delimiter, so any space or colon are consumed.
 	char *cmd_name = strtok_r(work_buf, " :", &saveptr);  // stores CMD name in saveptr buffer.
     if (!cmd_name) return CMD_UNKNOWN;
@@ -520,11 +518,6 @@ void handle_command(CommandType cmd) {
             break;
 
         case CMD_GET:
-            pthread_mutex_lock(&send_mutex);
-		    continuous = 0; // disables continuous sending.
-            pthread_cond_signal(&send_cond);   // Wake sender_thread to exit loop
-            pthread_mutex_unlock(&send_mutex);
-
 			char crc_work_buffer[MAX_INPUT_STR];
 			int length = snprintf(crc_work_buffer, sizeof(crc_work_buffer), "%hhu %d %d %hu %d %d %hu %d %s %c %hu %hu %d %d %d %d %d %d %d %d %.1f %hhu %d",
 														sensor_one->sensor_id,
@@ -550,11 +543,11 @@ void handle_command(CommandType cmd) {
 														sensor_one->power_down_voltage,
 														sensor_one->rh_threshold,
 														sensor_one->data_format);
-			safe_console_print("The String used for the CRC = %s\n", crc_work_buffer);
 			uint16_t calculated_crc = crc16_ccitt((uint8_t*)crc_work_buffer, length);
-			safe_console_print("Our Sent data would be -> \x02%s %02X\x03\r\n", crc_work_buffer, calculated_crc);
 			safe_serial_write(serial_fd, "\x02%s %02X\x03\r\n", crc_work_buffer, calculated_crc);
 			break;
+        case CMD_SETNC:
+            // Switch Fall-Through SET and SETNC run the same code.
         case CMD_SET:
             safe_console_print("The return to SET Command is -> %s\n", p_cmd.params.set_params.full_cmd_string);
 			// Update sensor id if a change is required.
@@ -666,20 +659,13 @@ void handle_command(CommandType cmd) {
 				sensor_one->data_format = p_cmd.params.set_params.data_format;
 			}
 			safe_serial_write(serial_fd, "%s", p_cmd.params.set_params.full_cmd_string);
-
-            break;
-
-        case CMD_SETNC:
-            resp_copy = get_next_line_copy(file_ptr, &file_mutex);
-            if (resp_copy) {
-                // prints <Start of Line ASCII 2>, the string of data read, <EOL ASCII 3>, Checksum of the line read
-                safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", resp_copy, checksumXOR(resp_copy));
-                free(resp_copy);
-            } else {
-                safe_console_error("ERR: Empty file\r\n");
-            }
             break;
 		case CMD_MSGSET:
+			if (sensor_one->custom_msg_bits != p_cmd.params.msgset.field_bitmap && p_cmd.params.msgset.field_bitmap < 0x121C) {
+				if (1) {  // We need to implement a check here that the values are within spec 121C.
+					sensor_one->custom_msg_bits = p_cmd.params.msgset.field_bitmap;
+				}
+			}
 			break;
 		case CMD_ACCRES:
 			break;
