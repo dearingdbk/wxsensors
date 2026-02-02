@@ -210,13 +210,15 @@
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B38400	     // Adjust as needed, main has logic to take arguments for a new baud rate
 #define MAX_LINE_LENGTH 1024
-
+#define CPU_WAIT_NANOSECONDS 10000000
+#define MAX_CMD_LENGTH 256
+#define CPU_WAIT_MILLISECONDS 10000
 
 FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
 
 // Shared state
-int continuous = 0;
+//int continuous = 0;
 volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
 
@@ -228,6 +230,7 @@ uint8_t address = 0;
 av30_sensor *sensor_one = NULL; // Global pointer to struct for atmosvue30 sensor .
 
 ParsedCommand p_cmd;
+ParsedMessage p_msg;
 
 /* Synchronization primitives */
 static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
@@ -507,12 +510,11 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
  * Notes:
  */
 void handle_command(CommandType cmd) {
-    char *resp_copy = NULL;
+    // char *resp_copy = NULL;
 
 	 switch (cmd) {
         case CMD_POLL:
 		    pthread_mutex_lock(&send_mutex);
-            continuous = 1; // enable continuous sending
             pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
             pthread_mutex_unlock(&send_mutex);
             break;
@@ -608,7 +610,7 @@ void handle_command(CommandType cmd) {
 				p_cmd.params.set_params.continuous_interval <= MAX_CONT_INTERVAL) {
 				sensor_one->continuous_interval = p_cmd.params.set_params.continuous_interval;
 			}
-			// Update the Operating Mode if required.
+			// Update the Operating Mode if required Polling or Continuous).
 			if (sensor_one->mode != p_cmd.params.set_params.op_mode && p_cmd.params.set_params.op_mode <=1) {
 				sensor_one->mode = p_cmd.params.set_params.op_mode;
 			}
@@ -700,32 +702,34 @@ void handle_command(CommandType cmd) {
  */
 void* receiver_thread(void* arg) {
     (void)arg;
-    char line[256];
+    char line[MAX_CMD_LENGTH];
     size_t len = 0;
 
     while (!terminate) {
         char c;
         int n = read(serial_fd, &c, 1);
         if (n > 0) {
-	    if (c == '\r' || c == '\n') {
+	    	if (c == '\r' || c == '\n') {
                 if (len > 0) {
-                    line[len] = '\0';
-		    handle_command(parse_command(line, &p_cmd));
+                    line[len] = '\0'; // Terminate with NULL for safety.
+					pthread_mutex_lock(&send_mutex);   // <--- LOCK HERE
+		    		handle_command(parse_command(line, &p_cmd)); // handle received command here.
+                    pthread_mutex_unlock(&send_mutex); // <--- UNLOCK HERE
                     len = 0;
                 } else { // empty line ignore
-                  }
+                }
             } else {
-                  if (len < sizeof(line)-1) {
-                    line[len++] = c;
+              	  if (len < sizeof(line)-1) {
+				      line[len++] = c;
                   } else {
-                        len = 0;
-                    }
+                    	len = 0;
+                  }
               }
         } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
             perror("read");
         } else {
             // no data available n == 0, avoid busy loop
-            usleep(10000);
+            usleep(CPU_WAIT_MILLISECONDS);
         }
     }
     return NULL;
@@ -747,36 +751,47 @@ void* receiver_thread(void* arg) {
  */
 void* sender_thread(void* arg) {
     (void)arg;
-    struct timespec requested_time;
+    struct timespec ts;
 
     while (!terminate) {
         pthread_mutex_lock(&send_mutex);
-        // wait until either terminate is set or continuous becomes 1
-        while (!terminate && !continuous) {
-            pthread_cond_wait(&send_cond, &send_mutex);
+
+		// Calculate the next wakeup time (Current time + 10ms)
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_nsec += (CPU_WAIT_NANOSECONDS); // 10000000
+        if (ts.tv_nsec >= 1000000000L) {
+            ts.tv_sec += 1;
+            ts.tv_nsec -= 1000000000L;
         }
+
+        // Wait until signaled OR timeout reached.
+        // This automatically unlocks send_mutex while waiting.
+        pthread_cond_timedwait(&send_cond, &send_mutex, &ts);
 
         if (terminate) {
             pthread_mutex_unlock(&send_mutex);
             break;
         }
 
-        while (!terminate && continuous) {
-             char *line = get_next_line_copy(file_ptr, &file_mutex);
-             if (line) {
-                 // prints <STX ASCII 2>, the string of data read, <ETX ASCII 3>, Checksum of the line read
-                 // safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", line, line);
-                 free(line); // caller of get_next_line_copy() must free resource.
-				 line = NULL;
-             }
+        // is_ready_to_send() handles the interval and timing logic internally, and checks if the sensor is Pollling or Continuous.
+        if (sensor_one != NULL && av30_is_ready_to_send(sensor_one)) {
+        	char *line = get_next_line_copy(file_ptr, &file_mutex); // Moved this into the check for is_ready_to_send to avoid depleting the data file.
 
-             clock_gettime(CLOCK_REALTIME, &requested_time);
-             requested_time.tv_sec += 2;
-             pthread_cond_timedwait(&send_cond, &send_mutex, &requested_time);
+        	if (line) {
+				strktok
+        		// do all our parsing within here, or send to a helper function.
+            	// safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", line, line);
+            	free(line); // caller of get_next_line_copy() must free resource.
+				line = NULL;
+        	}
+
+			// Perform the serial write
+    	    //safe_serial_write(serial_fd, "%f\r\n", s->current_pressure);
+            // Update the last_send_time to the current monotonic clock
+            clock_gettime(CLOCK_MONOTONIC, &sensor_one->last_send_time);
         }
 
         pthread_mutex_unlock(&send_mutex);
-
     }
     return NULL;
 }
@@ -853,18 +868,14 @@ int main(int argc, char *argv[]) {
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
         perror("Failed to create receiver thread");
         terminate = 1;          // <- symmetrical, but not required
-        close(serial_fd);
-        fclose(file_ptr);
-        return 1;
+		cleanup_and_exit(1);
     }
 
     if (pthread_create(&send_thread, NULL, sender_thread, NULL) != 0) {
         perror("Failed to create sender thread");
         terminate = 1;          // <- needed because recv_thread is running
         pthread_join(recv_thread, NULL);
-        close(serial_fd);
-        fclose(file_ptr);
-        return 1;
+		cleanup_and_exit(1);
     }
 
 	safe_console_print("Checking the parse_command\n");
@@ -877,7 +888,8 @@ int main(int argc, char *argv[]) {
 	//char *hex_str4 = "\x53\x45\x54\x3A\x30\x3A\x30\x20\x31\x20\x31\x20\x31\x30\x30\x30\x20\x31\x20\x30\x20\x31\x35\x30\x30\x30\x20\x32\x20\x30\x20\x4D\x20\x36\x30\x20\x31\x20\x32\x20\x30\x20\x31\x20\x31\x20\x30\x20\x30\x20\x30\x20\x31\x20\x37\x20\x37\x30\x20\x30\x20";
 	handle_command(parse_command("\x02GET:0:0:2C67:\x03\r\n", &p_cmd));
 
-	handle_command(parse_command("\x02SET:0:0 1 1 1000 1 0 15000 2 0 M 60 1 2 0 1 1 0 0 0 1 7 70 0 :8AB9:\x03", &p_cmd));
+	handle_command(parse_command("\x02SET:0:0 1 1 1000 1 0 15000 2 0 M 60 1 2 0 1 1 0 0 0 1 7 70 0 :8AB9:\x03\r\n", &p_cmd));
+
 
     //uint16_t calculated2 = crc16_ccitt((uint8_t*)hex_str4, strlen(hex_str4));
     // Convert the 4 characters between p2 and p1
@@ -893,7 +905,7 @@ int main(int argc, char *argv[]) {
                 kill_flag = 1;
                 pthread_cond_signal(&send_cond);  // wake sender_thread
                 pthread_mutex_unlock(&send_mutex);
-		break;
+				break;
             }
         } else if (feof(stdin)) {  // keep an eye on the behaviour of this check.
             pthread_mutex_lock(&send_mutex);
@@ -907,9 +919,11 @@ int main(int argc, char *argv[]) {
         }
     }
 
+	// Join threads
     pthread_join(recv_thread, NULL);
     pthread_join(send_thread, NULL);
 
+	// destroy mutexes and conditions
 	pthread_mutex_destroy(&file_mutex);
 	pthread_mutex_destroy(&send_mutex);
 	pthread_cond_destroy(&send_cond);

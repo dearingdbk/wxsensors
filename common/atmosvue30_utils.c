@@ -373,19 +373,32 @@ void clear_alarms(av30_sensor *sensor) {
     sensor->user_alarms.alarm2_active = false;
 }
 
+/*
+ * Name:         av30_is_ready_to_send
+ * Purpose:      checks if a sensor is within its window to send data.
+ * Arguments:    None
+ *
+ * Output:       None.
+ * Modifies:     The units value of the provided bp_sensor.
+ * Returns:      true if sensor is in the window, false if not enough time has gone by.
+ * Assumptions:
+ *
+ * Bugs:         None known.
+ * Notes:
+ */
 bool av30_is_ready_to_send(av30_sensor *sensor) {
     if (!sensor || sensor->mode != MODE_CONTINUOUS) return false;
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
-    double elapsed = (now.tv_sec - sensor->last_send_time.tv_sec) +
-                     (now.tv_nsec - sensor->last_send_time.tv_nsec) / 1e9;
-    return elapsed >= sensor->continuous_interval;
+    double elapsed = ((double)now.tv_sec - sensor->last_send_time.tv_sec) +
+                     ((double)now.tv_nsec - sensor->last_send_time.tv_nsec) / 1e9;
+    return (elapsed >= (double)sensor->continuous_interval);
 }
 
 /*int format_message(av30_sensor *sensor, char *output, size_t max_len) {
     if (!sensor || !output) return -1;
     char msg[1024];
-    int len = snprintf(msg, sizeof(msg), 
+    int len = snprintf(msg, sizeof(msg),
         "%d %d %d %d %d %c %d %.2f %d "
         "%d %d %d %d %d %d %d %d %d %d %d %d "
         "%.2f %.2f %d %s %.1f %d %d %d %d ",

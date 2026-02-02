@@ -195,7 +195,7 @@ typedef struct {
     uint8_t sensor_id;            // 0-9 (device address)
 
     // Current measurements
-    uint16_t visibility;          // 5-100000 meters (or feet)
+    uint32_t visibility;          // 5-100000 meters (or feet)
     VisibilityUnits visibility_units;
     MORFormat mor_format;         // 0=MOR, 1=TMOR
     float extinction_coeff;       // EXCO in km⁻¹
@@ -320,6 +320,39 @@ typedef struct {
         } msgset;
     } params;
 } ParsedCommand;
+
+
+typedef struct {
+    uint8_t msg_format;  	   		// 0-14
+    uint8_t sensor_id;      		// Target sensor ID (0-9)
+	uint8_t sys_status;				// 0-3
+    uint16_t continuous_interval;   // Continuous interval 0-36,000
+	uint32_t visibility;			// Visability 0 - 100,000
+	char vis_units;					// Visability Units M or F
+	MORFormat mor_format;			// MOR Format
+	float exco;						// EXCO
+	uint8_t avg_period;				// Averging period 1 or 10 minutes
+	uint8_t emitter_failure;		//
+	uint8_t e_lens_dirty;			// Emitter Lens Dirty
+	uint8_t e_temp_failure;			// Emitter Temperature Failure
+	uint8_t d_lens_dirty;			// Emitter
+	uint8_t d_temp_failure;
+	uint8_t d_saturation_lvl;
+	uint8_t hood_temperature;
+	uint8_t external_temperature;
+	uint8_t signature_error;
+	uint8_t flash_read_error;
+	uint8_t flash_write_error;
+	uint8_t particle_limit;
+	uint8_t particle_count;
+	float intensity;
+	uint8_t synop_code;
+	char metar_code[10];
+	float temperature;
+	int8_t relative_humidity;
+	char blm[10];
+	BLM_data blam;
+} ParsedMessage;
 
 // Function prototypes
 
