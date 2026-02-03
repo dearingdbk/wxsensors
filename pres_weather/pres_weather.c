@@ -201,6 +201,7 @@
 #include <stdarg.h>
 #include <time.h>
 #include <ctype.h>
+#include <poll.h>
 #include "crc_utils.h"
 #include "serial_utils.h"
 #include "console_utils.h"
@@ -213,7 +214,7 @@
 #define CPU_WAIT_NANOSECONDS 10000000
 #define MAX_CMD_LENGTH 256
 #define MAX_MSG_LENGTH 512
-#define CPU_WAIT_MILLISECONDS 10000
+#define CPU_WAIT_USEC 10000
 
 #define DEBUG_MODE // Comment this line out to disable all debug prints
 
@@ -246,6 +247,7 @@ static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // protects file_
 static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  send_cond  = PTHREAD_COND_INITIALIZER;
 
+pthread_t recv_thread, send_thread;
 
 /*
  * Name:         handle_signal
@@ -283,6 +285,23 @@ void handle_signal(int sig) {
  * Notes:
  */
 void cleanup_and_exit(int exit_code) {
+	pthread_mutex_lock(&send_mutex);
+    terminate = 1;
+    pthread_cond_signal(&send_cond);
+    pthread_mutex_unlock(&send_mutex);
+
+	if (recv_thread != 0) {
+        pthread_join(recv_thread, NULL);
+        recv_thread = 0;
+    }
+    if (send_thread != 0) {
+        pthread_join(send_thread, NULL);
+        send_thread = 0;
+    }
+
+	pthread_mutex_destroy(&send_mutex);
+    pthread_mutex_destroy(&file_mutex);
+    pthread_cond_destroy(&send_cond);
 
     if (sensor_one) free(sensor_one);
     // Close resources
@@ -812,6 +831,8 @@ void handle_command(CommandType cmd) {
 				sensor_one->data_format = p_cmd.params.set_params.data_format;
 			}
 			safe_serial_write(serial_fd, "%s", p_cmd.params.set_params.full_cmd_string);
+			// Wake up our sender thread, to check if continuous interval changed, or our mode went from polled to continuous.
+			pthread_cond_signal(&send_cond);
             break;
 		case CMD_MSGSET: {
         	uint32_t requested_bits = p_cmd.params.msgset.field_bitmap;
@@ -908,7 +929,7 @@ void* receiver_thread(void* arg) {
             perror("read");
         } else {
             // no data available n == 0, avoid busy loop
-            usleep(CPU_WAIT_MILLISECONDS);
+            usleep(CPU_WAIT_USEC);
         }
     }
     return NULL;
@@ -935,17 +956,33 @@ void* sender_thread(void* arg) {
     while (!terminate) {
         pthread_mutex_lock(&send_mutex);
 
-		// Calculate the next wakeup time (Current time + 10ms)
-        clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_nsec += (CPU_WAIT_NANOSECONDS); // 10000000
-        if (ts.tv_nsec >= 1000000000L) {
-            ts.tv_sec += 1;
-            ts.tv_nsec -= 1000000000L;
+		// 1. Determine if we should wait for a specific time or indefinitely
+        if (sensor_one != NULL && sensor_one->mode == MODE_CONTINUOUS) {
+            // Calculate absolute time: Last Send Time + Interval
+            // We use current REALTIME + (Interval - Time Since Last Send)
+            clock_gettime(CLOCK_REALTIME, &ts);
+            // Add the continuous interval (in seconds) to the current time
+            ts.tv_sec += sensor_one->continuous_interval;
+
+            // 2. Wait until that specific second arrives OR a signal interrupts us
+            pthread_cond_timedwait(&send_cond, &send_mutex, &ts);
+        } else {
+            // If in Polling Mode, wait indefinitely for a signal from the receiver
+            pthread_cond_wait(&send_cond, &send_mutex);
         }
+
+
+		// Calculate the next wakeup time (Current time + 10ms)
+        //clock_gettime(CLOCK_REALTIME, &ts);
+        //ts.tv_nsec += (CPU_WAIT_NANOSECONDS); // 10000000
+        //if (ts.tv_nsec >= 1000000000L) {
+        //    ts.tv_sec += 1;
+        //    ts.tv_nsec -= 1000000000L;
+        //}
 
         // Wait until signaled OR timeout reached.
         // This automatically unlocks send_mutex while waiting.
-        pthread_cond_timedwait(&send_cond, &send_mutex, &ts);
+        //pthread_cond_timedwait(&send_cond, &send_mutex, &ts);
 
         if (terminate) {
             pthread_mutex_unlock(&send_mutex);
@@ -975,25 +1012,24 @@ void* sender_thread(void* arg) {
  * Purpose:      Main funstion, which opens up serial port, and creates a receiver and transmit threads to listen, and respond to commands
  *               over that serial port. Can take two arguments or no arguments. If changing the serial device name and baud rate, you must supply both.
  *               i.e. tmp_bp_listen <file_path> [serial_device] [baud_rate]
- *		 uses ternary statements to set either default values for SERIAL_PORT, and BAUD_RATE which are defined above.
- * 		 (condition) ? (value if true) : (value if false)
+ *		 		 uses ternary statements to set either default values for SERIAL_PORT, and BAUD_RATE which are defined above.
+ * 		 		 (condition) ? (value if true) : (value if false)
  *
  * Arguments:    file_path: The location of the file we want to read from, line by line.
  *               device: the string representing the file descriptor of the serial port which should
- * 		 match the pattern ^/dev/tty(S|USB)[0-9]+$. This is tested with function is_valid_tty()
- *		 baud: the string value representing the proposed baud rate, this string is sent to get_baud_rate() which returns a speed_t value.
+ * 				 match the pattern ^/dev/tty(S|USB)[0-9]+$. This is tested with function is_valid_tty()
+ *				 baud: the string value representing the proposed baud rate, this string is sent to get_baud_rate() which returns a speed_t value.
  *
  * Output:       Prints to stderr the appropriate error messages if encountered.
  * Modifies:     None.
  * Returns:      Returns an int 0 representing success once the program closes the fd, and joins the threads, or 1 if unable to open the serial port.
  * Assumptions:  device is a valid char * pointer and the line contains
  *               characters other than white space, and points to an FD.
- *		 The int provided by arguments is a valid baud rate, although B9600 is set on any errors.
+ *		 		 The int provided by arguments is a valid baud rate, although B9600 is set on any errors.
  *
  * Bugs:         None known.
  * Notes:
  */
-
 int main(int argc, char *argv[]) {
 
     if (argc < 2) {
@@ -1036,8 +1072,6 @@ int main(int argc, char *argv[]) {
     sigaction(SIGINT, &sa, NULL);   // Ctrl-C
     sigaction(SIGTERM, &sa, NULL);  // kill, systemd, etc.
 
-    pthread_t recv_thread, send_thread;
-
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
         safe_console_error("Failed to create receiver thread: %s\n", strerror(errno));
         terminate = 1;          // <- symmetrical, but not required
@@ -1055,37 +1089,28 @@ int main(int argc, char *argv[]) {
 	handle_command(parse_command("\x02MSGSET:0:121C:5868:\x03\r\n", &p_cmd));
 
     safe_console_print("Press 'q' + Enter to quit.\n");
-    while (!kill_flag) {
-        char input[8];
-        if (fgets(input, sizeof(input), stdin)) {
-            if (input[0] == 'q' || input[0] == 'Q' || kill_flag == 1) {
-                pthread_mutex_lock(&send_mutex);
-                terminate = 1;
-                kill_flag = 1;
-                pthread_cond_signal(&send_cond);  // wake sender_thread
-                pthread_mutex_unlock(&send_mutex);
-				break;
-            }
-        } else if (feof(stdin)) {  // keep an eye on the behaviour of this check.
-            pthread_mutex_lock(&send_mutex);
-            terminate = 1;
-            kill_flag = 1;
-            pthread_cond_signal(&send_cond);      // wake sender_thread
-            pthread_mutex_unlock(&send_mutex);
-            break; // stdin closed
-        } else {
-            continue; // temp read error
-        }
+    struct pollfd fds[1];
+	fds[0].fd = STDIN_FILENO;
+	fds[0].events = POLLIN;
+	while (!kill_flag) {
+		int ret = poll(fds, 1, 500);
+
+		if (ret == -1) {
+        	if (errno == EINTR) continue; // Interrupted by signal, check kill_flag
+        	safe_console_error("%s\n", strerror(errno));
+			break; // Actual error
+    	}
+		if (ret > 0 && (fds[0].revents & (POLLIN | POLLHUP))) {
+			char input[8];
+	     	if (fgets(input, sizeof(input), stdin)) {
+            	if (input[0] == 'q' || input[0] == 'Q' || kill_flag == 1) {
+                	kill_flag = 1;
+            	}
+        	} else if (feof(stdin)) {  // keep an eye on the behaviour of this check.
+            	kill_flag = 1;
+        	}
+		}
     }
-
-	// Join threads
-    pthread_join(recv_thread, NULL);
-    pthread_join(send_thread, NULL);
-
-	// destroy mutexes and conditions
-	pthread_mutex_destroy(&file_mutex);
-	pthread_mutex_destroy(&send_mutex);
-	pthread_cond_destroy(&send_cond);
 
     safe_console_print("Program terminated.\n");
 	cleanup_and_exit(0);
