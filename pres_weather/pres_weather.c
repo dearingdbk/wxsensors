@@ -212,7 +212,17 @@
 #define MAX_LINE_LENGTH 1024
 #define CPU_WAIT_NANOSECONDS 10000000
 #define MAX_CMD_LENGTH 256
+#define MAX_MSG_LENGTH 512
 #define CPU_WAIT_MILLISECONDS 10000
+
+#define DEBUG_MODE // Comment this line out to disable all debug prints
+
+#ifdef DEBUG_MODE
+    #define DEBUG_PRINT(fmt, ...) printf("DEBUG: " fmt, ##__VA_ARGS__)
+#else
+    #define DEBUG_PRINT(fmt, ...) // Becomes empty space during compilation
+#endif
+
 
 FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
@@ -310,6 +320,58 @@ void strip_whitespace(char* s) {
 
 // ---------------- Command handling ----------------
 
+
+int parse_message(char *msg, ParsedMessage *p_message) {
+	memset(p_message, 0, sizeof(ParsedMessage));
+	//char *cmd_name = strtok_r(work_buf, " :", &saveptr);  // stores CMD name in saveptr buffer.
+	char *saveptr;
+	char *token;
+	if ((token = strtok_r(msg, " ", &saveptr))) p_message->msg_format = atoi(token);
+   	#define NEXT_T strtok_r(NULL, " ", &saveptr) // Small macro to keep the code below cleaner.
+   	if ((token = NEXT_T)) p_message->sensor_id = atoi(token);
+   	if ((token = NEXT_T)) p_message->sys_status = atoi(token);
+   	if ((token = NEXT_T)) p_message->continuous_interval = atoi(token);
+   	if ((token = NEXT_T)) p_message->visibility = atoi(token);
+   	if ((token = NEXT_T)) {
+		safe_console_print("The char inside token[0] is -> %c\n", token[0]);
+		p_message->vis_units = token[0]; // Char M or F
+		safe_console_print("The char inside p_message is -> %c\n", p_message->vis_units);
+   	}
+	if ((token = NEXT_T)) p_message->mor_format = (MORFormat)atoi(token);
+   	if ((token = NEXT_T)) p_message->exco = atof(token);
+   	if ((token = NEXT_T)) p_message->avg_period = atoi(token);
+   	if ((token = NEXT_T)) p_message->emitter_failure = atoi(token);
+   	if ((token = NEXT_T)) p_message->e_lens_dirty = atoi(token);
+   	if ((token = NEXT_T)) p_message->e_temp_failure = atoi(token);
+   	if ((token = NEXT_T)) p_message->d_lens_dirty = atoi(token);
+   	if ((token = NEXT_T)) p_message->d_temp_failure = atoi(token);
+   	if ((token = NEXT_T)) p_message->d_saturation_lvl = atoi(token);
+   	if ((token = NEXT_T)) p_message->hood_temperature = atoi(token);
+   	if ((token = NEXT_T)) p_message->external_temperature = atoi(token);
+   	if ((token = NEXT_T)) p_message->signature_error = atoi(token);
+   	if ((token = NEXT_T)) p_message->flash_read_error = atoi(token);
+   	if ((token = NEXT_T)) p_message->flash_write_error = atoi(token);
+   	if ((token = NEXT_T)) p_message->particle_limit = atoi(token);
+   	if ((token = NEXT_T)) p_message->particle_count = atoi(token);
+   	if ((token = NEXT_T)) p_message->intensity = atof(token);
+   	if ((token = NEXT_T)) p_message->synop_code = atoi(token);
+   	if ((token = NEXT_T)) {
+		strncpy(p_message->metar_code, token, sizeof(p_message->metar_code) - 1);
+		p_message->metar_code[sizeof(p_message->metar_code) - 1] = '\0';
+	}
+   	if ((token = NEXT_T)) p_message->temperature = atof(token);
+   	if ((token = NEXT_T)) p_message->relative_humidity = atoi(token);
+   	if ((token = NEXT_T)) {
+		strncpy(p_message->blm, token, sizeof(p_message->blm) - 1);
+		p_message->blm[sizeof(p_message->blm) - 1] = '\0';
+	}
+   	if ((token = NEXT_T)) p_message->blam.luminance = atof(token);
+   	if ((token = NEXT_T)) p_message->blam.status = (SystemStatus)atoi(token);
+   	if ((token = NEXT_T)) p_message->blam.is_night = (bool)atoi(token);
+   	if ((token = NEXT_T)) p_message->blam.units = (uint8_t)atoi(token);
+	#undef NEXT_T
+	return 0;
+}
 
 /*
  * Name:         parse_command
@@ -514,11 +576,56 @@ void handle_command(CommandType cmd) {
 
 	 switch (cmd) {
         case CMD_POLL:
-		    pthread_mutex_lock(&send_mutex);
-            pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
-            pthread_mutex_unlock(&send_mutex);
-            break;
+        	char *line = get_next_line_copy(file_ptr, &file_mutex);
 
+        	if (line) {
+				parse_message(line, &p_msg);
+        		char msg_buffer[MAX_MSG_LENGTH]; // 512
+
+				int length = snprintf(msg_buffer, sizeof(msg_buffer),
+    			"%u %u %u %u %u %c %d %.2f %u %u %u %u %u %u %u %u %u %u %u %u %u %.2f %.2f %u %s %.1f %d %s %.1f %d %d %u",
+    			(uint8_t)sensor_one->message_format,	// 1.  uint8_t
+    			sensor_one->sensor_id,   			   	// 2.  uint8_t
+    			(uint8_t)p_msg.sys_status,       		// 3.  uint8_t
+    			sensor_one->continuous_interval,  		// 4.  uint16_t
+    			p_msg.visibility,           			// 5.  uint32_t (use %u if 32-bit, %lu if 64-bit)
+    			(sensor_one->visibility_units == UNITS_METERS) ? 'M' : 'F',	// 6.  char
+    			(int)p_msg.mor_format,      			// 7.  enum (cast to int for %d)
+    			p_msg.exco,                 			// 8.  float
+    			(uint8_t)sensor_one->averaging_period,  // 9.  uint8_t
+    			p_msg.emitter_failure,      			// 10. uint8_t
+    			p_msg.e_lens_dirty,         			// 11. uint8_t
+    			p_msg.e_temp_failure,       			// 12. uint8_t
+    			p_msg.d_lens_dirty,         			// 13. uint8_t
+    			p_msg.d_temp_failure,       			// 14. uint8_t
+    			p_msg.d_saturation_lvl,     			// 15. uint8_t
+    			p_msg.hood_temperature,     			// 16. uint8_t
+    			p_msg.external_temperature, 			// 17. uint8_t
+    			p_msg.signature_error,      			// 18. uint8_t
+    			p_msg.flash_read_error,     			// 19. uint8_t
+    			p_msg.flash_write_error,    			// 20. uint8_t
+    			p_msg.particle_limit,       			// 21. uint8_t
+    			p_msg.particle_count,       			// 22. uint8_t
+    			p_msg.intensity,            			// 23. float
+    			p_msg.synop_code,           			// 24. uint8_t
+    			p_msg.metar_code,           			// 25. char[10]
+    			p_msg.temperature,          			// 26. float
+    			p_msg.relative_humidity,    			// 27. int8_t
+    			"BLM",                  				// 28. char[10]
+    			p_msg.blam.luminance,       			// 29. float
+    			(int)p_msg.blam.status,     			// 30. enum/SystemStatus
+    			(int)p_msg.blam.is_night,   			// 31. bool
+    			p_msg.blam.units            			// 32. uint8_t
+				);
+
+
+				uint16_t calculated_crc = crc16_ccitt((uint8_t*)msg_buffer, length);
+				safe_serial_write(serial_fd, "\x02%s %02X\x03\r\n", msg_buffer, calculated_crc);
+				safe_console_print("\x02%s %02X\x03\r\n", msg_buffer, calculated_crc);
+            	free(line); // caller of get_next_line_copy() must free resource.
+				line = NULL;
+        	}
+			break;
         case CMD_GET:
 			char crc_work_buffer[MAX_INPUT_STR];
 			int length = snprintf(crc_work_buffer, sizeof(crc_work_buffer), "%hhu %d %d %hu %d %d %hu %d %s %c %hu %hu %d %d %d %d %d %d %d %d %.1f %hhu %d",
@@ -547,7 +654,8 @@ void handle_command(CommandType cmd) {
 														sensor_one->data_format);
 			uint16_t calculated_crc = crc16_ccitt((uint8_t*)crc_work_buffer, length);
 			safe_serial_write(serial_fd, "\x02%s %02X\x03\r\n", crc_work_buffer, calculated_crc);
-			break;
+			DEBUG_PRINT("\x02%s %02X\x03\r\n", crc_work_buffer, calculated_crc);
+		break;
         case CMD_SETNC:
             // Switch Fall-Through SET and SETNC run the same code.
         case CMD_SET:
@@ -778,9 +886,48 @@ void* sender_thread(void* arg) {
         	char *line = get_next_line_copy(file_ptr, &file_mutex); // Moved this into the check for is_ready_to_send to avoid depleting the data file.
 
         	if (line) {
-				strktok
-        		// do all our parsing within here, or send to a helper function.
-            	// safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", line, line);
+				parse_message(line, &p_msg);
+        		char msg_buffer[MAX_MSG_LENGTH]; // 512
+				//char out_buf[MAX_MSG_LENGTH];
+
+				int length = snprintf(msg_buffer, sizeof(msg_buffer),
+    			"%u %u %u %u %u %c %d %.2f %u %u %u %u %u %u %u %u %u %u %u %u %u %.2f %.2f %u %s %.1f %d %s %.1f %d %d %u",
+    			(uint8_t)sensor_one->message_format,	// 1.  uint8_t
+    			sensor_one->sensor_id,   			   	// 2.  uint8_t
+    			p_msg.sys_status,           			// 3.  uint8_t
+    			sensor_one->continuous_interval,  		// 4.  uint16_t
+    			p_msg.visibility,           			// 5.  uint32_t (use %u if 32-bit, %lu if 64-bit)
+    			sensor_one->visibility_units,			// 6.  char
+    			(int)p_msg.mor_format,      			// 7.  enum (cast to int for %d)
+    			p_msg.exco,                 			// 8.  float
+    			(uint8_t)sensor_one->averaging_period,  // 9.  uint8_t
+    			p_msg.emitter_failure,      			// 10. uint8_t
+    			p_msg.e_lens_dirty,         			// 11. uint8_t
+    			p_msg.e_temp_failure,       			// 12. uint8_t
+    			p_msg.d_lens_dirty,         			// 13. uint8_t
+    			p_msg.d_temp_failure,       			// 14. uint8_t
+    			p_msg.d_saturation_lvl,     			// 15. uint8_t
+    			p_msg.hood_temperature,     			// 16. uint8_t
+    			p_msg.external_temperature, 			// 17. uint8_t
+    			p_msg.signature_error,      			// 18. uint8_t
+    			p_msg.flash_read_error,     			// 19. uint8_t
+    			p_msg.flash_write_error,    			// 20. uint8_t
+    			p_msg.particle_limit,       			// 21. uint8_t
+    			p_msg.particle_count,       			// 22. uint8_t
+    			p_msg.intensity,            			// 23. float
+    			p_msg.synop_code,           			// 24. uint8_t
+    			p_msg.metar_code,           			// 25. char[10]
+    			p_msg.temperature,          			// 26. float
+    			p_msg.relative_humidity,    			// 27. int8_t
+    			"BLM",                  				// 28. char[10]
+    			p_msg.blam.luminance,       			// 29. float
+    			(int)p_msg.blam.status,     			// 30. enum/SystemStatus
+    			(int)p_msg.blam.is_night,   			// 31. bool
+    			p_msg.blam.units            			// 32. uint8_t
+				);
+
+				uint16_t calculated_crc = crc16_ccitt((uint8_t*)msg_buffer, length);
+				safe_serial_write(serial_fd, "\x02%s %02X\x03\r\n", msg_buffer, calculated_crc);
             	free(line); // caller of get_next_line_copy() must free resource.
 				line = NULL;
         	}
@@ -887,9 +1034,12 @@ int main(int argc, char *argv[]) {
 	// char *hex_str = "\x02\x20\x47\x45\x54\x20\x3A\x20\x30\x20\x3A\x20\x30\x20\x3A\x03";43433844
 	//char *hex_str4 = "\x53\x45\x54\x3A\x30\x3A\x30\x20\x31\x20\x31\x20\x31\x30\x30\x30\x20\x31\x20\x30\x20\x31\x35\x30\x30\x30\x20\x32\x20\x30\x20\x4D\x20\x36\x30\x20\x31\x20\x32\x20\x30\x20\x31\x20\x31\x20\x30\x20\x30\x20\x30\x20\x31\x20\x37\x20\x37\x30\x20\x30\x20";
 	handle_command(parse_command("\x02GET:0:0:2C67:\x03\r\n", &p_cmd));
+	sensor_one->continuous_interval = 4;
+	handle_command(parse_command("\x02POLL:0:0:3A3B:\x03\r\n", &p_cmd));
+	handle_command(parse_command("\x02POLL:0:0:3A3B:\x03\r\n", &p_cmd));
 
 	handle_command(parse_command("\x02SET:0:0 1 1 1000 1 0 15000 2 0 M 60 1 2 0 1 1 0 0 0 1 7 70 0 :8AB9:\x03\r\n", &p_cmd));
-
+	handle_command(parse_command("\x02POLL:0:0:3A3B:\x03\r\n", &p_cmd));
 
     //uint16_t calculated2 = crc16_ccitt((uint8_t*)hex_str4, strlen(hex_str4));
     // Convert the 4 characters between p2 and p1

@@ -344,14 +344,14 @@ typedef struct {
 	uint8_t flash_read_error;
 	uint8_t flash_write_error;
 	uint8_t particle_limit;
-	uint8_t particle_count;
+	float particle_count;
 	float intensity;
 	uint8_t synop_code;
 	char metar_code[10];
 	float temperature;
 	int8_t relative_humidity;
 	char blm[10];
-	BLM_data blam;
+	BLM_Data blam;
 } ParsedMessage;
 
 // Function prototypes
