@@ -182,7 +182,7 @@ typedef struct {
     float dirty_window_detector;  // Dirty window baseline (detector)
     float factory_dw_emitter;     // Factory dirty window baseline
     float factory_dw_detector;    // Factory dirty window baseline
-    char calibration_disk_sn[16]; // Calibration disk serial number
+    char calibration_disk_sn[MAX_SERIAL_STR]; // Calibration disk serial number
     float calibration_disk_exco;  // Calibration disk extinction coefficient
 } CalibrationData;
 
@@ -321,7 +321,7 @@ typedef struct {
     } params;
 } ParsedCommand;
 
-
+// Parsed message structure
 typedef struct {
     uint8_t msg_format;  	   		// 0-14
     uint8_t sensor_id;      		// Target sensor ID (0-9)
@@ -332,26 +332,12 @@ typedef struct {
 	MORFormat mor_format;			// MOR Format
 	float exco;						// EXCO
 	uint8_t avg_period;				// Averging period 1 or 10 minutes
-	uint8_t emitter_failure;		//
-	uint8_t e_lens_dirty;			// Emitter Lens Dirty
-	uint8_t e_temp_failure;			// Emitter Temperature Failure
-	uint8_t d_lens_dirty;			// Emitter
-	uint8_t d_temp_failure;
-	uint8_t d_saturation_lvl;
-	uint8_t hood_temperature;
-	uint8_t external_temperature;
-	uint8_t signature_error;
-	uint8_t flash_read_error;
-	uint8_t flash_write_error;
-	uint8_t particle_limit;
-	float particle_count;
-	float intensity;
-	uint8_t synop_code;
-	char metar_code[10];
+	SystemAlarms sys_alarms;		// System Alarms
+	PresentWeather pres_wx;
 	float temperature;
 	int8_t relative_humidity;
 	char blm[10];
-	BLM_Data blam;
+	BLM_Data blm_data;
 } ParsedMessage;
 
 // Function prototypes

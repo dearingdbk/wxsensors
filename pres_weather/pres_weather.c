@@ -41,24 +41,24 @@
  *               Comm type: 0=RS-232, 1=RS-485
  *               Averaging: 1=1-minute, 10=10-minute
  *
- *           Output format:
+ * Output format:
  *             Message 14 (RVR Output) - space-delimited fields:
  *             <STX><Msg_ID> <Sensor_ID> <Status> <Interval> <Visibility> <Units>
  *             <MOR_Format> <EXCO> <Avg_Period> <12_Alarms> <Particles> <Intensity>
  *             <SYNOP> <METAR> <Temp> <RH> BLM <Luminance> <BLM_Status>
  *             <Day_Night> <BLM_Units> <Checksum><ETX><CR><LF>
  *
- *             Communication: 38400 baud (default), 8 data bits, 1 stop bit, no parity
+ * Communication: 38400 baud (default), 8 data bits, 1 stop bit, no parity
  *             Line termination: <CR><LF>
  *             Framing: STX (0x02), ETX (0x03)
- *             Checksum: CCITT CRC-16
+ *             Checksum: CCITT CRC-16 (XMODEM)
  *
- *           Network mode:
+ * Network mode:
  *             Supports addressed mode with sensor IDs 0-9 on RS-485 bus
  *             Address format: <command>:<sensor_id>:<reserved>:<checksum>:
  *             Example: POLL:0:0:3A3B: (polls sensor ID 0)
  *
- *           Data includes: visibility (MOR), present weather codes (SYNOP/METAR),
+ * Data includes: visibility (MOR), present weather codes (SYNOP/METAR),
  *                         background luminance, temperature, humidity, precipitation
  *
  * Usage:    pres_weather <file_path> [serial_port] [baud_rate] [RS232|RS485]
@@ -228,7 +228,6 @@ FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
 
 // Shared state
-//int continuous = 0;
 volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
 
@@ -236,7 +235,7 @@ int serial_fd = -1;
 char site_id = 'A';
 uint8_t address = 0;
 
-// These need to be freed upon exit.
+// This needs to be freed upon exit.
 av30_sensor *sensor_one = NULL; // Global pointer to struct for atmosvue30 sensor .
 
 ParsedCommand p_cmd;
@@ -250,7 +249,8 @@ static pthread_cond_t  send_cond  = PTHREAD_COND_INITIALIZER;
 
 /*
  * Name:         handle_signal
- * Purpose:      Captures any kill signals, and sets volitile bool 'terminate' and 'kill_flag' to true, allowing thw while loop to break, and threads to join.
+ * Purpose:      Captures any kill signals, and sets volitile bool 'terminate' and 'kill_flag' to true,
+				 allowing the while loop to break, and threads to join.
  * Arguments:    None
  *
  * Output:       None.
@@ -321,7 +321,6 @@ void strip_whitespace(char* s) {
 // ---------------- Command handling ----------------
 
 
-
 /*
  * Name:         parse_message
  * Purpose:      Tokenizes a space-delimited sensor string and populates a ParsedMessage struct.
@@ -339,41 +338,40 @@ void strip_whitespace(char* s) {
  * Notes:        Uses a local macro NEXT_T to sequence through 32 expected fields.
  *               Ensures string fields (METAR, BLM) are safely null-terminated.
  */
-int parse_message(char *msg, ParsedMessage *p_message) {
-	memset(p_message, 0, sizeof(ParsedMessage));
-	//char *cmd_name = strtok_r(work_buf, " :", &saveptr);  // stores CMD name in saveptr buffer.
-	char *saveptr;
-	char *token;
+void parse_message(char *msg, ParsedMessage *p_message) {
+	memset(p_message, 0, sizeof(ParsedMessage)); // zero out the ParsedMessage struct.
+	char *saveptr; // Our place keeper in the msg string.
+	char *token; // Where we temporarily store each token.
+
 	if ((token = strtok_r(msg, " ", &saveptr))) p_message->msg_format = atoi(token);
    	#define NEXT_T strtok_r(NULL, " ", &saveptr) // Small macro to keep the code below cleaner.
+
    	if ((token = NEXT_T)) p_message->sensor_id = atoi(token);
    	if ((token = NEXT_T)) p_message->sys_status = atoi(token);
    	if ((token = NEXT_T)) p_message->continuous_interval = atoi(token);
    	if ((token = NEXT_T)) p_message->visibility = atoi(token);
-   	if ((token = NEXT_T)) {
-		p_message->vis_units = token[0]; // Char M or F
-   	}
+   	if ((token = NEXT_T)) p_message->vis_units = token[0]; // Char M or F - IGNORED
 	if ((token = NEXT_T)) p_message->mor_format = (MORFormat)atoi(token);
    	if ((token = NEXT_T)) p_message->exco = atof(token);
    	if ((token = NEXT_T)) p_message->avg_period = atoi(token);
-   	if ((token = NEXT_T)) p_message->emitter_failure = atoi(token);
-   	if ((token = NEXT_T)) p_message->e_lens_dirty = atoi(token);
-   	if ((token = NEXT_T)) p_message->e_temp_failure = atoi(token);
-   	if ((token = NEXT_T)) p_message->d_lens_dirty = atoi(token);
-   	if ((token = NEXT_T)) p_message->d_temp_failure = atoi(token);
-   	if ((token = NEXT_T)) p_message->d_saturation_lvl = atoi(token);
-   	if ((token = NEXT_T)) p_message->hood_temperature = atoi(token);
-   	if ((token = NEXT_T)) p_message->external_temperature = atoi(token);
-   	if ((token = NEXT_T)) p_message->signature_error = atoi(token);
-   	if ((token = NEXT_T)) p_message->flash_read_error = atoi(token);
-   	if ((token = NEXT_T)) p_message->flash_write_error = atoi(token);
-   	if ((token = NEXT_T)) p_message->particle_limit = atoi(token);
-   	if ((token = NEXT_T)) p_message->particle_count = atoi(token);
-   	if ((token = NEXT_T)) p_message->intensity = atof(token); // atof for float.
-   	if ((token = NEXT_T)) p_message->synop_code = atoi(token);
+   	if ((token = NEXT_T)) p_message->sys_alarms.emitter_failure = atoi(token);
+   	if ((token = NEXT_T)) p_message->sys_alarms.emitter_lens_dirty = atoi(token);
+   	if ((token = NEXT_T)) p_message->sys_alarms.emitter_temperature = atoi(token);
+   	if ((token = NEXT_T)) p_message->sys_alarms.detector_lens_dirty = atoi(token);
+   	if ((token = NEXT_T)) p_message->sys_alarms.detector_temperature = atoi(token);
+   	if ((token = NEXT_T)) p_message->sys_alarms.detector_dc_saturation = atoi(token);
+   	if ((token = NEXT_T)) p_message->sys_alarms.hood_temperature = atoi(token);
+   	if ((token = NEXT_T)) p_message->sys_alarms.external_temperature = atoi(token);
+   	if ((token = NEXT_T)) p_message->sys_alarms.signature_error = atoi(token);
+   	if ((token = NEXT_T)) p_message->sys_alarms.flash_read_error = atoi(token);
+   	if ((token = NEXT_T)) p_message->sys_alarms.flash_write_error = atoi(token);
+   	if ((token = NEXT_T)) p_message->sys_alarms.particle_limit = atoi(token);
+   	if ((token = NEXT_T)) p_message->pres_wx.particle_count = atof(token);
+   	if ((token = NEXT_T)) p_message->pres_wx.intensity = atof(token); // atof for float.
+   	if ((token = NEXT_T)) p_message->pres_wx.synop_code = atoi(token);
    	if ((token = NEXT_T)) {
-		strncpy(p_message->metar_code, token, sizeof(p_message->metar_code) - 1);
-		p_message->metar_code[sizeof(p_message->metar_code) - 1] = '\0'; // Null terminate the string in the event the buffer was too small.
+		strncpy(p_message->pres_wx.metar_code, token, sizeof(p_message->pres_wx.metar_code) - 1);
+		p_message->pres_wx.metar_code[sizeof(p_message->pres_wx.metar_code) - 1] = '\0'; // Null terminate the string in the event the buffer was too small.
 	}
    	if ((token = NEXT_T)) p_message->temperature = atof(token);
    	if ((token = NEXT_T)) p_message->relative_humidity = atoi(token);
@@ -381,12 +379,11 @@ int parse_message(char *msg, ParsedMessage *p_message) {
 		strncpy(p_message->blm, token, sizeof(p_message->blm) - 1);
 		p_message->blm[sizeof(p_message->blm) - 1] = '\0'; // Null terminate the string.
 	}
-   	if ((token = NEXT_T)) p_message->blam.luminance = atof(token);
-   	if ((token = NEXT_T)) p_message->blam.status = (SystemStatus)atoi(token);
-   	if ((token = NEXT_T)) p_message->blam.is_night = (bool)atoi(token);
-   	if ((token = NEXT_T)) p_message->blam.units = (uint8_t)atoi(token);
+   	if ((token = NEXT_T)) p_message->blm_data.luminance = atof(token);
+   	if ((token = NEXT_T)) p_message->blm_data.status = (SystemStatus)atoi(token);
+   	if ((token = NEXT_T)) p_message->blm_data.is_night = (bool)atoi(token);
+   	if ((token = NEXT_T)) p_message->blm_data.units = (uint8_t)atoi(token);
 	#undef NEXT_T
-	return 0;
 }
 
 /*
@@ -417,34 +414,34 @@ void process_and_send(ParsedMessage *msg) {
     		(int)msg->mor_format,      						// 7.  enum (cast to int for %d) - MOR Format
     		msg->exco,                 						// 8.  float - EXCO
     		(uint8_t)sensor_one->averaging_period,  		// 9.  uint8_t - Avergaing Period
-    		msg->emitter_failure,      						// 10. uint8_t - Emitter Failure
-    		msg->e_lens_dirty,	         					// 11. uint8_t - Emitter Dirty Lens
-    		msg->e_temp_failure,			       			// 12. uint8_t - Emitter Temperature Failure
-    		msg->d_lens_dirty,         						// 13. uint8_t - Detector Lens Dirty
-    		msg->d_temp_failure,       						// 14. uint8_t - Detector Temperature Failure
-    		msg->d_saturation_lvl,     						// 15. uint8_t - Detector Daturation Level
-    		msg->hood_temperature,     						// 16. uint8_t - Hood Temperature Failure
-    		msg->external_temperature, 						// 17. uint8_t - External Temperature Failure
-    		msg->signature_error,      						// 18. uint8_t - Signature Error
-    		msg->flash_read_error,     						// 19. uint8_t - Flash Read Error
-    		msg->flash_write_error,    						// 20. uint8_t - Flash Write Error
-    		msg->particle_limit,       						// 21. uint8_t - Particle Limit
-    		msg->particle_count,       						// 22. uint8_t - Particle Count
-    		msg->intensity,            						// 23. float - Intensity
-    		msg->synop_code,           						// 24. uint8_t - SYNOP Code
-    		msg->metar_code,          		 				// 25. char[10] - METAR Code
+    		msg->sys_alarms.emitter_failure,				// 10. uint8_t - Emitter Failure
+    		msg->sys_alarms.emitter_lens_dirty,				// 11. uint8_t - Emitter Dirty Lens
+    		msg->sys_alarms.emitter_temperature,   			// 12. uint8_t - Emitter Temperature Failure
+    		msg->sys_alarms.detector_lens_dirty,			// 13. uint8_t - Detector Lens Dirty
+    		msg->sys_alarms.detector_temperature,			// 14. uint8_t - Detector Temperature Failure
+    		msg->sys_alarms.detector_dc_saturation, 		// 15. uint8_t - Detector Daturation Level
+    		msg->sys_alarms.hood_temperature,				// 16. uint8_t - Hood Temperature Failure
+    		msg->sys_alarms.external_temperature,			// 17. uint8_t - External Temperature Failure
+    		msg->sys_alarms.signature_error,				// 18. uint8_t - Signature Error
+    		msg->sys_alarms.flash_read_error,				// 19. uint8_t - Flash Read Error
+    		msg->sys_alarms.flash_write_error,				// 20. uint8_t - Flash Write Error
+    		msg->sys_alarms.particle_limit,					// 21. uint8_t - Particle Limit
+    		msg->pres_wx.particle_count,   					// 22. float - Particle Count
+    		msg->pres_wx.intensity,         				// 23. float - Intensity
+    		msg->pres_wx.synop_code,        				// 24. uint8_t - SYNOP Code
+    		msg->pres_wx.metar_code,          				// 25. char[10] - METAR Code
     		msg->temperature,          						// 26. float - Temperature
     		msg->relative_humidity,    						// 27. int8_t - Relative Humidity
     		"BLM",                 		 					// 28. char[10] - BLM
-    		msg->blam.luminance,       						// 29. float - BLM Luminosity
-    		(int)msg->blam.status,     						// 30. enum/SystemStatus - BLM Status
-    		(int)msg->blam.is_night,   						// 31. bool - BLM Is Day or Night
-    		msg->blam.units            						// 32. uint8_t - BLM Units
+    		msg->blm_data.luminance,   						// 29. float - BLM Luminosity
+    		(int)msg->blm_data.status, 						// 30. enum/SystemStatus - BLM Status
+    		(int)msg->blm_data.is_night,   					// 31. bool - BLM Is Day or Night
+    		msg->blm_data.units            					// 32. uint8_t - BLM Units
 			);
 
 	if (length > 0 && length < (int)sizeof(msg_buffer)) {
 		uint16_t calculated_crc = crc16_ccitt((uint8_t*)msg_buffer, length);
-		safe_serial_write(serial_fd, "\x02%s %02X\x03\r\n", msg_buffer, calculated_crc);
+		safe_serial_write(serial_fd, "\x02%s %04X\x03\r\n", msg_buffer, calculated_crc);
 	}
 }
 
@@ -465,7 +462,7 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 	memset(cmd, 0, sizeof(ParsedCommand));
 	char *stx = strchr(buf, 0x02);
     char *etx = strchr(buf, 0x03);
-    if (!stx || !etx) return CMD_UNKNOWN;
+    if (!stx || !etx) return CMD_INVALID_FORMAT;
 
     // Search backward from ETX for the second colon
     // String: "... : 8AB9 : <ETX>"
@@ -481,7 +478,7 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
         }
     }
 
-    if (!p1 || !p2) return CMD_UNKNOWN; // Both pointers are NULL
+    if (!p1 || !p2) return CMD_INVALID_FORMAT; // Both pointers are NULL
 
     // --- CRC VALIDATION ---
     // Data: From char after <STX> up to the space before checksum. (p2 not included i.e. Colon exlcluded)
@@ -511,10 +508,12 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 	memcpy(hex_tmp, p2 + 1, hex_len); // Copy the 4 chars of the CRC into hex_tmp.
 
 	// Now strip the spaces so strtol only sees "8AB9"
-	strip_whitespace(hex_tmp); // This is liekly not a required step, the string does not have spaces.
+	strip_whitespace(hex_tmp); // This is liekly not a required step, if the string does not have spaces.
 	uint16_t received = (uint16_t)strtol(hex_tmp, NULL, 16);
 
  	// Check if the CRC received is the same as the data sent with it.
+	DEBUG_PRINT("Calculated CRC is %04X\n", calculated);
+	DEBUG_PRINT("Received CRC is %04X\n", received);
 	if (calculated != received && sensor_one->crc_checking_enabled) return CMD_INVALID_CRC;
 
     // --- IDENTIFY ENUM & PARSE CONTENT ---
@@ -549,7 +548,9 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 			cmd->type = CMD_POLL;
 		} else if (strcmp(cmd_name, "MSGSET") == 0) {
 			cmd->type = CMD_MSGSET;
-		}
+		} else if (strcmp(cmd_name, "ACCRES") == 0) {
+			cmd->type = CMD_ACCRES;
+		} else cmd->type = CMD_UNKNOWN;
 	}
 
 	// Get the sensor address from the command for future use.
@@ -560,14 +561,17 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
     } else cmd->sensor_id = 0;
 
     if (cmd->type == CMD_GET) {
-        // GET format: GET : 0 : 0 ;
+        // GET format: GET : 0 : 0
         return CMD_GET;
     }
 
     if (cmd->type == CMD_POLL) {
-        // Process POLL address...
-        return CMD_POLL;
+        return CMD_POLL; // Process the POLL command.
     }
+
+	if (cmd->type == CMD_ACCRES) {
+		return CMD_ACCRES; // Process ACCRES command.
+	}
 
 	if (cmd->type == CMD_MSGSET) {
 		char *t;
@@ -653,12 +657,10 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
  * Notes:
  */
 void handle_command(CommandType cmd) {
-    // char *resp_copy = NULL;
 
 	 switch (cmd) {
         case CMD_POLL:
         	char *line = get_next_line_copy(file_ptr, &file_mutex);
-
         	if (line) {
 				parse_message(line, &p_msg);
 				process_and_send(&p_msg);
@@ -668,7 +670,8 @@ void handle_command(CommandType cmd) {
 			break;
         case CMD_GET:
 			char crc_work_buffer[MAX_INPUT_STR];
-			int length = snprintf(crc_work_buffer, sizeof(crc_work_buffer), "%hhu %d %d %hu %d %d %hu %d %s %c %hu %hu %d %d %d %d %d %d %d %d %.1f %hhu %d",
+			int length = snprintf(crc_work_buffer,
+				sizeof(crc_work_buffer), "%hhu %d %d %hu %d %d %hu %d %s %c %hu %hu %d %d %d %d %d %d %d %d %.1f %hhu %d",
 														sensor_one->sensor_id,
 														!!sensor_one->user_alarms.alarm1_set,
 														!!sensor_one->user_alarms.alarm1_active,
@@ -693,8 +696,8 @@ void handle_command(CommandType cmd) {
 														sensor_one->rh_threshold,
 														sensor_one->data_format);
 			uint16_t calculated_crc = crc16_ccitt((uint8_t*)crc_work_buffer, length);
-			safe_serial_write(serial_fd, "\x02%s %02X\x03\r\n", crc_work_buffer, calculated_crc);
-		break;
+			safe_serial_write(serial_fd, "\x02%s %04X\x03\r\n", crc_work_buffer, calculated_crc);
+			break;
         case CMD_SETNC:
             // Switch Fall-Through SET and SETNC run the same code.
         case CMD_SET:
@@ -741,7 +744,7 @@ void handle_command(CommandType cmd) {
 					sensor_one->user_alarms.alarm2_distance = new_distance;
 				}
 			}
-			// Update baud rate of sensor if required. Likely will implement changes to anything in our serial settings.
+			// Update baud rate of sensor if required. Likely will not implement changes to anything in our serial settings.
 			if (sensor_one->baud_rate != p_cmd.params.set_params.baud_rate && p_cmd.params.set_params.baud_rate <= 5) {
 				sensor_one->baud_rate = p_cmd.params.set_params.baud_rate;
 			}
@@ -759,15 +762,15 @@ void handle_command(CommandType cmd) {
 				sensor_one->continuous_interval = p_cmd.params.set_params.continuous_interval;
 			}
 			// Update the Operating Mode if required Polling or Continuous).
-			if (sensor_one->mode != p_cmd.params.set_params.op_mode && p_cmd.params.set_params.op_mode <=1) {
+			if (sensor_one->mode != p_cmd.params.set_params.op_mode && p_cmd.params.set_params.op_mode <= MODE_POLLING) {
 				sensor_one->mode = p_cmd.params.set_params.op_mode;
 			}
 			// Update message format if required.
-			if (sensor_one->message_format != p_cmd.params.set_params.msg_format && p_cmd.params.set_params.msg_format <= 14) {
+			if (sensor_one->message_format != p_cmd.params.set_params.msg_format && p_cmd.params.set_params.msg_format <= MSG_RVR_OUTPUT) {
 				sensor_one->message_format = p_cmd.params.set_params.msg_format;
 			}
 			// Update Communications Type.
-			if (sensor_one->comm_type != p_cmd.params.set_params.comm_mode && p_cmd.params.set_params.comm_mode <=1) {
+			if (sensor_one->comm_type != p_cmd.params.set_params.comm_mode && p_cmd.params.set_params.comm_mode <= COMM_RS485) {
 				sensor_one->comm_type = p_cmd.params.set_params.comm_mode;
 			}
 			// Update Averaging period if required.
@@ -801,7 +804,7 @@ void handle_command(CommandType cmd) {
 				sensor_one->power_down_voltage = p_cmd.params.set_params.pwr_down_volt;
 			}
 			// Update RH Threshold
-			if (sensor_one->rh_threshold != p_cmd.params.set_params.rh_threshold && p_cmd.params.set_params.rh_threshold <= 100) {
+			if (sensor_one->rh_threshold != p_cmd.params.set_params.rh_threshold && p_cmd.params.set_params.rh_threshold <= MAX_HUMIDITY) {
 				sensor_one->rh_threshold = p_cmd.params.set_params.rh_threshold;
 			}
 
@@ -810,14 +813,38 @@ void handle_command(CommandType cmd) {
 			}
 			safe_serial_write(serial_fd, "%s", p_cmd.params.set_params.full_cmd_string);
             break;
-		case CMD_MSGSET:
-			if (sensor_one->custom_msg_bits != p_cmd.params.msgset.field_bitmap && p_cmd.params.msgset.field_bitmap < 0x121C) {
-				if (1) {  // We need to implement a check here that the values are within spec 121C.
-					sensor_one->custom_msg_bits = p_cmd.params.msgset.field_bitmap;
-				}
-			}
+		case CMD_MSGSET: {
+        	uint32_t requested_bits = p_cmd.params.msgset.field_bitmap;
+			// Bitmask 0x3FFF (Binary: 0011 1111 1111 1111)
+         	// Allows all defined fields from Bit 0 (Averaging) to Bit 13 (Humidity).
+         	// Blocks Bits 14 & 15 which are "Reserved" (8000 and 4000).
+			uint32_t allowed_mask = 0x3FFF;
+
+			// requested_bits	0x121A	0001 0010 0001 1010
+			// allowed_mask		0x3FFF	0011 1111 1111 1111
+			// Result (&)		0x121A	0001 0010 0001 1010
+
+        	if (sensor_one->custom_msg_bits != requested_bits) {
+            	if ((requested_bits & allowed_mask) == requested_bits) {
+                	sensor_one->custom_msg_bits = requested_bits;
+					char hex_buf[10];
+					// Convert the bits to a 4-digit uppercase hex string
+					int len = sprintf(hex_buf, "%04X", requested_bits);
+
+					// Calculate CRC of the actual characters '1', '2', '1', 'C'
+					uint16_t hex_str_crc = crc16_ccitt((uint8_t*)hex_buf, len);
+					//uint16_t calculated_crc = crc16_ccitt((uint8_t*)crc_work_buffer, length);
+					safe_serial_write(serial_fd, "\x02%s %04X\x03\r\n", hex_buf, hex_str_crc);
+					safe_console_print("\x02%s %04X\x03\r\n", hex_buf, hex_str_crc);
+            	} else {
+                	safe_console_error("Error: Invalid msgset bits (Mask: 0x%04X, Received: 0x%04X)\n", allowed_mask, requested_bits);
+            	}
+        	}
+    	}
 			break;
 		case CMD_ACCRES:
+			sensor_one->present_weather.accumulation = 0;
+			safe_serial_write(serial_fd, "%s", p_cmd.params.set_params.full_cmd_string);
 			break;
 		case CMD_ERROR:
         	safe_console_error("Error: %s\n", strerror(errno));
@@ -1012,19 +1039,20 @@ int main(int argc, char *argv[]) {
     pthread_t recv_thread, send_thread;
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
-        safe_console_error("Failed to create receiver thread: %s\n" strerror(errno));
+        safe_console_error("Failed to create receiver thread: %s\n", strerror(errno));
         terminate = 1;          // <- symmetrical, but not required
 		cleanup_and_exit(1);
     }
 
     if (pthread_create(&send_thread, NULL, sender_thread, NULL) != 0) {
-        safe_console_error("Failed to create sender thread: %s\n" strerror(errno));
+        safe_console_error("Failed to create sender thread: %s\n", strerror(errno));
         terminate = 1;          // <- needed because recv_thread is running
         pthread_join(recv_thread, NULL);
 		cleanup_and_exit(1);
     }
 
-	//handle_command(parse_command("\x02GET:0:0:2C67:\x03\r\n", &p_cmd));
+	handle_command(parse_command("\x02MSGSET:0:321C:B500:\x03\r\n", &p_cmd));
+	handle_command(parse_command("\x02MSGSET:0:121C:5868:\x03\r\n", &p_cmd));
 
     safe_console_print("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {
