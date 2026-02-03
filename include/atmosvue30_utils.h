@@ -46,7 +46,7 @@ extern const char* metar_codes[20];
 
 // Units of measure
 typedef enum {
-    UNITS_METERS = 0,
+    UNITS_METRES = 0,
     UNITS_FEET = 1
 } VisibilityUnits;
 
@@ -358,54 +358,9 @@ typedef struct {
 
 // Initialization and cleanup
 int init_av30_sensor(av30_sensor **ptr);
-void free_sensor(av30_sensor *sensor);
-
-// Configuration management
-int update_settings(av30_sensor *sensor, ParsedCommand *cmd);
-int reset_to_defaults(av30_sensor *sensor);
-int save_to_flash(av30_sensor *sensor);
-
-// Measurement simulation
-void update_measurements(av30_sensor *sensor);
-float simulate_visibility(void);
-uint8_t simulate_synop_code(void);
-void simulate_metar_code(char *metar, uint8_t synop);
-float simulate_luminance(void);
-float simulate_temperature(void);
-float simulate_humidity(void);
-float calculate_wet_bulb(float temp, float rh);
-
-// Command parsing and response
-//CommandType parse_command(const char *input, ParsedCommand *cmd, av30_sensor *sensor);
-int generate_response(av30_sensor *sensor, ParsedCommand *cmd, char *output, size_t max_len);
-
-// Message formatting
-int format_message(av30_sensor *sensor, char *output, size_t max_len);
-int format_get_response(av30_sensor *sensor, char *output, size_t max_len);
-int format_poll_response(av30_sensor *sensor, char *output, size_t max_len);
-
-// CRC calculation (CCITT CRC-16)
-//uint16_t calculate_crc16_ccitt(const char *data, size_t length);
-bool verify_crc(const char *command);
 
 // Utility functions
-const char* get_baud_rate_string(BaudRateCode code);
-uint32_t get_baud_rate_value(BaudRateCode code);
-BaudRateCode get_baud_rate_code(uint32_t baud);
-const char* get_message_format_name(MessageFormat format);
-const char* get_synop_description(uint8_t code);
-const char* get_system_status_string(SystemStatus status);
 bool av30_is_ready_to_send(av30_sensor *sensor);
-
-// Alarm management
-void update_system_alarms(av30_sensor *sensor);
-void check_user_alarms(av30_sensor *sensor);
-void clear_alarms(av30_sensor *sensor);
-
-// Heater control
-void update_heater_control(av30_sensor *sensor);
-bool should_dew_heater_be_on(av30_sensor *sensor);
-bool should_hood_heater_be_on(av30_sensor *sensor);
 
 /// END ATMOSVUE 30 WEATHER SYSTEM
 

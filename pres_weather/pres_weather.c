@@ -63,7 +63,7 @@
  *
  * Usage:    pres_weather <file_path> [serial_port] [baud_rate] [RS232|RS485]
  *           pres_weather <file_path> // Defaults: /dev/ttyUSB0, 38400 baud, RS232
-. *
+ *
  * Sensor:   Campbell Scientific AtmosVUE 30 Aviation Weather System
  *           - CS125 forward-scatter present weather and visibility sensor
  *           - AtmosVUE-BLM background luminance sensor
@@ -243,7 +243,7 @@ ParsedCommand p_cmd;
 ParsedMessage p_msg;
 
 /* Synchronization primitives */
-static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
+static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  send_cond  = PTHREAD_COND_INITIALIZER;
 
@@ -321,6 +321,24 @@ void strip_whitespace(char* s) {
 // ---------------- Command handling ----------------
 
 
+
+/*
+ * Name:         parse_message
+ * Purpose:      Tokenizes a space-delimited sensor string and populates a ParsedMessage struct.
+ * Arguments:    msg: the raw input string to be parsed (modified by strtok_r).
+ * 				 p_message: pointer to the struct where parsed data will be stored.
+ *
+ * Output:       None (internal debug prints to console only).
+ * Modifies:     p_message: overwrites with new data.
+ * 				 msg: the input string is modified (nulls inserted by strtok_r).
+ * Returns:      int: 0 on completion.
+ * Assumptions:  msg is a valid space-delimited string matching the sensor protocol.
+ *               p_message has been allocated by the caller.
+ *
+ * Bugs:         None known.
+ * Notes:        Uses a local macro NEXT_T to sequence through 32 expected fields.
+ *               Ensures string fields (METAR, BLM) are safely null-terminated.
+ */
 int parse_message(char *msg, ParsedMessage *p_message) {
 	memset(p_message, 0, sizeof(ParsedMessage));
 	//char *cmd_name = strtok_r(work_buf, " :", &saveptr);  // stores CMD name in saveptr buffer.
@@ -333,9 +351,7 @@ int parse_message(char *msg, ParsedMessage *p_message) {
    	if ((token = NEXT_T)) p_message->continuous_interval = atoi(token);
    	if ((token = NEXT_T)) p_message->visibility = atoi(token);
    	if ((token = NEXT_T)) {
-		safe_console_print("The char inside token[0] is -> %c\n", token[0]);
 		p_message->vis_units = token[0]; // Char M or F
-		safe_console_print("The char inside p_message is -> %c\n", p_message->vis_units);
    	}
 	if ((token = NEXT_T)) p_message->mor_format = (MORFormat)atoi(token);
    	if ((token = NEXT_T)) p_message->exco = atof(token);
@@ -353,17 +369,17 @@ int parse_message(char *msg, ParsedMessage *p_message) {
    	if ((token = NEXT_T)) p_message->flash_write_error = atoi(token);
    	if ((token = NEXT_T)) p_message->particle_limit = atoi(token);
    	if ((token = NEXT_T)) p_message->particle_count = atoi(token);
-   	if ((token = NEXT_T)) p_message->intensity = atof(token);
+   	if ((token = NEXT_T)) p_message->intensity = atof(token); // atof for float.
    	if ((token = NEXT_T)) p_message->synop_code = atoi(token);
    	if ((token = NEXT_T)) {
 		strncpy(p_message->metar_code, token, sizeof(p_message->metar_code) - 1);
-		p_message->metar_code[sizeof(p_message->metar_code) - 1] = '\0';
+		p_message->metar_code[sizeof(p_message->metar_code) - 1] = '\0'; // Null terminate the string in the event the buffer was too small.
 	}
    	if ((token = NEXT_T)) p_message->temperature = atof(token);
    	if ((token = NEXT_T)) p_message->relative_humidity = atoi(token);
    	if ((token = NEXT_T)) {
 		strncpy(p_message->blm, token, sizeof(p_message->blm) - 1);
-		p_message->blm[sizeof(p_message->blm) - 1] = '\0';
+		p_message->blm[sizeof(p_message->blm) - 1] = '\0'; // Null terminate the string.
 	}
    	if ((token = NEXT_T)) p_message->blam.luminance = atof(token);
    	if ((token = NEXT_T)) p_message->blam.status = (SystemStatus)atoi(token);
@@ -371,6 +387,65 @@ int parse_message(char *msg, ParsedMessage *p_message) {
    	if ((token = NEXT_T)) p_message->blam.units = (uint8_t)atoi(token);
 	#undef NEXT_T
 	return 0;
+}
+
+/*
+ * Name:         process_and_send
+ * Purpose:      Parse a data line, format the message string, and send with CRC.
+ * Arguments:    msg: Pointer to the ParsedMessage struct containing the data stripped from the file/buffer.
+ *
+ * Output:       Prints the formatted sensor message with STX/ETX and CRC to serial.
+ * Modifies:     None.
+ * Returns:      None.
+ * Assumptions:  sensor is initialized, and the msg has data fields filled.
+ *
+ * Bugs:         None known.
+ * Notes:        Ensures the 32-field format matches the hardware specification.
+ */
+void process_and_send(ParsedMessage *msg) {
+
+	char msg_buffer[MAX_MSG_LENGTH]; // 512
+
+	int length = snprintf(msg_buffer, sizeof(msg_buffer),
+			"%u %u %u %u %u %c %d %.2f %u %u %u %u %u %u %u %u %u %u %u %u %u %.2f %.2f %u %s %.1f %d %s %.1f %d %d %u",
+    		(uint8_t)sensor_one->message_format,			// 1.  uint8_t - Message ID
+    		sensor_one->sensor_id,   			   			// 2.  uint8_t - Sensor ID
+    		(uint8_t)msg->sys_status,       				// 3.  uint8_t - System Status
+    		sensor_one->continuous_interval,  				// 4.  uint16_t - Continuous Interval
+    		msg->visibility,           						// 5.  uint32_t (use %u if 32-bit, %lu if 64-bit) - Visability Value
+    		(sensor_one->visibility_units == UNITS_METRES) ? 'M' : 'F',	// 6.  char - Viasability Units
+    		(int)msg->mor_format,      						// 7.  enum (cast to int for %d) - MOR Format
+    		msg->exco,                 						// 8.  float - EXCO
+    		(uint8_t)sensor_one->averaging_period,  		// 9.  uint8_t - Avergaing Period
+    		msg->emitter_failure,      						// 10. uint8_t - Emitter Failure
+    		msg->e_lens_dirty,	         					// 11. uint8_t - Emitter Dirty Lens
+    		msg->e_temp_failure,			       			// 12. uint8_t - Emitter Temperature Failure
+    		msg->d_lens_dirty,         						// 13. uint8_t - Detector Lens Dirty
+    		msg->d_temp_failure,       						// 14. uint8_t - Detector Temperature Failure
+    		msg->d_saturation_lvl,     						// 15. uint8_t - Detector Daturation Level
+    		msg->hood_temperature,     						// 16. uint8_t - Hood Temperature Failure
+    		msg->external_temperature, 						// 17. uint8_t - External Temperature Failure
+    		msg->signature_error,      						// 18. uint8_t - Signature Error
+    		msg->flash_read_error,     						// 19. uint8_t - Flash Read Error
+    		msg->flash_write_error,    						// 20. uint8_t - Flash Write Error
+    		msg->particle_limit,       						// 21. uint8_t - Particle Limit
+    		msg->particle_count,       						// 22. uint8_t - Particle Count
+    		msg->intensity,            						// 23. float - Intensity
+    		msg->synop_code,           						// 24. uint8_t - SYNOP Code
+    		msg->metar_code,          		 				// 25. char[10] - METAR Code
+    		msg->temperature,          						// 26. float - Temperature
+    		msg->relative_humidity,    						// 27. int8_t - Relative Humidity
+    		"BLM",                 		 					// 28. char[10] - BLM
+    		msg->blam.luminance,       						// 29. float - BLM Luminosity
+    		(int)msg->blam.status,     						// 30. enum/SystemStatus - BLM Status
+    		(int)msg->blam.is_night,   						// 31. bool - BLM Is Day or Night
+    		msg->blam.units            						// 32. uint8_t - BLM Units
+			);
+
+	if (length > 0 && length < (int)sizeof(msg_buffer)) {
+		uint16_t calculated_crc = crc16_ccitt((uint8_t*)msg_buffer, length);
+		safe_serial_write(serial_fd, "\x02%s %02X\x03\r\n", msg_buffer, calculated_crc);
+	}
 }
 
 /*
@@ -419,7 +494,6 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
     size_t data_len = (p2) - data_start;  // If the colon is included p2 + 1
     uint16_t calculated = crc16_ccitt((uint8_t*)data_start, data_len); // From data_start to p2.
     // Convert the 4 characters between p2 and p1
-	 safe_console_print("Calculated CRC = %02X\n", calculated);
 	// Find distance between the two colons
     // String: "<STX> GET : 0 : 0 :8AB9: <ETX>"
     // Index:     ^   ^            ^   ^   ^
@@ -460,7 +534,7 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 	// saveptr						^
 
 	// strtok parses each char as a delimiter, so any space or colon are consumed.
-	char *cmd_name = strtok_r(work_buf, " :", &saveptr);  // stores CMD name in saveptr buffer.
+	char *cmd_name = strtok_r(work_buf, " :", &saveptr);  // stores CMD name in cmd_name buffer, and the current location in the saveptr.
     if (!cmd_name) return CMD_UNKNOWN;
 
 	if (cmd_name != NULL) {
@@ -481,6 +555,7 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 	// Get the sensor address from the command for future use.
 	char *addr_str = strtok_r(NULL, " :", &saveptr); // Subsequent calls to strtok_r with NULL returns the next token from work_buf.
 	if (addr_str) {
+		if ((uint8_t)atoi(addr_str) > 9) return CMD_INVALID_ID;
     	cmd->sensor_id = (uint8_t)atoi(addr_str); // This sets the address
     } else cmd->sensor_id = 0;
 
@@ -533,8 +608,14 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
        		cmd->params.set_params.serial_num[MAX_SERIAL_STR - 1] = '\0';
 		}
     	// Operation Modes
-	    if ((t = NEXT_T)) cmd->params.set_params.vis_units = (VisibilityUnits)atoi(t);
-	    if ((t = NEXT_T)) cmd->params.set_params.continuous_interval = atoi(t);
+	    if ((t = NEXT_T)) {
+			if (t[0] == 'M' || t[0] == 'm') {
+				cmd->params.set_params.vis_units = UNITS_METRES;
+	    	} else {
+				cmd->params.set_params.vis_units = UNITS_FEET;
+			}
+		}
+		if ((t = NEXT_T)) cmd->params.set_params.continuous_interval = atoi(t);
 	    if ((t = NEXT_T)) cmd->params.set_params.op_mode = (OperatingMode)atoi(t);
 	    if ((t = NEXT_T)) cmd->params.set_params.msg_format = (MessageFormat)atoi(t);
 	    if ((t = NEXT_T)) cmd->params.set_params.comm_mode = (CommType)atoi(t);
@@ -580,48 +661,7 @@ void handle_command(CommandType cmd) {
 
         	if (line) {
 				parse_message(line, &p_msg);
-        		char msg_buffer[MAX_MSG_LENGTH]; // 512
-
-				int length = snprintf(msg_buffer, sizeof(msg_buffer),
-    			"%u %u %u %u %u %c %d %.2f %u %u %u %u %u %u %u %u %u %u %u %u %u %.2f %.2f %u %s %.1f %d %s %.1f %d %d %u",
-    			(uint8_t)sensor_one->message_format,	// 1.  uint8_t
-    			sensor_one->sensor_id,   			   	// 2.  uint8_t
-    			(uint8_t)p_msg.sys_status,       		// 3.  uint8_t
-    			sensor_one->continuous_interval,  		// 4.  uint16_t
-    			p_msg.visibility,           			// 5.  uint32_t (use %u if 32-bit, %lu if 64-bit)
-    			(sensor_one->visibility_units == UNITS_METERS) ? 'M' : 'F',	// 6.  char
-    			(int)p_msg.mor_format,      			// 7.  enum (cast to int for %d)
-    			p_msg.exco,                 			// 8.  float
-    			(uint8_t)sensor_one->averaging_period,  // 9.  uint8_t
-    			p_msg.emitter_failure,      			// 10. uint8_t
-    			p_msg.e_lens_dirty,         			// 11. uint8_t
-    			p_msg.e_temp_failure,       			// 12. uint8_t
-    			p_msg.d_lens_dirty,         			// 13. uint8_t
-    			p_msg.d_temp_failure,       			// 14. uint8_t
-    			p_msg.d_saturation_lvl,     			// 15. uint8_t
-    			p_msg.hood_temperature,     			// 16. uint8_t
-    			p_msg.external_temperature, 			// 17. uint8_t
-    			p_msg.signature_error,      			// 18. uint8_t
-    			p_msg.flash_read_error,     			// 19. uint8_t
-    			p_msg.flash_write_error,    			// 20. uint8_t
-    			p_msg.particle_limit,       			// 21. uint8_t
-    			p_msg.particle_count,       			// 22. uint8_t
-    			p_msg.intensity,            			// 23. float
-    			p_msg.synop_code,           			// 24. uint8_t
-    			p_msg.metar_code,           			// 25. char[10]
-    			p_msg.temperature,          			// 26. float
-    			p_msg.relative_humidity,    			// 27. int8_t
-    			"BLM",                  				// 28. char[10]
-    			p_msg.blam.luminance,       			// 29. float
-    			(int)p_msg.blam.status,     			// 30. enum/SystemStatus
-    			(int)p_msg.blam.is_night,   			// 31. bool
-    			p_msg.blam.units            			// 32. uint8_t
-				);
-
-
-				uint16_t calculated_crc = crc16_ccitt((uint8_t*)msg_buffer, length);
-				safe_serial_write(serial_fd, "\x02%s %02X\x03\r\n", msg_buffer, calculated_crc);
-				safe_console_print("\x02%s %02X\x03\r\n", msg_buffer, calculated_crc);
+				process_and_send(&p_msg);
             	free(line); // caller of get_next_line_copy() must free resource.
 				line = NULL;
         	}
@@ -654,12 +694,10 @@ void handle_command(CommandType cmd) {
 														sensor_one->data_format);
 			uint16_t calculated_crc = crc16_ccitt((uint8_t*)crc_work_buffer, length);
 			safe_serial_write(serial_fd, "\x02%s %02X\x03\r\n", crc_work_buffer, calculated_crc);
-			DEBUG_PRINT("\x02%s %02X\x03\r\n", crc_work_buffer, calculated_crc);
 		break;
         case CMD_SETNC:
             // Switch Fall-Through SET and SETNC run the same code.
         case CMD_SET:
-            safe_console_print("The return to SET Command is -> %s\n", p_cmd.params.set_params.full_cmd_string);
 			// Update sensor id if a change is required.
 			if (p_cmd.sensor_id != p_cmd.params.set_params.new_sensor_id && p_cmd.params.set_params.new_sensor_id <= MAX_ADDRESS_NUM) {
 				sensor_one->sensor_id = p_cmd.params.set_params.new_sensor_id;
@@ -672,12 +710,18 @@ void handle_command(CommandType cmd) {
 			if (sensor_one->user_alarms.alarm1_active != p_cmd.params.set_params.alarm1_active) {
 				sensor_one->user_alarms.alarm1_active = p_cmd.params.set_params.alarm1_active;
 			}
+			// Update Visibility Units if required. Moved up to above the set distance evaluations to eliminate a check for current units.
+			if (sensor_one->visibility_units != p_cmd.params.set_params.vis_units &&
+				p_cmd.params.set_params.vis_units <= UNITS_FEET) {
+				sensor_one->visibility_units = p_cmd.params.set_params.vis_units;
+			}
 			// Update alarm 1 distance.
 			if (sensor_one->user_alarms.alarm1_distance != p_cmd.params.set_params.alarm1_dist) {
-				if (1) {
-					// We need a check here if the distance is within 100,000 M if the setting is Metres
-					// Or a check if the distance is within 328,084 F if the setting is in Feet.
-					sensor_one->user_alarms.alarm1_distance = p_cmd.params.set_params.alarm1_dist;
+				uint32_t upper_limit = (sensor_one->visibility_units == 0) ? MAX_VISIBILITY_M : MAX_VISIBILITY_FT;
+				uint32_t lower_limit = (sensor_one->visibility_units == 0) ? MIN_VISIBILITY_M : MIN_VISIBILITY_FT;
+				uint32_t new_distance = p_cmd.params.set_params.alarm1_dist;
+				if (new_distance <= upper_limit && new_distance >= lower_limit) {
+					sensor_one->user_alarms.alarm1_distance = new_distance;
 				}
 			}
 			// Update if alarm 2 is set TRUE/FALSE
@@ -690,10 +734,11 @@ void handle_command(CommandType cmd) {
 			}
 			// Update alarm 2 distance.
 			if (sensor_one->user_alarms.alarm2_distance != p_cmd.params.set_params.alarm2_dist) {
-				if (1) {
-					// We need a check here if the distance is within 100,000 M if the setting is Metres
-					// Or a check if the distance is within 328,084 F if the setting is in Feet.
-					sensor_one->user_alarms.alarm2_distance = p_cmd.params.set_params.alarm2_dist;
+				uint32_t upper_limit = (sensor_one->visibility_units == 0) ? MAX_VISIBILITY_M : MAX_VISIBILITY_FT;
+				uint32_t lower_limit = (sensor_one->visibility_units == 0) ? MIN_VISIBILITY_M : MIN_VISIBILITY_FT;
+				uint32_t new_distance = p_cmd.params.set_params.alarm2_dist;
+				if (new_distance <= upper_limit && new_distance >= lower_limit) {
+					sensor_one->user_alarms.alarm2_distance = new_distance;
 				}
 			}
 			// Update baud rate of sensor if required. Likely will implement changes to anything in our serial settings.
@@ -707,11 +752,6 @@ void handle_command(CommandType cmd) {
 		        	strncpy(sensor_one->serial_number, p_cmd.params.set_params.serial_num, MAX_SERIAL_STR - 1);
 		        	sensor_one->serial_number[MAX_SERIAL_STR - 1] = '\0';
 			    }
-			}
-			// Update Visibility Units if required
-			if (sensor_one->visibility_units != p_cmd.params.set_params.vis_units &&
-				p_cmd.params.set_params.vis_units <= 1) {
-				sensor_one->visibility_units = p_cmd.params.set_params.vis_units;
 			}
 			// Update the continuous sending interval.
 			if (sensor_one->continuous_interval != p_cmd.params.set_params.continuous_interval &&
@@ -780,10 +820,14 @@ void handle_command(CommandType cmd) {
 		case CMD_ACCRES:
 			break;
 		case CMD_ERROR:
+        	safe_console_error("Error: %s\n", strerror(errno));
 			break;
 		case CMD_INVALID_CRC:
+			errno = EBADMSG;
+			safe_console_error("CRC Check - Received CRC and Calculated CRC are not equal: %s\n", strerror(errno));
 			break;
 		case CMD_INVALID_ID:
+			safe_console_error("Failed to open file: %s\n", strerror(errno));
 			break;
 		case CMD_INVALID_FORMAT:
 			break;
@@ -887,57 +931,13 @@ void* sender_thread(void* arg) {
 
         	if (line) {
 				parse_message(line, &p_msg);
-        		char msg_buffer[MAX_MSG_LENGTH]; // 512
-				//char out_buf[MAX_MSG_LENGTH];
-
-				int length = snprintf(msg_buffer, sizeof(msg_buffer),
-    			"%u %u %u %u %u %c %d %.2f %u %u %u %u %u %u %u %u %u %u %u %u %u %.2f %.2f %u %s %.1f %d %s %.1f %d %d %u",
-    			(uint8_t)sensor_one->message_format,	// 1.  uint8_t
-    			sensor_one->sensor_id,   			   	// 2.  uint8_t
-    			p_msg.sys_status,           			// 3.  uint8_t
-    			sensor_one->continuous_interval,  		// 4.  uint16_t
-    			p_msg.visibility,           			// 5.  uint32_t (use %u if 32-bit, %lu if 64-bit)
-    			sensor_one->visibility_units,			// 6.  char
-    			(int)p_msg.mor_format,      			// 7.  enum (cast to int for %d)
-    			p_msg.exco,                 			// 8.  float
-    			(uint8_t)sensor_one->averaging_period,  // 9.  uint8_t
-    			p_msg.emitter_failure,      			// 10. uint8_t
-    			p_msg.e_lens_dirty,         			// 11. uint8_t
-    			p_msg.e_temp_failure,       			// 12. uint8_t
-    			p_msg.d_lens_dirty,         			// 13. uint8_t
-    			p_msg.d_temp_failure,       			// 14. uint8_t
-    			p_msg.d_saturation_lvl,     			// 15. uint8_t
-    			p_msg.hood_temperature,     			// 16. uint8_t
-    			p_msg.external_temperature, 			// 17. uint8_t
-    			p_msg.signature_error,      			// 18. uint8_t
-    			p_msg.flash_read_error,     			// 19. uint8_t
-    			p_msg.flash_write_error,    			// 20. uint8_t
-    			p_msg.particle_limit,       			// 21. uint8_t
-    			p_msg.particle_count,       			// 22. uint8_t
-    			p_msg.intensity,            			// 23. float
-    			p_msg.synop_code,           			// 24. uint8_t
-    			p_msg.metar_code,           			// 25. char[10]
-    			p_msg.temperature,          			// 26. float
-    			p_msg.relative_humidity,    			// 27. int8_t
-    			"BLM",                  				// 28. char[10]
-    			p_msg.blam.luminance,       			// 29. float
-    			(int)p_msg.blam.status,     			// 30. enum/SystemStatus
-    			(int)p_msg.blam.is_night,   			// 31. bool
-    			p_msg.blam.units            			// 32. uint8_t
-				);
-
-				uint16_t calculated_crc = crc16_ccitt((uint8_t*)msg_buffer, length);
-				safe_serial_write(serial_fd, "\x02%s %02X\x03\r\n", msg_buffer, calculated_crc);
+				process_and_send(&p_msg);
             	free(line); // caller of get_next_line_copy() must free resource.
 				line = NULL;
         	}
-
-			// Perform the serial write
-    	    //safe_serial_write(serial_fd, "%f\r\n", s->current_pressure);
             // Update the last_send_time to the current monotonic clock
             clock_gettime(CLOCK_MONOTONIC, &sensor_one->last_send_time);
         }
-
         pthread_mutex_unlock(&send_mutex);
     }
     return NULL;
@@ -997,7 +997,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-
 	if (init_av30_sensor(&sensor_one) != 0) {
         safe_console_error("Failed to initialize sensor_one\n");
 	  	cleanup_and_exit(1);
@@ -1013,38 +1012,20 @@ int main(int argc, char *argv[]) {
     pthread_t recv_thread, send_thread;
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
-        perror("Failed to create receiver thread");
+        safe_console_error("Failed to create receiver thread: %s\n" strerror(errno));
         terminate = 1;          // <- symmetrical, but not required
 		cleanup_and_exit(1);
     }
 
     if (pthread_create(&send_thread, NULL, sender_thread, NULL) != 0) {
-        perror("Failed to create sender thread");
+        safe_console_error("Failed to create sender thread: %s\n" strerror(errno));
         terminate = 1;          // <- needed because recv_thread is running
         pthread_join(recv_thread, NULL);
 		cleanup_and_exit(1);
     }
 
-	safe_console_print("Checking the parse_command\n");
-	// <STX><SP> 'G'   'E'  'T' <SP>  ':' <SP> '0'  <SP>  ':' <SP>  '0' <SP>  ':' <SP>  '8'  '2'  '7'  '7' <SP>  ':' <SP> <ETX>
-	// \x02 \x20 \x47 \x45 \x54 \x20 \x3A \x20 \x30 \x20 \x3A \x20 \x30 \x20 \x3A \x20 \x38 \x32 \x37 \x37 \x20 \x3A \x20 \x03
-	//char *hex_str = "\x02\x20\x47\x45\x54\x20\x3A\x20\x30\x20\x3A\x20\x30\x20\x3A\x20\x38\x32\x37\x37\x20\x3A\x20\x03";
-	//char *hex_str2 = "\x30\x20\x31\x20\x31\x20\x31\x30\x30\x30\x20\x31\x20\x30\x20\x31\x35\x30\x30\x30\x20\x32\x20\x33\x32\x30\x30\x30\x20\x4D\x20\x36\x30\x20\x31\x20\x32\x20\x30\x20\x31\x20\x31\x20\x30\x20\x30\x20\x30\x20\x31\x20\x37\x2E\x30\x20\x38\x30\x20\x30";
-	//char *hex_str3 = "\x02\x30\x20\x31\x20\x31\x20\x31\x30\x30\x30\x20\x31\x20\x30\x20\x31\x35\x30\x30\x30\x20\x32\x20\x33\x32\x30\x30\x30\x20\x4D\x20\x36\x30\x20\x31\x20\x32\x20\x30\x20\x31\x20\x31\x20\x30\x20\x30\x20\x30\x20\x31\x20\x37\x2E\x30\x20\x38\x30\x20\x30\x20\x43\x43\x38\x44\x20\x30\x03";
-	// char *hex_str = "\x02\x20\x47\x45\x54\x20\x3A\x20\x30\x20\x3A\x20\x30\x20\x3A\x03";43433844
-	//char *hex_str4 = "\x53\x45\x54\x3A\x30\x3A\x30\x20\x31\x20\x31\x20\x31\x30\x30\x30\x20\x31\x20\x30\x20\x31\x35\x30\x30\x30\x20\x32\x20\x30\x20\x4D\x20\x36\x30\x20\x31\x20\x32\x20\x30\x20\x31\x20\x31\x20\x30\x20\x30\x20\x30\x20\x31\x20\x37\x20\x37\x30\x20\x30\x20";
-	handle_command(parse_command("\x02GET:0:0:2C67:\x03\r\n", &p_cmd));
-	sensor_one->continuous_interval = 4;
-	handle_command(parse_command("\x02POLL:0:0:3A3B:\x03\r\n", &p_cmd));
-	handle_command(parse_command("\x02POLL:0:0:3A3B:\x03\r\n", &p_cmd));
+	//handle_command(parse_command("\x02GET:0:0:2C67:\x03\r\n", &p_cmd));
 
-	handle_command(parse_command("\x02SET:0:0 1 1 1000 1 0 15000 2 0 M 60 1 2 0 1 1 0 0 0 1 7 70 0 :8AB9:\x03\r\n", &p_cmd));
-	handle_command(parse_command("\x02POLL:0:0:3A3B:\x03\r\n", &p_cmd));
-
-    //uint16_t calculated2 = crc16_ccitt((uint8_t*)hex_str4, strlen(hex_str4));
-    // Convert the 4 characters between p2 and p1
-	//safe_console_print("Calculated CRC = %02X\n", calculated2);
-	//handle_command(parse_command(hex_str3, &p_cmd));
     safe_console_print("Press 'q' + Enter to quit.\n");
     while (!kill_flag) {
         char input[8];
