@@ -245,8 +245,9 @@ ParsedMessage p_msg;
 /* Synchronization primitives */
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t  send_cond  = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t  send_cond; // Moved initialization down to main, to change REALTIME Clock to MONOTONIC.
 
+// Global pointers to receiver and sender threads.
 pthread_t recv_thread, send_thread;
 
 /*
@@ -616,13 +617,13 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
     	#define NEXT_T strtok_r(NULL, " ", &s) // Small macro to keep the code below cleaner.
 
     	// IDs and Alarms
-   		if ((t = NEXT_T)) cmd->params.set_params.new_sensor_id = atoi(t);
+   		if ((t = NEXT_T)) cmd->params.set_params.new_sensor_id = atoi(t); // Store the updated sensor ID
 	    if ((t = NEXT_T)) cmd->params.set_params.alarm1_set    = atoi(t);
     	if ((t = NEXT_T)) cmd->params.set_params.alarm1_active = atoi(t);
 	    if ((t = NEXT_T)) cmd->params.set_params.alarm1_dist   = atoi(t);
 	    if ((t = NEXT_T)) cmd->params.set_params.alarm2_set    = atoi(t);
 	    if ((t = NEXT_T)) cmd->params.set_params.alarm2_active = atoi(t);
-	    if ((t = NEXT_T)) cmd->params.set_params.alarm2_dist = atoi(t);
+	    if ((t = NEXT_T)) cmd->params.set_params.alarm2_dist   = atoi(t);
 
     	// Comms and Serial
     	if ((t = NEXT_T)) cmd->params.set_params.baud_rate = (BaudRateCode)atoi(t);
@@ -793,9 +794,8 @@ void handle_command(CommandType cmd) {
 				sensor_one->comm_type = p_cmd.params.set_params.comm_mode;
 			}
 			// Update Averaging period if required.
-			// abs(2 * 10 - 11) = 9 || abs(2 * 1 - 11) = 9
 			if (sensor_one->averaging_period != p_cmd.params.set_params.averaging_period &&
-				(abs(2 * p_cmd.params.set_params.averaging_period - 11) == 9)) { // mathmatic equation equal to 9 if it is either a 1 or a 10.
+				(p_cmd.params.set_params.averaging_period == 1 || p_cmd.params.set_params.averaging_period == 10)) {
 				sensor_one->averaging_period = p_cmd.params.set_params.averaging_period;
 			}
 			// Update sample timing if required
@@ -846,7 +846,7 @@ void handle_command(CommandType cmd) {
 			// Result (&)		0x121A	0001 0010 0001 1010
 
         	if (sensor_one->custom_msg_bits != requested_bits) {
-            	if ((requested_bits & allowed_mask) == requested_bits) {
+            	if ((requested_bits & allowed_mask) == requested_bits) { // bitwise &
                 	sensor_one->custom_msg_bits = requested_bits;
 					char hex_buf[10];
 					// Convert the bits to a 4-digit uppercase hex string
@@ -856,7 +856,7 @@ void handle_command(CommandType cmd) {
 					uint16_t hex_str_crc = crc16_ccitt((uint8_t*)hex_buf, len);
 					//uint16_t calculated_crc = crc16_ccitt((uint8_t*)crc_work_buffer, length);
 					safe_serial_write(serial_fd, "\x02%s %04X\x03\r\n", hex_buf, hex_str_crc);
-					safe_console_print("\x02%s %04X\x03\r\n", hex_buf, hex_str_crc);
+					DEBUG_PRINT("\x02%s %04X\x03\r\n", hex_buf, hex_str_crc);
             	} else {
                 	safe_console_error("Error: Invalid msgset bits (Mask: 0x%04X, Received: 0x%04X)\n", allowed_mask, requested_bits);
             	}
@@ -878,11 +878,13 @@ void handle_command(CommandType cmd) {
 			safe_console_error("Failed to open file: %s\n", strerror(errno));
 			break;
 		case CMD_INVALID_FORMAT:
+			safe_console_error("Invalid Command Format: %s\n", strerror(errno));
 			break;
 		case CMD_UNKNOWN:
+			safe_console_error("Unknown or Bad Command: %s\n", strerror(errno));
 			break;
         default:
-            safe_console_print("CMD: Unknown command\n");
+			safe_console_error("Unknown or Bad Command: %s\n", strerror(errno));
             break;
     }
 }
@@ -956,11 +958,11 @@ void* sender_thread(void* arg) {
     while (!terminate) {
         pthread_mutex_lock(&send_mutex);
 
-		// 1. Determine if we should wait for a specific time or indefinitely
+		// Determine if we should wait for a specific time or indefinitely
         if (sensor_one != NULL && sensor_one->mode == MODE_CONTINUOUS) {
             // Calculate absolute time: Last Send Time + Interval
-            // We use current REALTIME + (Interval - Time Since Last Send)
-            clock_gettime(CLOCK_REALTIME, &ts);
+            // Use current REALTIME + (Interval - Time Since Last Send)
+            clock_gettime(CLOCK_MONOTONIC, &ts);
             // Add the continuous interval (in seconds) to the current time
             ts.tv_sec += sensor_one->continuous_interval;
 
@@ -970,19 +972,6 @@ void* sender_thread(void* arg) {
             // If in Polling Mode, wait indefinitely for a signal from the receiver
             pthread_cond_wait(&send_cond, &send_mutex);
         }
-
-
-		// Calculate the next wakeup time (Current time + 10ms)
-        //clock_gettime(CLOCK_REALTIME, &ts);
-        //ts.tv_nsec += (CPU_WAIT_NANOSECONDS); // 10000000
-        //if (ts.tv_nsec >= 1000000000L) {
-        //    ts.tv_sec += 1;
-        //    ts.tv_nsec -= 1000000000L;
-        //}
-
-        // Wait until signaled OR timeout reached.
-        // This automatically unlocks send_mutex while waiting.
-        //pthread_cond_timedwait(&send_cond, &send_mutex, &ts);
 
         if (terminate) {
             pthread_mutex_unlock(&send_mutex);
@@ -1043,7 +1032,6 @@ int main(int argc, char *argv[]) {
     if (!file_ptr) {
         safe_console_error("Failed to open file: %s\n", strerror(errno));
 		cleanup_and_exit(1);
-        return 1;
     }
     //ternary statement to set SERIAL_PORT if supplied in args or the default
     const char *device = (argc >= 3 && is_valid_tty(argv[2]) == 0) ? argv[2] : SERIAL_PORT;
@@ -1057,20 +1045,26 @@ int main(int argc, char *argv[]) {
 
     if (serial_fd < 0) {
         cleanup_and_exit(1);
-        return 1;
     }
 
 	if (init_av30_sensor(&sensor_one) != 0) {
         safe_console_error("Failed to initialize sensor_one\n");
 	  	cleanup_and_exit(1);
     }
-    /* define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
-       allowing our c program, to close its loop, join threads, and close our serial device. */
+    // define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
+    // allowing our c program, to close its loop, join threads, and close our serial device.
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = handle_signal;
     sigaction(SIGINT, &sa, NULL);   // Ctrl-C
     sigaction(SIGTERM, &sa, NULL);  // kill, systemd, etc.
+
+	// Initialize the send condition to use CLOCK_MONOTONIC
+	pthread_condattr_t attr;
+    pthread_condattr_init(&attr);
+    pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+    pthread_cond_init(&send_cond, &attr); // Initialize the global variable here
+    pthread_condattr_destroy(&attr);
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
         safe_console_error("Failed to create receiver thread: %s\n", strerror(errno));
@@ -1111,8 +1105,7 @@ int main(int argc, char *argv[]) {
         	}
 		}
     }
-
     safe_console_print("Program terminated.\n");
 	cleanup_and_exit(0);
-	return 0;
+	return 0; // We won't get here, but it quiets verbose warnings on a no return value.
 }
