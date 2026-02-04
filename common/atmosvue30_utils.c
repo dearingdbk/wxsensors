@@ -147,7 +147,11 @@ int init_av30_sensor(av30_sensor **ptr) {
 
     sensor->custom_msg_bits = 0x121C;
 
+	// This will set last_send_time to current time, the sensor will then wait the continuous_interval time to send data.
+	// If it should start sending data the first time immediately, comment out this line, and uncomment out the two lines below.
     clock_gettime(CLOCK_MONOTONIC, &sensor->last_send_time);
+	// sensor->last_send_time.tv_sec = 0;
+	// sensor->last_send_time.tv_nsec = 0;
     sensor->initialized = true;
     sensor->first_minute_elapsed = true;
 
@@ -170,9 +174,21 @@ int init_av30_sensor(av30_sensor **ptr) {
  */
 bool av30_is_ready_to_send(av30_sensor *sensor) {
     if (!sensor || sensor->mode != MODE_CONTINUOUS) return false;
+
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
-    double elapsed = ((double)now.tv_sec - sensor->last_send_time.tv_sec) +
-                     ((double)now.tv_nsec - sensor->last_send_time.tv_nsec) / 1e9;
-    return (elapsed >= (double)sensor->continuous_interval);
+
+    // Calculate elapsed time in seconds and nanoseconds separately
+    long seconds = now.tv_sec - sensor->last_send_time.tv_sec;
+    long nanoseconds = now.tv_nsec - sensor->last_send_time.tv_nsec;
+
+    // Normalize nanoseconds if now.tv_nsec was less than last_send_time.tv_nsec
+    if (nanoseconds < 0) {
+        seconds -= 1;
+        nanoseconds += 1000000000L;
+    }
+
+    // Return true if the elapsed seconds meet or exceed the interval.
+    // Ignore the remaining nanoseconds to allow for tiny scheduling delays.
+    return (seconds >= (long)sensor->continuous_interval);
 }
