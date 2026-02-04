@@ -110,7 +110,7 @@
 #include <stdatomic.h>
 #include <time.h>
 #include <ctype.h>
-#include "barometric_utils.h"
+#include "dsp8100_utils.h"
 #include "serial_utils.h"
 #include "console_utils.h"
 #include "file_utils.h"

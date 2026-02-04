@@ -10,8 +10,8 @@
  *
  */
 
-#ifndef BAROMETRIC_UTILS_H
-#define BAROMETRIC_UTILS_H
+#ifndef DSP8100_UTILS_H
+#define DSP8100_UTILS_H
 
 #include <stdbool.h>
 
