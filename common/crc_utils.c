@@ -27,21 +27,22 @@
  *
  * Output:       None.
  * Modifies:     unsigned short crc.
- * Returns:      the calculated CRC value of the string provided.
+ * Returns:      the calculated CRC value of the string provided or -1 on failure.
  * Assumptions:
  *
  * Bugs:         None known.
  * Notes:
  */
 unsigned short crc16(char *buffer, int length) {
-    unsigned short crc;
+	if (buffer == NULL || length <= 0) return -1;
+    if (length > MAX_PACKET_LENGTH) return -1;
+
+    unsigned short crc = 0xFFFF;
     unsigned short m;
     int i, j;
-    if (length < (int)sizeof(buffer)) return -1;
-    crc = 0xFFFF;
 
     for (i=0; i < length; ++i) {
-        crc ^= buffer[i] << 8;
+        crc ^= (unsigned char)buffer[i] << 8;
         for (j=0; j < 8; ++j) {
             m = (crc & 0x8000) ? 0x1021 : 0;
             crc <<= 1;
