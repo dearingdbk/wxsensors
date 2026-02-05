@@ -92,7 +92,7 @@
 #include "ptb330_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
-#define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
+#define BAUD_RATE   B4800	     // Adjust as needed, main has logic to take arguments for a new baud rate
 #define MAX_LINE_LENGTH 1024
 #define CPU_WAIT_NANOSECONDS 10000000
 #define MAX_CMD_LENGTH 256
@@ -292,172 +292,34 @@ void process_and_send(ParsedMessage *msg) {
  * Notes:
  */
 CommandType parse_command(const char *buf, ParsedCommand *cmd) {
+    if (buf == NULL || cmd == NULL) return CMD_UNKNOWN;
+
 	memset(cmd, 0, sizeof(ParsedCommand));
-	if (buf == NULL || cmd == NULL) return CMD_UNKNOWN;
-	const char *ptr = buf;
+    const char *ptr = buf;
 
-	if (strncasecmp(buf, "BNUM", 4) == 0) {
-		cmd->type = CMD_BNUM;
-		ptr += 4; // Jump past "BNUM"
-		// Do more checks / evals here to pull in required information.
-	} else if (strncasecmp(ptr, "SERI", 4) == 0) {
-	 	cmd->type = CMD_SERI;
-		ptr += 4;
-	} else if (strncasecmp(ptr, "SNUM", 4) == 0) {
-		cmd->type = CMD_SNUM;
-		ptr += 4;
-	} else if (strncasecmp(ptr, "ERRS", 4) == 0) {
-		cmd->type = CMD_ERRS;
-		ptr += 4;
-	} else if (strncasecmp(ptr, "HELP", 4) == 0) {
-		cmd->type = CMD_HELP;
-		ptr += 4;
-	} else if (strncasecmp(ptr, "?", 1) == 0) {
-		cmd->type = CMD_INFO;
-		ptr += 1;
-	} else if (strncasecmp(ptr, "LOCK", 4) == 0) {
-	  	cmd->type = CMD_LOCK;
-		ptr += 4;
-	} else if (strncasecmp(ptr, "ECHO", 4) == 0) {
-	 	cmd->type = CMD_ECHO;
-		ptr += 4;
-	} else if (strncasecmp(ptr, "RESET", 5) == 0) {
-		cmd->type = CMD_RESET;
-		ptr += 5;
-	} else if (strncasecmp(ptr, "VERS", 4) == 0) {
-	 	cmd->type = CMD_VERS;
-		ptr += 4;
-	} else if (strncasecmp(ptr, "MODS", 4) == 0) {
-	 	cmd->type = CMD_MODS;
-		ptr += 4;
-	} else if (strncasecmp(ptr, "CON", 3) == 0) {
-	 	cmd->type = CMD_CON;
-		ptr += 3;
-	} else if (strncasecmp(ptr, "R", 1) == 0) {
-	 	cmd->type = CMD_R;
-		ptr += 4;
-	} else if (strncasecmp(ptr, "INTV", 4) == 0) {
-	  	cmd->type = CMD_INTV;
-		ptr += 4;
-	} else if (strncasecmp(ptr, "SEND", 4) == 0) {
-	 	cmd->type = CMD_SEND;
-		ptr += 4;
-	} else if (strncasecmp(ptr, "ADDR", 4) == 0) {
-	 	cmd->type = CMD_ADDR;
-		ptr += 4;
-	} else if (strncasecmp(ptr, "SMODE", 5) == 0) {
-		cmd->type = CMD_SMODE;
-		ptr += 5;
-	} else if (strncasecmp(ptr, "SDELAY", 6) == 0) {
-		cmd->type = CMD_SDELAY;
-		ptr += 6;
-	} else if (strncasecmp(ptr, "OPEN", 4) == 0) {
-	 	cmd->type = CMD_OPEN;
-		ptr += 4;
-	} else if (strncasecmp(ptr, "CLOSE", 5) == 0) {
-		cmd->type = CMD_CLOSE;
-		ptr += 5;
-	} else if (strncasecmp(ptr, "SCOM", 4) == 0) {
-	 	cmd->type = CMD_SCOM;
-		ptr += 4;
-	} else if (strncasecmp(ptr, "TQFE", 4) == 0) {
-	 	cmd->type = CMD_TQFE;
-	    ptr += 4;
-	} else if (strncasecmp(ptr, "DPMAX", 5) == 0) {
-		cmd->type = CMD_DPMAX;
-        ptr += 5;
-	} else if (strncasecmp(ptr, "HHCP", 4) == 0) {
-	 	cmd->type = CMD_HHCP;
-	    ptr += 4;
-	} else if (strncasecmp(ptr, "HQFE", 4) == 0) {
-	 	cmd->type = CMD_HQFE;
-        ptr += 4;
-	} else if (strncasecmp(ptr, "HQNH", 4) == 0) {
-	 	cmd->type = CMD_HQNH;
-        ptr += 4;
-	} else if (strncasecmp(ptr, "ICAOQNH", 7) == 0) {
-		cmd->type = CMD_ICAOQNH;
-        ptr += 7;
-	} else if (strncasecmp(ptr, "PSTAB", 5) == 0) {
-		cmd->type = CMD_PSTAB;
-        ptr += 5;
-	} else if (strncasecmp(ptr, "AVRG", 4) == 0) {
-	 	cmd->type = CMD_AVRG;
-        ptr += 4;
-	} else if (strncasecmp(ptr, "FORM", 4) == 0) {
-	 	cmd->type = CMD_FORM;
-        ptr += 4;
-	} else if (strncasecmp(ptr, "TIME", 4) == 0) {
-	 	cmd->type = CMD_TIME;
-        ptr += 4;
-	} else if (strncasecmp(ptr, "DATE", 4) == 0) {
-	 	cmd->type = CMD_DATE;
-        ptr += 4;
-	} else if (strncasecmp(ptr, "UNIT", 4) == 0) {
-	 	cmd->type = CMD_UNIT;
-        ptr += 4;
-	} else if (strncasecmp(ptr, "DSEL", 4) == 0) {
-	 	cmd->type = CMD_DSEL;
-        ptr += 4;
-	} else if (strncasecmp(ptr, "DELETE", 6) == 0) {
-		cmd->type = CMD_DELETE;
-        ptr += 6;
-	} else if (strncasecmp(ptr, "UNDELETE", 8) == 0) {
-		cmd->type = CMD_UNDELETE;
-        ptr += 8;
-	} else if (strncasecmp(ptr, "DIR", 3) == 0) {
-	 	cmd->type = CMD_DIR;
-        ptr += 3;
-	} else if (strncasecmp(ptr, "PLAY", 4) == 0) {
-	 	cmd->type = CMD_PLAY;
-        ptr += 4;
-	} else if (strncasecmp(ptr, "CDATE", 5) == 0) {
-		cmd->type = CMD_CDATE;
-        ptr += 5;
-	} else if (strncasecmp(ptr, "LCP1", 4) == 0)  {
-		cmd->type = CMD_LCP1;
-	    ptr += 4;
-	} else if (strncasecmp(ptr, "LCP2", 4) == 0)  {
-		cmd->type = CMD_LCP2;
-	    ptr += 4;
-	} else if (strncasecmp(ptr, "LCP3", 4) == 0)  {
-		cmd->type = CMD_LCP3;
-	    ptr += 4;
-	} else if (strncasecmp(ptr, "MPCP1", 5) == 0)  {
-		cmd->type = CMD_MPCP1;
-	    ptr += 5;
-	} else if (strncasecmp(ptr, "MPCP2", 5) == 0)  {
-		cmd->type = CMD_MPCP2;
-	    ptr += 5;
-	} else if (strncasecmp(ptr, "MPCP3", 5) == 0)  {
-		cmd->type = CMD_MPCP3;
-	    ptr += 5;
-	} else if (strncasecmp(ptr, "CTEXT", 5) == 0)  {
-		cmd->type = CMD_CTEXT;
-	    ptr += 5;
-	} else if (strncasecmp(ptr, "AMODE", 5) == 0)  {
-		cmd->type = CMD_AMODE;
-	    ptr += 5;
-	} else if (strncasecmp(ptr, "ASEL", 4) == 0)  {
-		cmd->type = CMD_ASEL;
-	    ptr += 4;
-	} else if (strncasecmp(ptr, "ACAL", 4) == 0)  {
-		cmd->type = CMD_ACAL;
-	    ptr += 4;
-	} else if (strncasecmp(ptr, "AERR", 4) == 0)  {
-		cmd->type = CMD_AERR;
-	    ptr += 4;
-	} else if (strncasecmp(ptr, "ATEST", 5) == 0)  {
-		cmd->type = CMD_ATEST;
-	    ptr += 5;
-	} else if (strncasecmp(ptr, "RSEL", 4) == 0)  {
-		cmd->type = CMD_RSEL;
-	    ptr += 4;
-	} else if (strncasecmp(ptr, "RTEST", 5) == 0)  {
-		cmd->type = CMD_RTEST;
-	    ptr += 5;
-	} else return CMD_UNKNOWN;
+    while (*ptr && isspace((unsigned char)*ptr)) ptr++; // Skip any leading whitespace.
 
+    for (size_t i = 0; i < CMD_TABLE_SIZE; i++) {
+
+        if (strncasecmp(ptr, cmd_table[i].name, cmd_table[i].len) == 0) {
+            // Ensure exact match (don't match "R" if the command is "RESET")
+            char next = ptr[cmd_table[i].len];
+            if (next == '\0' || isspace((unsigned char)next) || next == '?' || next == '=') {
+                cmd->type = cmd_table[i].type;
+                ptr += cmd_table[i].len; // Jump past command
+
+                // Skip spaces to point at arguments
+                while (*ptr && isspace((unsigned char)*ptr)) ptr++;
+
+                // Copy remaining string to params
+				strncpy(cmd->raw_params, ptr, sizeof(cmd->raw_params) - 1);
+				cmd->raw_params[sizeof(cmd->raw_params) - 1] = '\0'; // Safety null terminator
+
+                return cmd->type;
+            }
+        }
+    }
+    // cmd->type = CMD_UNKNOWN;
     return CMD_UNKNOWN;
 }
 
@@ -480,16 +342,22 @@ void handle_command(CommandType cmd) {
 
 	 switch (cmd) {
         case CMD_BNUM:
+			DEBUG_PRINT("BNUM Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
         case CMD_SERI:
+			DEBUG_PRINT("SERI Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
         case CMD_SNUM:
+			DEBUG_PRINT("SNUM Command Received with these params: %s\n", p_cmd.raw_params);
             break;
 		case CMD_ERRS:
+			DEBUG_PRINT("ERRS Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_HELP:
+			DEBUG_PRINT("HELP Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_LOCK:
+			DEBUG_PRINT("LOCK Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_INFO:
 			break;
@@ -594,10 +462,10 @@ void handle_command(CommandType cmd) {
 			safe_console_error("Invalid Command Format: %s\n", strerror(errno));
 			break;
 		case CMD_UNKNOWN:
-			safe_console_error("Unknown or Bad Command: %s\n", strerror(errno));
+			safe_console_error("Unknown or Bad Command:\n");
 			break;
         default:
-			safe_console_error("Unknown or Bad Command: %s\n", strerror(errno));
+			safe_console_error("Unknown or Bad Command:\n");
             break;
     }
 }
@@ -792,8 +660,11 @@ int main(int argc, char *argv[]) {
 		cleanup_and_exit(1);
     }
 
-	handle_command(parse_command("\x02MSGSET:0:321C:B500:\x03\r\n", &p_cmd));
-	handle_command(parse_command("\x02MSGSET:0:121C:5868:\x03\r\n", &p_cmd));
+	handle_command(parse_command("BNUM\r\n", &p_cmd));
+	handle_command(parse_command("SERI\r\n", &p_cmd));
+	handle_command(parse_command("ERRS\r\n", &p_cmd));
+	handle_command(parse_command("HELP\r\n", &p_cmd));
+	handle_command(parse_command("LOCK 2\r\n", &p_cmd));
 
     safe_console_print("Press 'q' + Enter to quit.\n");
     struct pollfd fds[1];

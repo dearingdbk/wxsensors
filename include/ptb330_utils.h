@@ -48,6 +48,7 @@ static const UnitConversion unit_table[] = {
     {UNIT_PSI,   "psi",  0.0145038}
 };
 
+
 typedef struct {
     char serial_number[MAX_SN_LEN];
 	float pressure;
@@ -170,6 +171,51 @@ typedef struct {
 } ptb330_command;
 
 
+typedef struct {
+    const char *name;
+    CommandType type;
+	size_t len;
+} CommandMap;
+
+#define CMD_ENTRY(str, enum_val) { str, enum_val, sizeof(str) - 1 }
+
+static const CommandMap cmd_table[] = {
+    CMD_ENTRY("UNDELETE", CMD_UNDELETE), 	CMD_ENTRY("DELETE",	CMD_DELETE),
+    CMD_ENTRY("BNUM",     CMD_BNUM),		CMD_ENTRY("SERI",     CMD_SERI),
+    CMD_ENTRY("SNUM",     CMD_SNUM),    	CMD_ENTRY("ERRS",     CMD_ERRS),
+    CMD_ENTRY("HELP",     CMD_HELP),    	CMD_ENTRY("?",       CMD_INFO),
+    CMD_ENTRY("LOCK",     CMD_LOCK),    	CMD_ENTRY("ECHO",     CMD_ECHO),
+    CMD_ENTRY("RESET",    CMD_RESET),   	CMD_ENTRY("VERS",     CMD_VERS),
+    CMD_ENTRY("MODS",     CMD_MODS),    	CMD_ENTRY("CON",      CMD_CON),
+    CMD_ENTRY("INTV",     CMD_INTV),    	CMD_ENTRY("SEND",     CMD_SEND),
+    CMD_ENTRY("ADDR",     CMD_ADDR),		CMD_ENTRY("CDATE",	CMD_CDATE),
+    CMD_ENTRY("SMODE",    CMD_SMODE),		CMD_ENTRY("SDELAY",   CMD_SDELAY),
+    CMD_ENTRY("OPEN",     CMD_OPEN),		CMD_ENTRY("CLOSE",    CMD_CLOSE),
+    CMD_ENTRY("SCOM",     CMD_SCOM),		CMD_ENTRY("TQFE",     CMD_TQFE),
+    CMD_ENTRY("DPMAX",    CMD_DPMAX),   	CMD_ENTRY("HHCP",     CMD_HHCP),
+    CMD_ENTRY("HQFE",     CMD_HQFE),    	CMD_ENTRY("HQNH",     CMD_HQNH),
+    CMD_ENTRY("ICAOQNH",  CMD_ICAOQNH), 	CMD_ENTRY("PSTAB",    CMD_PSTAB),
+    CMD_ENTRY("AVRG",     CMD_AVRG),    	CMD_ENTRY("FORM",     CMD_FORM),
+    CMD_ENTRY("TIME",     CMD_TIME),    	CMD_ENTRY("DATE",     CMD_DATE),
+    CMD_ENTRY("UNIT",     CMD_UNIT),    	CMD_ENTRY("DSEL",     CMD_DSEL),
+    CMD_ENTRY("DIR",      CMD_DIR),     	CMD_ENTRY("PLAY",     CMD_PLAY),
+    CMD_ENTRY("LCP1",     CMD_LCP1),    	CMD_ENTRY("LCP2",     CMD_LCP2),
+    CMD_ENTRY("LCP3",     CMD_LCP3),    	CMD_ENTRY("MPCP1",    CMD_MPCP1),
+    CMD_ENTRY("MPCP2",    CMD_MPCP2),   	CMD_ENTRY("MPCP3",    CMD_MPCP3),
+	CMD_ENTRY("CTEXT",    CMD_CTEXT),   	CMD_ENTRY("AMODE",    CMD_AMODE),
+	CMD_ENTRY("ASEL",     CMD_ASEL),		CMD_ENTRY("ACAL",     CMD_ACAL),
+    CMD_ENTRY("AERR",     CMD_AERR),    	CMD_ENTRY("ATEST",    CMD_ATEST),
+    CMD_ENTRY("RSEL",     CMD_RSEL),    	CMD_ENTRY("RTEST",    CMD_RTEST),
+    CMD_ENTRY("R",		 CMD_R)
+};
+
+#define CMD_TABLE_SIZE (sizeof(cmd_table) / sizeof(CommandMap))
+
+
+
+
+
+
 // Parsed command structure
 typedef struct {
     CommandType type;
@@ -177,7 +223,7 @@ typedef struct {
     bool crc_valid;
     uint16_t received_crc;
     uint16_t calculated_crc;
-
+    char raw_params[128];
 	union {
 
 		struct {
