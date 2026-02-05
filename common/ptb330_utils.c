@@ -16,8 +16,9 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
     if (!*ptr) return -1;
 
     ptb330_sensor *s = *ptr;
-    strcpy(s->serial_number, "G1234567");
-    strcpy(s->software_version, "1.12");
+	//char *strncpy(char *destination, const char *source, size_t num);
+    strncpy(s->serial_number, "G1234567", MAX_SN_LEN);
+    strncpy(s->software_version, "1.12", 5);
     s->address = 0;
     s->mode = SMODE_STOP;
     s->units = UNIT_HPA;
@@ -29,6 +30,13 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
     //s->last_send_time.tv_sec = 0; // Immediate first send
     //s->last_send_time.tv_nsec = 0;
     s->initialized = true;
+	strncpy(s->module_one.serial_number, "M1234567", MAX_SN_LEN);
+	strncpy(s->module_two.serial_number, "M7654321", MAX_SN_LEN);
+	strncpy(s->module_three.serial_number, "M4713526", MAX_SN_LEN);
+	strncpy(s->module_one.batch_num, "550", MAX_BATCH_NUM);
+	strncpy(s->module_two.batch_num, "550", MAX_BATCH_NUM);
+	strncpy(s->module_three.batch_num, "550", MAX_BATCH_NUM);
+	memset(&s->module_four, 0, sizeof(s->module_four));
     return 0;
 }
 
@@ -92,14 +100,14 @@ static const UnitConversion unit_table[] = {
 };*/
 
 const char* get_unit_str(PTB330_Unit unit) {
-    for (int i = 0; i < sizeof(unit_table)/sizeof(UnitConversion); i++) {
+    for (int i = 0; i < (int)(sizeof(unit_table)/sizeof(UnitConversion)); i++) {
         if (unit_table[i].unit == unit) return unit_table[i].label;
     }
     return "hPa";
 }
 
 double get_scaled_pressure(float hpa_val, PTB330_Unit unit) {
-    for (int i = 0; i < sizeof(unit_table)/sizeof(UnitConversion); i++) {
+    for (int i = 0; i < (int)(sizeof(unit_table)/sizeof(UnitConversion)); i++) {
         if (unit_table[i].unit == unit) return (double)hpa_val * unit_table[i].multiplier;
     }
     return (double)hpa_val;

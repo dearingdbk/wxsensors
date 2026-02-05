@@ -269,7 +269,7 @@ void parse_message(char *msg, ParsedMessage *p_message) {
 void process_and_send(ParsedMessage *msg) {
 
 	char msg_buffer[MAX_MSG_LENGTH]; // 512
-
+	if (msg == NULL) return;
 	int length = snprintf(msg_buffer, sizeof(msg_buffer), "%u", 2);
 
 	if (length > 0 && length < (int)sizeof(msg_buffer)) {
@@ -293,6 +293,170 @@ void process_and_send(ParsedMessage *msg) {
  */
 CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 	memset(cmd, 0, sizeof(ParsedCommand));
+	if (buf == NULL || cmd == NULL) return CMD_UNKNOWN;
+	const char *ptr = buf;
+
+	if (strncasecmp(buf, "BNUM", 4) == 0) {
+		cmd->type = CMD_BNUM;
+		ptr += 4; // Jump past "BNUM"
+		// Do more checks / evals here to pull in required information.
+	} else if (strncasecmp(ptr, "SERI", 4) == 0) {
+	 	cmd->type = CMD_SERI;
+		ptr += 4;
+	} else if (strncasecmp(ptr, "SNUM", 4) == 0) {
+		cmd->type = CMD_SNUM;
+		ptr += 4;
+	} else if (strncasecmp(ptr, "ERRS", 4) == 0) {
+		cmd->type = CMD_ERRS;
+		ptr += 4;
+	} else if (strncasecmp(ptr, "HELP", 4) == 0) {
+		cmd->type = CMD_HELP;
+		ptr += 4;
+	} else if (strncasecmp(ptr, "?", 1) == 0) {
+		cmd->type = CMD_INFO;
+		ptr += 1;
+	} else if (strncasecmp(ptr, "LOCK", 4) == 0) {
+	  	cmd->type = CMD_LOCK;
+		ptr += 4;
+	} else if (strncasecmp(ptr, "ECHO", 4) == 0) {
+	 	cmd->type = CMD_ECHO;
+		ptr += 4;
+	} else if (strncasecmp(ptr, "RESET", 5) == 0) {
+		cmd->type = CMD_RESET;
+		ptr += 5;
+	} else if (strncasecmp(ptr, "VERS", 4) == 0) {
+	 	cmd->type = CMD_VERS;
+		ptr += 4;
+	} else if (strncasecmp(ptr, "MODS", 4) == 0) {
+	 	cmd->type = CMD_MODS;
+		ptr += 4;
+	} else if (strncasecmp(ptr, "CON", 3) == 0) {
+	 	cmd->type = CMD_CON;
+		ptr += 3;
+	} else if (strncasecmp(ptr, "R", 1) == 0) {
+	 	cmd->type = CMD_R;
+		ptr += 4;
+	} else if (strncasecmp(ptr, "INTV", 4) == 0) {
+	  	cmd->type = CMD_INTV;
+		ptr += 4;
+	} else if (strncasecmp(ptr, "SEND", 4) == 0) {
+	 	cmd->type = CMD_SEND;
+		ptr += 4;
+	} else if (strncasecmp(ptr, "ADDR", 4) == 0) {
+	 	cmd->type = CMD_ADDR;
+		ptr += 4;
+	} else if (strncasecmp(ptr, "SMODE", 5) == 0) {
+		cmd->type = CMD_SMODE;
+		ptr += 5;
+	} else if (strncasecmp(ptr, "SDELAY", 6) == 0) {
+		cmd->type = CMD_SDELAY;
+		ptr += 6;
+	} else if (strncasecmp(ptr, "OPEN", 4) == 0) {
+	 	cmd->type = CMD_OPEN;
+		ptr += 4;
+	} else if (strncasecmp(ptr, "CLOSE", 5) == 0) {
+		cmd->type = CMD_CLOSE;
+		ptr += 5;
+	} else if (strncasecmp(ptr, "SCOM", 4) == 0) {
+	 	cmd->type = CMD_SCOM;
+		ptr += 4;
+	} else if (strncasecmp(ptr, "TQFE", 4) == 0) {
+	 	cmd->type = CMD_TQFE;
+	    ptr += 4;
+	} else if (strncasecmp(ptr, "DPMAX", 5) == 0) {
+		cmd->type = CMD_DPMAX;
+        ptr += 5;
+	} else if (strncasecmp(ptr, "HHCP", 4) == 0) {
+	 	cmd->type = CMD_HHCP;
+	    ptr += 4;
+	} else if (strncasecmp(ptr, "HQFE", 4) == 0) {
+	 	cmd->type = CMD_HQFE;
+        ptr += 4;
+	} else if (strncasecmp(ptr, "HQNH", 4) == 0) {
+	 	cmd->type = CMD_HQNH;
+        ptr += 4;
+	} else if (strncasecmp(ptr, "ICAOQNH", 7) == 0) {
+		cmd->type = CMD_ICAOQNH;
+        ptr += 7;
+	} else if (strncasecmp(ptr, "PSTAB", 5) == 0) {
+		cmd->type = CMD_PSTAB;
+        ptr += 5;
+	} else if (strncasecmp(ptr, "AVRG", 4) == 0) {
+	 	cmd->type = CMD_AVRG;
+        ptr += 4;
+	} else if (strncasecmp(ptr, "FORM", 4) == 0) {
+	 	cmd->type = CMD_FORM;
+        ptr += 4;
+	} else if (strncasecmp(ptr, "TIME", 4) == 0) {
+	 	cmd->type = CMD_TIME;
+        ptr += 4;
+	} else if (strncasecmp(ptr, "DATE", 4) == 0) {
+	 	cmd->type = CMD_DATE;
+        ptr += 4;
+	} else if (strncasecmp(ptr, "UNIT", 4) == 0) {
+	 	cmd->type = CMD_UNIT;
+        ptr += 4;
+	} else if (strncasecmp(ptr, "DSEL", 4) == 0) {
+	 	cmd->type = CMD_DSEL;
+        ptr += 4;
+	} else if (strncasecmp(ptr, "DELETE", 6) == 0) {
+		cmd->type = CMD_DELETE;
+        ptr += 6;
+	} else if (strncasecmp(ptr, "UNDELETE", 8) == 0) {
+		cmd->type = CMD_UNDELETE;
+        ptr += 8;
+	} else if (strncasecmp(ptr, "DIR", 3) == 0) {
+	 	cmd->type = CMD_DIR;
+        ptr += 3;
+	} else if (strncasecmp(ptr, "PLAY", 4) == 0) {
+	 	cmd->type = CMD_PLAY;
+        ptr += 4;
+	} else if (strncasecmp(ptr, "CDATE", 5) == 0) {
+		cmd->type = CMD_CDATE;
+        ptr += 5;
+	} else if (strncasecmp(ptr, "LCP1", 4) == 0)  {
+		cmd->type = CMD_LCP1;
+	    ptr += 4;
+	} else if (strncasecmp(ptr, "LCP2", 4) == 0)  {
+		cmd->type = CMD_LCP2;
+	    ptr += 4;
+	} else if (strncasecmp(ptr, "LCP3", 4) == 0)  {
+		cmd->type = CMD_LCP3;
+	    ptr += 4;
+	} else if (strncasecmp(ptr, "MPCP1", 5) == 0)  {
+		cmd->type = CMD_MPCP1;
+	    ptr += 5;
+	} else if (strncasecmp(ptr, "MPCP2", 5) == 0)  {
+		cmd->type = CMD_MPCP2;
+	    ptr += 5;
+	} else if (strncasecmp(ptr, "MPCP3", 5) == 0)  {
+		cmd->type = CMD_MPCP3;
+	    ptr += 5;
+	} else if (strncasecmp(ptr, "CTEXT", 5) == 0)  {
+		cmd->type = CMD_CTEXT;
+	    ptr += 5;
+	} else if (strncasecmp(ptr, "AMODE", 5) == 0)  {
+		cmd->type = CMD_AMODE;
+	    ptr += 5;
+	} else if (strncasecmp(ptr, "ASEL", 4) == 0)  {
+		cmd->type = CMD_ASEL;
+	    ptr += 4;
+	} else if (strncasecmp(ptr, "ACAL", 4) == 0)  {
+		cmd->type = CMD_ACAL;
+	    ptr += 4;
+	} else if (strncasecmp(ptr, "AERR", 4) == 0)  {
+		cmd->type = CMD_AERR;
+	    ptr += 4;
+	} else if (strncasecmp(ptr, "ATEST", 5) == 0)  {
+		cmd->type = CMD_ATEST;
+	    ptr += 5;
+	} else if (strncasecmp(ptr, "RSEL", 4) == 0)  {
+		cmd->type = CMD_RSEL;
+	    ptr += 4;
+	} else if (strncasecmp(ptr, "RTEST", 5) == 0)  {
+		cmd->type = CMD_RTEST;
+	    ptr += 5;
+	} else return CMD_UNKNOWN;
 
     return CMD_UNKNOWN;
 }

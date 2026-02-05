@@ -16,6 +16,7 @@
 #define MAX_FORM_STR 128
 #define MAX_ADDR_LEN 4
 #define MAX_SN_LEN 16
+#define MAX_BATCH_NUM 64
 
 typedef enum {
     SMODE_STOP,  // No output
@@ -48,7 +49,9 @@ static const UnitConversion unit_table[] = {
 };
 
 typedef struct {
+    char serial_number[MAX_SN_LEN];
 	float pressure;
+	char batch_num[MAX_BATCH_NUM];
 
 } BAROModule;
 
@@ -73,7 +76,10 @@ typedef struct {
     // Timing
     struct timespec last_send_time;
     bool initialized;
-	BAROModule mod_array[5]; // Array of BAROModules, 0-4 to hold BARO Sensors.
+	BAROModule module_one;
+	BAROModule module_two;
+	BAROModule module_three;
+	BAROModule module_four;
 } ptb330_sensor;
 
 
@@ -171,6 +177,20 @@ typedef struct {
     bool crc_valid;
     uint16_t received_crc;
     uint16_t calculated_crc;
+
+	union {
+
+		struct {
+
+		} form_params;
+
+		struct {
+
+
+		} unit_params;
+
+
+	} params;
 } ParsedCommand;
 
 // Parsed message structure
