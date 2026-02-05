@@ -164,16 +164,23 @@ For consistent USB serial device naming, create a udev rule:
 ```
 wxsensors/
 ├── include/              # Shared header files
-│   ├── crc_utils.h
-│   ├── sensor_utils.h
-│   ├── file_utils.h
+│   ├── atmosvue30_utils.h
 │   ├── console_utils.h
+│   ├── crc_utils.h
+│   ├── dsp8100_utils.h
+│   ├── file_utils.h
+│   ├── ptb330_utils.h
+│   ├── q131.h
+│   ├── sensor_utils.h
 │   └── serial_utils.h
 ├── common/               # Shared source files
-│   ├── crc_utils.c
-│   ├── sensor_utils.c
-│   ├── file_utils.c
+│   ├── atmosvue30_utils.c
 │   ├── console_utils.c
+│   ├── crc_utils.c
+│   ├── dsp8100_utils.c
+│   ├── file_utils.c
+│   ├── ptb330_utils.h
+│   ├── sensor_utils.c
 │   └── serial_utils.c
 ├── wind/                 # Gill WindObserver 75 emulator
 │   └── wind_listen.c
@@ -181,8 +188,10 @@ wxsensors/
 │   └── tmp_rh_listen.c
 ├── pres_weather/         # Campbell Scientific AtmosVue30 emulator
 │   └── pres_weather.c
-├── barometric/           # Barometric pressure emulator
-│   └── barometric.c
+├── dsp8100/           	  # Druck DSP-8100 barometric pressure emulator
+│   └── dsp8100.c
+├── ptb330/               # Vaisala PTB-330 barometric pressure emulator
+│   └── ptb330.c
 ├── ceilometer/           # Ceilometer emulator
 │   └── ceilometer.c
 ├── ice/        	      # Ice Accumulation Detection emulator
