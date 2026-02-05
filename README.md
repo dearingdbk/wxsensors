@@ -27,6 +27,7 @@ Each sensor emulator follows a common architecture:
 | HC2A-S3 | Rotronic | Temperature/Humidity | HygroClip2 T/RH probe (-50°C to +100°C, 0-100% RH) housed in Apogee TS-100 aspirated shield |
 | AtmosVue30 | Campbell Scientific | Present Weather | Multi-variable sensor providing visibility (10 m to 30 km), precipitation type/intensity, and WMO weather codes |
 | DSP8100 | GE Druck  | Pressure | Barometric pressure sensor emulator |
+| PTB-330 | VaiSala   | Pressure | Barometric pressure sensor emulator |
 | SkyVUE8 | Campbell Scientific | Cloud Height | Cloud base height and sky condition sensor emulator |
 | BTD-300 | Biral | Lightning | Lightning detection sensor emulator |
 | 0872F1  | Goodrich | Ice Detector | Ultrasonic axially vibrating tube ice accumulation detector | 
