@@ -29,6 +29,29 @@ typedef enum {
     UNIT_INHG, UNIT_MMH2O, UNIT_MMHG, UNIT_TORR, UNIT_PSI
 } PTB330_Unit;
 
+
+typedef struct {
+    PTB330_Unit unit;
+    const char *label;
+    double multiplier; // Multiplier to convert from hPa to this unit
+} UnitConversion;
+
+static const UnitConversion unit_table[] = {
+    {UNIT_HPA,   "hPa",  1.0},
+    {UNIT_MBAR,  "mbar", 1.0},
+    {UNIT_KPA,   "kPa",  0.1},
+    {UNIT_PA,    "Pa",   100.0},
+    {UNIT_INHG,  "inHg", 0.0295299},
+    {UNIT_MMHG,  "mmHg", 0.750062},
+    {UNIT_TORR,  "torr", 0.750062},
+    {UNIT_PSI,   "psi",  0.0145038}
+};
+
+typedef struct {
+	float pressure;
+
+} BAROModule;
+
 typedef struct {
     // Identity
     char serial_number[MAX_SN_LEN];
@@ -50,38 +73,84 @@ typedef struct {
     // Timing
     struct timespec last_send_time;
     bool initialized;
+	BAROModule mod_array[5]; // Array of BAROModules, 0-4 to hold BARO Sensors.
 } ptb330_sensor;
 
-// Command Parsing
-typedef enum {
-} PTB330_CmdType;
 
 // Command type enumeration
 typedef enum {
     CMD_UNKNOWN,
-    CMD_SEND,
-	CMD_R,
+// General Commands
+	CMD_BNUM, 	// Shows the device and module batch numbers.
+	CMD_SERI, 	// Shows or sets the serial port settings for the user port.
+	CMD_SNUM, 	// Shows the device and module serial numbers.
+	CMD_ERRS, 	// Shows all unacknowledged errors (and clears them).
+	CMD_HELP, 	// Shows the available commands.
+	CMD_LOCK, 	// Shows or sets the keyboard lock.
+	CMD_INFO, 	// '?' Outputs information on the device.
+	CMD_ECHO, 	// Shows or sets the serial interface echoing.
+	CMD_RESET, 	// Resets the device
+	CMD_VERS, 	// Displays the product name and software version number.
+	CMD_MODS, 	// Acknowledges added or removed modules.
+	CMD_CON,	// Adjusts display contrast.
+
+// Measurement Commands
+	CMD_R, 		// Changes the serial mode to RUN and starts displaying measurement results according to the FORM string (with interval defined by INTV).
 	CMD_S,
-	CMD_INTV,
-	CMD_ADDR,
-    CMD_SMODE,
-	CMD_FORM,
-	CMD_UNIT,
-	CMD_VERS,
-    CMD_HELP,
-	CMD_ERRS,
-	CMD_UNKNOWN
+	CMD_INTV, 	// Shows or sets the continuous output interval (for RUN mode). 0–255 s/min/h/d
+    CMD_SEND, 	// Shows the measurement results according to the configured form. 0-255.
+	CMD_ADDR, 	// Sets the barometer address.
+    CMD_SMODE, 	// Shows or sets the start mode. - STOP/POLL/RUN/SEND/PA11A, Default value STOP
+	CMD_SDELAY, // 	Shows or sets the answer delay for the serial line in tens of milliseconds. 0–254 (0–2540 ms)
+	CMD_OPEN, 	// Opens communications after the CLOSE command.
+	CMD_CLOSE, 	// Closes communications until the OPEN command is entered.
+	CMD_SCOM, 	// Shows or sets an alias (a user-specific form) for the SEND command. The given alias cannot be a command already in use.
 
-    // Measurement commands
-    CMD_POLL,           // Poll for current data
-    CMD_GET,            // Get configuration settings
-    // Configuration commands
-    CMD_SET,            // Set configuration (saves to flash)
-    CMD_SETNC,          // Set configuration (no flash commit)
-    CMD_MSGSET,         // Set custom message format
-    CMD_ACCRES,         // Reset accumulation
+// Measurement Setting Commands
+	CMD_TQFE, 	// Shows or sets the temperature for QFE corrected pressure. −80 ... +200 °C
+	CMD_DPMAX, 	// Shows or sets the maximum permissible difference pressure between barometer modules. 0–9999.99 hPa
+	CMD_HHCP, 	// Shows or sets the altitude for height corrected pressure. −30 ... +30 m
+	CMD_HQFE, 	// Shows or sets the altitude for the QFE corrected pressure. −30 ... +30 m
+	CMD_HQNH, 	// Shows or sets the altitude for the QNH corrected pressure. −30 ... +3000 m
+	CMD_ICAOQNH, // Selects the calculation formula and rounding method used for QNH and QFE calculations.
+	CMD_PSTAB, 	// Shows or sets the pressure stability limits. 	0–9999.99 hPa
+	CMD_AVRG, 	// Sets the barometer measurement averaging time (in seconds). 0-600 s
 
-    // Error responses
+// Formatting Commands
+	CMD_FORM, 	// Sets the custom output for the SEND command and for RUN mode.
+	CMD_TIME, 	// Shows or changes the current time.
+	CMD_DATE, 	// Shows or changes the current date.
+	CMD_UNIT, 	// Shows or sets unit for a quantities.
+
+// Data Recording Commands
+	CMD_DSEL, 	// Selects the quantities that are displayed on the graphical user interface as well as quantities for data recording.
+	CMD_DELETE, // Erases the log memory.
+	CMD_UNDELETE, // Restores the erased log memory
+	CMD_DIR, 	// Lists the available logs in the logging memory.
+	CMD_PLAY, 	// Shows the trend, min, and max values of the given log.
+
+// Calibration and Adjustment Commands
+	CMD_CDATE, 	// Shows or sets the calibration date.
+	CMD_LCP1, 	// Performs a linear adjustment for the barometer module/module.
+	CMD_LCP2, 	// Performs a linear adjustment for the barometer module/module.
+	CMD_LCP3, 	// Performs a linear adjustment for the barometer module/module.
+	CMD_MPCP1, 	// Performs a multipoint adjustment for the barometer module/module.
+	CMD_MPCP2, 	// Performs a multipoint adjustment for the barometer module/module.
+	CMD_MPCP3, 	// Performs a multipoint adjustment for the barometer module/module.
+	CMD_CTEXT, 	// 	Shows or sets the calibration info text.
+
+// Setting and testing the analog output Commands
+	CMD_AMODE, 	// Displays the analog output mode (if an AOUT-1 module is connected).
+	CMD_ASEL, 	// Sets the analog output quantity and scaling (low/high).
+	CMD_ACAL, 	// Adjusts the analog output.
+	CMD_AERR, 	// Sets the analog output error value.
+	CMD_ATEST, 	// Starts/ends an analog output test.
+
+// Setting and Testing Commands
+	CMD_RSEL,	// Sets the relay scaling (if a RELAY-1 module is connected)
+	CMD_RTEST, 	// Starts/ends a relay output test.
+
+// Error responses
     CMD_ERROR,          // General error
     CMD_INVALID_CRC,    // CRC check failed
     CMD_INVALID_ID,     // Sensor ID mismatch
@@ -89,10 +158,28 @@ typedef enum {
 } CommandType;
 
 typedef struct {
-    PTB330_CmdType type;
+    CommandType type;
     char raw_params[128];
     int addr_target;         // For RS-485 addressing
 } ptb330_command;
+
+
+// Parsed command structure
+typedef struct {
+    CommandType type;
+    uint8_t sensor_id;           // Target sensor ID (0-9)
+    bool crc_valid;
+    uint16_t received_crc;
+    uint16_t calculated_crc;
+} ParsedCommand;
+
+// Parsed message structure
+typedef struct {
+    uint8_t msg_format;  	   		// 0-14
+    uint8_t sensor_id;      		// Target sensor ID (0-9)
+	uint8_t sys_status;				// 0-3
+    uint16_t continuous_interval;   // Continuous interval 0-36,000
+} ParsedMessage;
 
 // Function Prototypes
 int init_ptb330_sensor(ptb330_sensor **ptr);

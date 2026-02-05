@@ -875,7 +875,7 @@ void handle_command(CommandType cmd) {
 			safe_console_error("CRC Check - Received CRC and Calculated CRC are not equal: %s\n", strerror(errno));
 			break;
 		case CMD_INVALID_ID:
-			safe_console_error("Failed to open file: %s\n", strerror(errno));
+			safe_console_error("Invalid address: %s\n", strerror(errno));
 			break;
 		case CMD_INVALID_FORMAT:
 			safe_console_error("Invalid Command Format: %s\n", strerror(errno));
