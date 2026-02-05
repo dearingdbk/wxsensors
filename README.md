@@ -79,28 +79,28 @@ TO BE POPULATED WITH COMMAND SETS PER SENSOR
 ### Sensor [PTB-330](https://docs.vaisala.com/viewer/book-attachment/kZW4tXhynko07HLEqbcq3Q/xy6s8h~KZ_iCT2U9pW5CMw-kZW4tXhynko07HLEqbcq3Q)
 | Command | Description |
 | :--- | :--- |
-| R        		| Start continuous output (RUN mode)
-| S        		| Stop continuous output (STOP mode)
-| SEND      	| Request a single measurement message
-| INTV      	| Set/Query continuous output interval (0-255 s/min/h/d)
-| ?         	| Show device information (SN, SW version, etc.)
-| VERS      	| Display product name and software version
-| SNUM      	| Show serial numbers for device and modules
-| ERRS      	| List and clear unacknowledged error flags
-| HELP      	| Display list of available serial commands
-| UNIT <u/q> 	| Set units (hPa, mbar, kPa, Pa, inHg, mmH2O, mmHg, torr, psi)
-| FORM <str> 	| Set custom output format string
-| SMODE <m>  	| Set start mode (STOP, POLL, RUN, SEND)
-| ADDR <a>   	| Set device address for RS-485 networking (0-255)
-| SERI <b p d s>| Set baud (up to 115200), parity, data bits, stop bits
-| SDELAY <n> 	| Set response delay (0-2540 ms)
-| ECHO <on/off> | Enable/Disable serial character echo
-| HHCP <m>   	| Set altitude for Height Corrected Pressure (HCP)
-| HQNH <m>   	| Set altitude for QNH corrected pressure
-| HQFE <m>   	| Set altitude for QFE corrected pressure
-| TQFE <deg> 	| Set temperature for QFE calculation
-| PSTAB <hPa> 	| Set pressure stability indicator limit
-| AVRG <s>   	| Set measurement averaging time (0-600 seconds)
+| `R`        		| Start continuous output (RUN mode)
+| `S`        		| Stop continuous output (STOP mode)
+| `SEND`    	  	| Request a single measurement message
+| `INTV`      		| Set/Query continuous output interval (0-255 s/min/h/d)
+| `?`     	    	| Show device information (SN, SW version, etc.)
+| `VERS`   	   		| Display product name and software version
+| `SNUM`    	  	| Show serial numbers for device and modules
+| `ERRS`      		| List and clear unacknowledged error flags
+| `HELP`      		| Display list of available serial commands
+| `UNIT <u/q>` 		| Set units (hPa, mbar, kPa, Pa, inHg, mmH2O, mmHg, torr, psi)
+| `FORM <str>` 		| Set custom output format string
+| `SMODE <m>`  		| Set start mode (STOP, POLL, RUN, SEND)
+| `ADDR <a>`   		| Set device address for RS-485 networking (0-255)
+| `SERI <b p d s>`	| Set baud (up to 115200), parity, data bits, stop bits
+| `SDELAY <n>` 		| Set response delay (0-2540 ms)
+| `ECHO <on/off>` 	| Enable/Disable serial character echo
+| `HHCP <m>`   		| Set altitude for Height Corrected Pressure (HCP)
+| `HQNH <m>`   		| Set altitude for QNH corrected pressure
+| `HQFE <m>`   		| Set altitude for QFE corrected pressure
+| `TQFE <deg>` 		| Set temperature for QFE calculation
+| `PSTAB <hPa>` 	| Set pressure stability indicator limit
+| `AVRG <s>`   		| Set measurement averaging time (0-600 seconds)
 
 </details>
 
