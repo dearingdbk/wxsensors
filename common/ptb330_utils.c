@@ -30,6 +30,7 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
     //s->last_send_time.tv_sec = 0; // Immediate first send
     //s->last_send_time.tv_nsec = 0;
     s->initialized = true;
+	strncpy(s->batch_num, "1234", MAX_BATCH_NUM);
 	strncpy(s->module_one.serial_number, "M1234567", MAX_SN_LEN);
 	strncpy(s->module_two.serial_number, "M7654321", MAX_SN_LEN);
 	strncpy(s->module_three.serial_number, "M4713526", MAX_SN_LEN);

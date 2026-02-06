@@ -282,6 +282,7 @@ void process_and_send(ParsedMessage *msg) {
  * Name:         parse_command
  * Purpose:      Translates a received string to command enum.
  * Arguments:    buf: the string to translate to a command enum.
+ * 				 cmd: the ParsedMessage struct to store values in.
  *
  * Output:       None.
  * Modifies:     None.
@@ -343,9 +344,22 @@ void handle_command(CommandType cmd) {
 	 switch (cmd) {
         case CMD_BNUM:
 			DEBUG_PRINT("BNUM Command Received with these params: %s\n", p_cmd.raw_params);
+			safe_serial_write(serial_fd, "PTB-330 Batch Numbers:\vSensor:%7s\n%38s %s\n%38s %s\n%38s %s\n",
+									sensor_one->batch_num,
+									"Module 1:", sensor_one->module_one.batch_num,
+									"Module 2:", sensor_one->module_two.batch_num,
+									"Module 3:", sensor_one->module_three.batch_num);
+			DEBUG_PRINT("PTB-330 Batch Numbers:\vSensor:%7s\n%38s %s\n%38s %s\n%38s %s\n",
+									sensor_one->batch_num,
+									"Module 1:", sensor_one->module_one.batch_num,
+									"Module 2:", sensor_one->module_two.batch_num,
+									"Module 3:", sensor_one->module_three.batch_num);
 			break;
         case CMD_SERI:
 			DEBUG_PRINT("SERI Command Received with these params: %s\n", p_cmd.raw_params);
+				if (p_cmd.raw_params == NULL) { // No changes required, just print the serial settings.
+					DEBUG_PRINT("Baud P D S\t : ");
+				}
 			break;
         case CMD_SNUM:
 			DEBUG_PRINT("SNUM Command Received with these params: %s\n", p_cmd.raw_params);
@@ -360,46 +374,67 @@ void handle_command(CommandType cmd) {
 			DEBUG_PRINT("LOCK Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_INFO:
+			DEBUG_PRINT("? Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_ECHO:
+			DEBUG_PRINT("ECHO Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_RESET:
+			DEBUG_PRINT("RESET Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_VERS:
+			DEBUG_PRINT("VERS Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_MODS:
+			DEBUG_PRINT("MODS Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_CON:
+			DEBUG_PRINT("CON Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_R:
+			DEBUG_PRINT("R Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_INTV:
+			DEBUG_PRINT("INTV Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_SEND:
+			DEBUG_PRINT("SEND Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_SMODE:
+			DEBUG_PRINT("SMODE Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_SDELAY:
+			DEBUG_PRINT("SDELAY Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_ADDR:
+			DEBUG_PRINT("ADDR Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_OPEN:
+			DEBUG_PRINT("OPEN Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_CLOSE:
+			DEBUG_PRINT("CLOSE Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_SCOM:
+			DEBUG_PRINT("SCOM Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_TQFE:
+			DEBUG_PRINT("TQFE Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_DPMAX:
+			DEBUG_PRINT("DPMAX Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_HHCP:
+			DEBUG_PRINT("HHCP Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_HQFE:
+			DEBUG_PRINT("HQFE Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_HQNH:
+			DEBUG_PRINT("HQNH Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_PSTAB:
+			DEBUG_PRINT("PSTAB Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_AVRG:
 			break;

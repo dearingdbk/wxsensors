@@ -49,6 +49,33 @@ static const UnitConversion unit_table[] = {
 };
 
 
+typedef enum {
+    DATA_8 = 8,  // 8 bit
+    DATA_7 = 7   // 7 bit
+} DataFormat;
+
+typedef enum {
+    EVEN = 'E',
+	ODD = 'O',
+	NONE = 'N'
+} Parity;
+
+typedef enum {
+	BAUD_110 = 0,
+	BAUD_150 = 1,
+	BAUD_300 = 2,
+	BAUD_600 = 3,
+    BAUD_1200 = 4,
+    BAUD_2400 = 5,
+	BAUD_4800 = 6, // Default
+	BAUD_9600 = 7,
+    BAUD_38400 = 8,
+    BAUD_19200 = 9,
+    BAUD_57600 = 10,
+    BAUD_115200 = 11,
+	BAUD_230400 = 12
+} BaudRateCode;
+
 typedef struct {
     char serial_number[MAX_SN_LEN];
 	float pressure;
@@ -61,6 +88,7 @@ typedef struct {
     char serial_number[MAX_SN_LEN];
     char software_version[12];
     uint8_t address;
+	char batch_num[MAX_BATCH_NUM];
 
     // Configuration
     PTB330_SMode mode;
