@@ -54,11 +54,18 @@ typedef enum {
     DATA_7 = 7   // 7 bit
 } DataFormat;
 
+
+typedef enum {
+    STOP_1 = 1,  // 1 bit
+    STOP_2 = 2   // 2 bit
+} StopBits;
+
 typedef enum {
     EVEN = 'E',
 	ODD = 'O',
 	NONE = 'N'
 } ParityFormat;
+
 
 typedef enum {
 	BAUD_110 = 0,
@@ -78,24 +85,24 @@ typedef enum {
 
 
 typedef struct {
-    const char *baud_name;
+    const uint32_t baud_num;
     BaudRateCode code;
 } BaudCodeMap;
 
 static const BaudCodeMap baud_table[] = {
-	{"110", 	BAUD_110},
-	{"150", 	BAUD_150},
-	{"300", 	BAUD_300},
-	{"600", 	BAUD_600},
-	{"1200", 	BAUD_1200},
-	{"2400", 	BAUD_2400},
-	{"4800", 	BAUD_4800},
-	{"9600", 	BAUD_9600},
-	{"19200", 	BAUD_19200},
-	{"38400", 	BAUD_38400},
-	{"57600", 	BAUD_57600},
-	{"115200", 	BAUD_115200},
-	{"230400", 	BAUD_230400}
+	{110, 		BAUD_110},
+	{150, 		BAUD_150},
+	{300, 		BAUD_300},
+	{600, 		BAUD_600},
+	{1200, 		BAUD_1200},
+	{2400, 		BAUD_2400},
+	{4800, 		BAUD_4800},
+	{9600, 		BAUD_9600},
+	{19200, 	BAUD_19200},
+	{38400, 	BAUD_38400},
+	{57600, 	BAUD_57600},
+	{115200, 	BAUD_115200},
+	{230400, 	BAUD_230400}
 };
 
 typedef struct {
@@ -124,6 +131,7 @@ typedef struct {
 	BaudRateCode baud;
 	ParityFormat parity;
 	DataFormat data_f;
+	StopBits stop_b;
 
     // Pressure State
     float pressure;          // Current reading from file

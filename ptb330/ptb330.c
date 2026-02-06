@@ -1,4 +1,4 @@
-./*
+/*
  * File:     	ptb330.c
  * Author:   	Bruce Dearing
  * Date:     	16/01/2026
@@ -312,9 +312,14 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
                 // Skip spaces to point at arguments
                 while (*ptr && isspace((unsigned char)*ptr)) ptr++;
 
-                // Copy remaining string to params
-				strncpy(cmd->raw_params, ptr, sizeof(cmd->raw_params) - 1);
-				cmd->raw_params[sizeof(cmd->raw_params) - 1] = '\0'; // Safety null terminator
+				size_t param_len = strcspn(ptr, "\n\r");
+
+				if (param_len > sizeof(cmd->raw_params) - 1) {
+    				param_len = sizeof(cmd->raw_params) - 1;
+				}
+
+				strncpy(cmd->raw_params, ptr, param_len);
+				cmd->raw_params[param_len] = '\0'; // Always null-terminate
 
                 return cmd->type;
             }
@@ -358,7 +363,40 @@ void handle_command(CommandType cmd) {
         case CMD_SERI:
 			DEBUG_PRINT("SERI Command Received with these params: %s\n", p_cmd.raw_params);
 				if (p_cmd.raw_params[0] == '\0') { // No changes required, just print the serial settings.
-					DEBUG_PRINT("Baud P D S\t: ");
+					DEBUG_PRINT("Baud P D S\t: %d %c %d %d\n",
+									baud_table[sensor_one->baud].baud_num,
+									sensor_one->parity,
+									(int)sensor_one->data_f,
+									(int)sensor_one->stop_b);
+				} else {
+    				// Tokenize the parameters (works for "9600 o 1" or "o", or any order of params)
+    				char *saveptr;
+    				char *token = strtok_r(p_cmd.raw_params, " ", &saveptr);
+
+    				while (token != NULL) {
+        				// Check for Parity (Single char: n, e, o)
+        				if (strlen(token) == 1 && isalpha((unsigned char)token[0])) {
+            				char p = toupper((unsigned char)token[0]);
+            				if (p == 'N' || p == 'E' || p == 'P') {
+                				sensor_one->parity = (unsigned char)p; // Store as uppercase.
+            				}
+        				} else if (isdigit((unsigned char)token[0]) && strlen(token) >= 3) {
+            				uint32_t b = atoi(token);
+							for (int t = 0; t < 12; t++) {
+								if (b == baud_table[t].baud_num) sensor_one->baud = t;
+							}
+        				} else if (strlen(token) == 1 && (token[0] == '7' || token[0] == '8')) {
+            				sensor_one->data_f = token[0] - '0';
+        				} else if (strlen(token) == 1 && (token[0] == '1' || token[0] == '2')) {
+           					sensor_one->stop_b = token[0] - '0';
+        				}
+        				token = strtok_r(NULL, " ", &saveptr);
+    				}
+					DEBUG_PRINT("Baud P D S\t: %d %c %d %d\n",
+									baud_table[sensor_one->baud].baud_num,
+									sensor_one->parity,
+									(int)sensor_one->data_f,
+									(int)sensor_one->stop_b);
 				}
 			break;
         case CMD_SNUM:
@@ -697,6 +735,14 @@ int main(int argc, char *argv[]) {
 
 	handle_command(parse_command("BNUM\r\n", &p_cmd));
 	handle_command(parse_command("SERI\r\n", &p_cmd));
+	handle_command(parse_command("SERI o\n\r", &p_cmd));
+	handle_command(parse_command("SERI E\r\n", &p_cmd));
+	handle_command(parse_command("SERI N\n", &p_cmd));
+	handle_command(parse_command("SERI o\r", &p_cmd));
+	handle_command(parse_command("SERI e", &p_cmd));
+	handle_command(parse_command("SERI e", &p_cmd));
+	handle_command(parse_command("SERI 9600 e 1 7", &p_cmd));
+	handle_command(parse_command("SERI e 2 9600 7", &p_cmd));
 	handle_command(parse_command("ERRS\r\n", &p_cmd));
 	handle_command(parse_command("HELP\r\n", &p_cmd));
 	handle_command(parse_command("LOCK 2\r\n", &p_cmd));

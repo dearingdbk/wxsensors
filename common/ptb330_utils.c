@@ -29,7 +29,8 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
     s->initialized = true;
 	s->baud = 6; // 4800 default.
 	s->data_f = 8;
-	s->parity = 0;
+	s->parity = 'N';
+	s->stop_b = 1;
 	strncpy(s->batch_num, "1234", MAX_BATCH_NUM);
 	strncpy(s->module_one.serial_number, "M1234567", MAX_SN_LEN);
 	strncpy(s->module_two.serial_number, "M7654321", MAX_SN_LEN);
