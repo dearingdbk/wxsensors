@@ -165,7 +165,7 @@ bin/rh_temp/rh_temp_listen /path/to/rh_temp_data.txt /dev/ttyUSB1 9600 RS422
 | data_file | (required) | Path to file containing sensor data to transmit |
 | serial_port | /dev/ttyUSB0 | Serial device (must match `/dev/tty(S\|USB\|ACM)[0-9]+`) |
 | baud_rate | 9600 | Serial baud rate |
-| mode | RS485 | Serial mode: RS422 or RS485 |
+| mode | RS485 | Serial mode: RS232, RS422, RS485, or SDI-12 |
 
 ## Data Files
 
