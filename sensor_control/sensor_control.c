@@ -39,6 +39,8 @@ extern const char* __lsan_default_suppressions() {
 #define MAX_SENSORS 10
 #define MAX_PATH_LEN 256
 #define MAX_FLAGS_LEN 512
+#define MAX_WINDOW_WIDTH 950
+#define MAX_WINDOW_HEIGHT 650
 
 // Sensor definition structure
 typedef struct {
@@ -338,7 +340,7 @@ static GtkWidget *create_sensor_row(SensorState *sensor) {
     // Flags entry
     sensor->flags_entry = gtk_entry_new();
     gtk_entry_set_text(GTK_ENTRY(sensor->flags_entry), sensor->def->default_flags);
-    gtk_entry_set_placeholder_text(GTK_ENTRY(sensor->flags_entry), 
+    gtk_entry_set_placeholder_text(GTK_ENTRY(sensor->flags_entry),
                                    "<data_file> [port] [baud] [mode]");
     gtk_widget_set_hexpand(sensor->flags_entry, TRUE);
     gtk_box_pack_start(GTK_BOX(hbox), sensor->flags_entry, TRUE, TRUE, 5);
@@ -402,7 +404,7 @@ static GtkWidget *create_main_window(void) {
     // Create main window
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), "wxsensors Control Panel");
-    gtk_window_set_default_size(GTK_WINDOW(window), 950, 650);
+    gtk_window_set_default_size(GTK_WINDOW(window), MAX_WINDOW_WIDTH, MAX_WINDOW_HEIGHT);
     gtk_container_set_border_width(GTK_CONTAINER(window), 10);
     g_signal_connect(window, "destroy", G_CALLBACK(on_window_destroy), NULL);
 
