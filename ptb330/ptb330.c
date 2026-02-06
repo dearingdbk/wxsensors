@@ -451,6 +451,20 @@ void handle_command(CommandType cmd) {
 			break;
 		case CMD_SMODE:
 			DEBUG_PRINT("SMODE Command Received with these params: %s\n", p_cmd.raw_params);
+			char *saveptr;
+			char *token = strtok_r(p_cmd.raw_params, " ", &saveptr);
+			if (token != NULL) {
+				if (strncmp(token, "STOP", 4) == 0) {
+					sensor_one->mode = SMODE_STOP;
+				} else if (strncmp(token, "POLL", 4) == 0) {
+					sensor_one->mode = SMODE_POLL;
+				} else if (strncmp(token, "RUN", 3) == 0) {
+					sensor_one->mode = SMODE_RUN;
+				} else if (strncmp(token, "SEND", 4) == 0) {
+					sensor_one->mode = SMODE_SEND;
+				} else DEBUG_PRINT("No Match of mode\n");
+			}
+			pthread_cond_signal(&send_cond); // Wake our sender thread, to check if our mode has changed.
 			break;
 		case CMD_SDELAY:
 			DEBUG_PRINT("SDELAY Command Received with these params: %s\n", p_cmd.raw_params);
@@ -631,7 +645,7 @@ void* sender_thread(void* arg) {
             // Add the continuous interval (in seconds) to the current time
             ts.tv_sec += sensor_one->interval;
 
-            // 2. Wait until that specific second arrives OR a signal interrupts us
+            // Wait until that specific second arrives OR a signal interrupts us
             pthread_cond_timedwait(&send_cond, &send_mutex, &ts);
         } else {
             // If in Polling Mode, wait indefinitely for a signal from the receiver
