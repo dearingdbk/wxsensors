@@ -17,7 +17,7 @@ This project is useful for:
 Each sensor emulator follows a common architecture:
 - **Receiver thread**: Listens for and parses incoming serial commands
 - **Sender thread**: Transmits sensor data continuously or on-demand (polled mode)
-- **Protocol handling**: Implements sensor-specific data framing with STX/ETX and checksums
+- **Protocol handling**: Implements sensor-specific data framing with STX/ETX and checksums as required.
 
 ## Supported Sensors
 
@@ -101,7 +101,7 @@ TO BE POPULATED WITH COMMAND SETS PER SENSOR
 | `TQFE <deg>` 		| Set temperature for QFE calculation
 | `PSTAB <hPa>` 	| Set pressure stability indicator limit
 | `AVRG <s>`   		| Set measurement averaging time (0-600 seconds)
-
+| `...`				| ...
 </details>
 
 
@@ -150,7 +150,7 @@ Executables are output to the `bin/` directory, organized by sensor type.
 ## Usage
 ```bash
 # General usage pattern
-<sensor> <data_file> [serial_port] [baud_rate] [RS422|RS485]
+<sensor> <data_file> [serial_port] [baud_rate] [RS232|RS422|RS485|SDI-12]
 
 # Examples
 bin/wind/wind_listen /path/to/wind_data.txt
@@ -163,7 +163,7 @@ bin/rh_temp/rh_temp_listen /path/to/rh_temp_data.txt /dev/ttyUSB1 9600 RS422
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | data_file | (required) | Path to file containing sensor data to transmit |
-| serial_port | /dev/ttyUSB0 | Serial device (must match `/dev/tty(S\|USB)[0-9]+`) |
+| serial_port | /dev/ttyUSB0 | Serial device (must match `/dev/tty(S\|USB\|ACM)[0-9]+`) |
 | baud_rate | 9600 | Serial baud rate |
 | mode | RS485 | Serial mode: RS422 or RS485 |
 
