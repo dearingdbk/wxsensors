@@ -58,7 +58,7 @@ typedef enum {
     EVEN = 'E',
 	ODD = 'O',
 	NONE = 'N'
-} Parity;
+} ParityFormat;
 
 typedef enum {
 	BAUD_110 = 0,
@@ -97,6 +97,11 @@ typedef struct {
     char format_string[MAX_FORM_STR];
     uint16_t send_delay;     // ms
     bool echo_enabled;
+
+	// Communication
+	BaudRateCode baud;
+	ParityFormat parity;
+	DataFormat date_f;
 
     // Pressure State
     float pressure;          // Current reading from file
