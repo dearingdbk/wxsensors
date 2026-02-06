@@ -368,6 +368,12 @@ void handle_command(CommandType cmd) {
 									sensor_one->parity,
 									(int)sensor_one->data_f,
 									(int)sensor_one->stop_b);
+					safe_serial_write(serial_fd, "Baud P D S\t: %d %c %d %d\n",
+									baud_table[sensor_one->baud].baud_num,
+									sensor_one->parity,
+									(int)sensor_one->data_f,
+									(int)sensor_one->stop_b);
+
 				} else {
     				// Tokenize the parameters (works for "9600 o 1" or "o", or any order of params)
     				char *saveptr;
@@ -393,6 +399,11 @@ void handle_command(CommandType cmd) {
         				token = strtok_r(NULL, " ", &saveptr);
     				}
 					DEBUG_PRINT("Baud P D S\t: %d %c %d %d\n",
+									baud_table[sensor_one->baud].baud_num,
+									sensor_one->parity,
+									(int)sensor_one->data_f,
+									(int)sensor_one->stop_b);
+					safe_serial_write(serial_fd, "Baud P D S\t: %d %c %d %d\n",
 									baud_table[sensor_one->baud].baud_num,
 									sensor_one->parity,
 									(int)sensor_one->data_f,
