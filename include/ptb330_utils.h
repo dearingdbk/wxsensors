@@ -69,12 +69,34 @@ typedef enum {
     BAUD_2400 = 5,
 	BAUD_4800 = 6, // Default
 	BAUD_9600 = 7,
-    BAUD_38400 = 8,
-    BAUD_19200 = 9,
+    BAUD_19200 = 8,
+    BAUD_38400 = 9,
     BAUD_57600 = 10,
     BAUD_115200 = 11,
 	BAUD_230400 = 12
 } BaudRateCode;
+
+
+typedef struct {
+    const char *baud_name;
+    BaudRateCode code;
+} BaudCodeMap;
+
+static const BaudCodeMap baud_table[] = {
+	{"110", 	BAUD_110},
+	{"150", 	BAUD_150},
+	{"300", 	BAUD_300},
+	{"600", 	BAUD_600},
+	{"1200", 	BAUD_1200},
+	{"2400", 	BAUD_2400},
+	{"4800", 	BAUD_4800},
+	{"9600", 	BAUD_9600},
+	{"19200", 	BAUD_19200},
+	{"38400", 	BAUD_38400},
+	{"57600", 	BAUD_57600},
+	{"115200", 	BAUD_115200},
+	{"230400", 	BAUD_230400}
+};
 
 typedef struct {
     char serial_number[MAX_SN_LEN];
@@ -101,7 +123,7 @@ typedef struct {
 	// Communication
 	BaudRateCode baud;
 	ParityFormat parity;
-	DataFormat date_f;
+	DataFormat data_f;
 
     // Pressure State
     float pressure;          // Current reading from file

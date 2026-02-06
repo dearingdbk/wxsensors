@@ -26,10 +26,10 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
     strcpy(s->format_string, "P = #P #U\\r\\n"); // Default Vaisala format
     s->pressure = 1013.25;
     s->offset = 0.0;
-	clock_gettime(CLOCK_MONOTONIC, &s->last_send_time);
-    //s->last_send_time.tv_sec = 0; // Immediate first send
-    //s->last_send_time.tv_nsec = 0;
     s->initialized = true;
+	s->baud = 6; // 4800 default.
+	s->data_f = 8;
+	s->parity = 0;
 	strncpy(s->batch_num, "1234", MAX_BATCH_NUM);
 	strncpy(s->module_one.serial_number, "M1234567", MAX_SN_LEN);
 	strncpy(s->module_two.serial_number, "M7654321", MAX_SN_LEN);
@@ -38,6 +38,9 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
 	strncpy(s->module_two.batch_num, "550", MAX_BATCH_NUM);
 	strncpy(s->module_three.batch_num, "550", MAX_BATCH_NUM);
 	memset(&s->module_four, 0, sizeof(s->module_four));
+	clock_gettime(CLOCK_MONOTONIC, &s->last_send_time);
+    //s->last_send_time.tv_sec = 0; // Immediate first send
+    //s->last_send_time.tv_nsec = 0;
     return 0;
 }
 

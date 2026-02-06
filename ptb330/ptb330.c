@@ -1,4 +1,4 @@
-/*
+./*
  * File:     	ptb330.c
  * Author:   	Bruce Dearing
  * Date:     	16/01/2026
@@ -344,7 +344,7 @@ void handle_command(CommandType cmd) {
 	 switch (cmd) {
         case CMD_BNUM:
 			DEBUG_PRINT("BNUM Command Received with these params: %s\n", p_cmd.raw_params);
-			safe_serial_write(serial_fd, "PTB-330 Batch Numbers:\vSensor:%7s\n%38s %s\n%38s %s\n%38s %s\n",
+			safe_serial_write(serial_fd, "PTB-330 Batch Numbers:\vSensor:%s\v%-10s %s\v%-10s %s\v%-10s %s\n",
 									sensor_one->batch_num,
 									"Module 1:", sensor_one->module_one.batch_num,
 									"Module 2:", sensor_one->module_two.batch_num,
@@ -357,8 +357,8 @@ void handle_command(CommandType cmd) {
 			break;
         case CMD_SERI:
 			DEBUG_PRINT("SERI Command Received with these params: %s\n", p_cmd.raw_params);
-				if (p_cmd.raw_params == NULL) { // No changes required, just print the serial settings.
-					DEBUG_PRINT("Baud P D S\t : ");
+				if (p_cmd.raw_params[0] == '\0') { // No changes required, just print the serial settings.
+					DEBUG_PRINT("Baud P D S\t: ");
 				}
 			break;
         case CMD_SNUM:
