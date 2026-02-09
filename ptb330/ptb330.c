@@ -246,12 +246,28 @@ void parse_message(char *msg, ParsedMessage *p_message) {
 	char *saveptr; // Our place keeper in the msg string.
 	char *token; // Where we temporarily store each token.
 
-	if ((token = strtok_r(msg, ",", &saveptr))) p_message->p1_pressure = atof(token);
+	if ((token = strtok_r(msg, ",", &saveptr))) p_message->p1_pressure = atof(token);  // Set P1 pressure.
    	#define NEXT_T strtok_r(NULL, ",", &saveptr) // Small macro to keep the code below cleaner.
 
-   	if ((token = NEXT_T)) p_message->p2_pressure = atof(token);
-   	if ((token = NEXT_T)) p_message->p3_pressure = atof(token);
-   	if ((token = NEXT_T)) p_message->p3_pressure = atof(token);
+   	if ((token = NEXT_T)) p_message->p2_pressure = atof(token); // Set P2 pressure.
+   	if ((token = NEXT_T)) p_message->p3_pressure = atof(token); // Set P3 pressure.
+   	if ((token = NEXT_T)) {
+		if (atoi(token) == 1) {
+			p_message->p1_sensor_error = IS_ERROR;
+		} else p_message->p1_sensor_error = NO_ERROR;
+	}
+   	if ((token = NEXT_T)) {
+		if (atoi(token) == 1) {
+			p_message->p2_sensor_error = IS_ERROR;
+		} else p_message->p2_sensor_error = NO_ERROR;
+	}
+   	if ((token = NEXT_T)) {
+		if (atoi(token) == 1) {
+			p_message->p3_sensor_error = IS_ERROR;
+		} else p_message->p3_sensor_error = NO_ERROR;
+	}
+	if ((token = NEXT_T)) p_message->p_average = atof(token);
+	if ((token = NEXT_T)) p_message->trend = atof(token);
 	#undef NEXT_T
 }
 

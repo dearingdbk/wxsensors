@@ -17,6 +17,8 @@
 #define MAX_ADDR_LEN 4
 #define MAX_SN_LEN 16
 #define MAX_BATCH_NUM 64
+#define MAX_LITERAL_SIZE 32
+#define MAX_FORM_ITEMS 50
 
 typedef enum {
     SMODE_STOP,  // No output
@@ -314,10 +316,57 @@ typedef struct {
 	float trend;
 } ParsedMessage;
 
+typedef enum {
+    FORM_LITERAL, 		// Anything user defined within quotes.
+    FORM_VAR_P, 		// P
+    FORM_VAR_P1, 		// P1
+    FORM_VAR_P2,		// P2
+    FORM_VAR_P3,		// P3
+    FORM_VAR_ERR,		// ERR
+    FORM_VAR_P3H,		// P3H
+    FORM_VAR_DP12,		// DP12
+    FORM_VAR_DP13,		// DP13
+    FORM_VAR_DP23,		// DP23
+    FORM_VAR_HCP,		// HCP
+    FORM_VAR_QFE,		// QFE
+    FORM_VAR_QNH,		// QNH
+    FORM_VAR_TP1,		// TP1
+    FORM_VAR_TP2,		// TP2
+    FORM_VAR_TP3,		// TP3
+    FORM_VAR_P3H,		// P3H
+    FORM_VAR_A3H,		// A3H Tendency
+	FORM_VAR_T,			// \T #T
+	FORM_VAR_R,			// \R #R
+	FORM_VAR_N,			// \N #N
+	FORM_VAR_RN,		// \RN #RN
+	FORM_VAR_UN,		// Un
+	FORM_VAR_NN,		// n.n
+	FORM_VAR_CS2,		// CS2
+	FORM_VAR_CS4,		// CS4
+	FORM_VAR_CSX,		// CSX
+	FORM_VAR_SN,		// SN
+	FORM_VAR_PSTAB,		// PSTAB
+	FORM_VAR_ADDR,		// ADDR
+	FORM_VAR_DATE,		// DATE
+	FORM_VAR_TIME		// TIME
+    // ... add others as needed
+} FormItemType;
+
+typedef struct {
+    FormItemType type;
+    char literal[MAX_LITERAL_SIZE]; // For things like " ", " hPa", or ":" 32 chars.
+} FormItem;
+
+// Store the compiled format here
+// FormItem compiled_form[MAX_FORM_ITEMS];
+// int form_item_count = 0;
+
+
 // Function Prototypes
 int init_ptb330_sensor(ptb330_sensor **ptr);
 bool ptb330_is_ready_to_send(ptb330_sensor *sensor);
 void ptb330_parse_command(const char *input, ptb330_command *cmd);
 void ptb330_format_output(ptb330_sensor *sensor, char *dest, size_t max_len);
+void parse_form_string(const char *input);
 
 #endif

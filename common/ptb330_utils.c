@@ -132,6 +132,46 @@ double get_scaled_pressure(float hpa_val, PTB330_Unit unit) {
 }*/
 
 
+void parse_form_string(const char *input) {
+    form_item_count = 0;
+    const char *p = input;
+
+    while (*p && form_item_count < 20) {
+        if (*p == '"') {
+            // Handle string literals, i.e. anything in quotes.
+            p++; // Skip leading quote
+            int i = 0;
+            while (*p && *p != '"' && i < 31) {
+                compiled_form[form_item_count].literal[i++] = *p++;
+            }
+            compiled_form[form_item_count].literal[i] = '\0';
+            compiled_form[form_item_count].type = FORM_LITERAL;
+            if (*p == '"') p++; // Skip trailing quote
+            form_item_count++;
+        }
+        else if (isgraph(*p)) {
+            // 2. Handle Variables (P, P1, ERR, etc.)
+            char var_name[10];
+            int i = 0;
+            while (*p && !isspace(*p) && *p != '"' && i < 9) {
+                var_name[i++] = *p++;
+            }
+            var_name[i] = '\0';
+
+            if (strncmp(var_name, "P1", 2) == 0) compiled_form[form_item_count++].type = FORM_VAR_P1;
+            else if (strncmp(var_name, "P2", 2) == 0) compiled_form[form_item_count++].type = FORM_VAR_P2;
+            else if (strncmp(var_name, "P3", 2) == 0) compiled_form[form_item_count++].type = FORM_VAR_P2;
+            else if (strncmp(var_name, "P", 1) == 0) compiled_form[form_item_count++].type = FORM_VAR_P;
+            else if (strcmp(var_name, "ERR") == 0) compiled_form[form_item_count++].type = FORM_VAR_ERR;
+            // ... and so on
+        }
+        else {
+            p++; // Skip spaces between tokens
+        }
+    }
+}
+
+
 void ptb330_format_output(ptb330_sensor *sensor, char *dest, size_t max_len) {
     char buffer[256] = {0};
     char *src = sensor->format_string;
