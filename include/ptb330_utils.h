@@ -333,13 +333,12 @@ typedef enum {
     FORM_VAR_TP1,		// TP1
     FORM_VAR_TP2,		// TP2
     FORM_VAR_TP3,		// TP3
-    FORM_VAR_P3H,		// P3H
     FORM_VAR_A3H,		// A3H Tendency
 	FORM_VAR_T,			// \T #T
 	FORM_VAR_R,			// \R #R
 	FORM_VAR_N,			// \N #N
 	FORM_VAR_RN,		// \RN #RN
-	FORM_VAR_UN,		// Un
+	FORM_VAR_UNIT,		// Un
 	FORM_VAR_NN,		// n.n
 	FORM_VAR_CS2,		// CS2
 	FORM_VAR_CS4,		// CS4
@@ -355,6 +354,8 @@ typedef enum {
 typedef struct {
     FormItemType type;
     char literal[MAX_LITERAL_SIZE]; // For things like " ", " hPa", or ":" 32 chars.
+	uint8_t width; // 0 means natural length, 1-9 is fixed width.
+	uint8_t precision; // y in the x.y or n.n field.
 } FormItem;
 
 // Store the compiled format here
