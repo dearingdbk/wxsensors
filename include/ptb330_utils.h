@@ -274,11 +274,6 @@ static const CommandMap cmd_table[] = {
 
 #define CMD_TABLE_SIZE (sizeof(cmd_table) / sizeof(CommandMap))
 
-
-
-
-
-
 // Parsed command structure
 typedef struct {
     CommandType type;
@@ -295,19 +290,28 @@ typedef struct {
 
 		struct {
 
-
 		} unit_params;
-
 
 	} params;
 } ParsedCommand;
 
+
+typedef enum {
+    IS_ERROR = 1,
+    NO_ERROR = 0
+} SensorError;
+
+
 // Parsed message structure
 typedef struct {
-    uint8_t msg_format;  	   		// 0-14
-    uint8_t sensor_id;      		// Target sensor ID (0-9)
-	uint8_t sys_status;				// 0-3
-    uint16_t continuous_interval;   // Continuous interval 0-36,000
+	float p1_pressure;
+	float p2_pressure;
+	float p3_pressure;
+	SensorError p1_sensor_error;
+	SensorError p2_sensor_error;
+	SensorError p3_sensor_error;
+	float p_average;
+	float trend;
 } ParsedMessage;
 
 // Function Prototypes

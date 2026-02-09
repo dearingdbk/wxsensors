@@ -233,7 +233,7 @@ void strip_whitespace(char* s) {
  * Output:       None (internal debug prints to console only).
  * Modifies:     p_message: overwrites with new data.
  * 				 msg: the input string is modified (nulls inserted by strtok_r).
- * Returns:      int: 0 on completion.
+ * Returns:      None
  * Assumptions:  msg is a valid space-delimited string matching the sensor protocol.
  *               p_message has been allocated by the caller.
  *
@@ -246,10 +246,12 @@ void parse_message(char *msg, ParsedMessage *p_message) {
 	char *saveptr; // Our place keeper in the msg string.
 	char *token; // Where we temporarily store each token.
 
-	if ((token = strtok_r(msg, " ", &saveptr))) p_message->msg_format = atoi(token);
-   	#define NEXT_T strtok_r(NULL, " ", &saveptr) // Small macro to keep the code below cleaner.
+	if ((token = strtok_r(msg, ",", &saveptr))) p_message->p1_pressure = atof(token);
+   	#define NEXT_T strtok_r(NULL, ",", &saveptr) // Small macro to keep the code below cleaner.
 
-   	if ((token = NEXT_T)) p_message->sensor_id = atoi(token);
+   	if ((token = NEXT_T)) p_message->p2_pressure = atof(token);
+   	if ((token = NEXT_T)) p_message->p3_pressure = atof(token);
+   	if ((token = NEXT_T)) p_message->p3_pressure = atof(token);
 	#undef NEXT_T
 }
 
@@ -378,36 +380,36 @@ void handle_command(CommandType cmd) {
     				// Tokenize the parameters (works for "9600 o 1" or "o", or any order of params)
     				char *saveptr;
     				char *token = strtok_r(p_cmd.raw_params, " ", &saveptr);
+					while (token != NULL) {
+    					size_t len = strlen(token);
 
-    				while (token != NULL) {
-        				// Check for Parity (Single char: n, e, o)
-        				if (strlen(token) == 1 && isalpha((unsigned char)token[0])) {
-            				char p = toupper((unsigned char)token[0]);
-            				if (p == 'N' || p == 'E' || p == 'P') {
-                				sensor_one->parity = (unsigned char)p; // Store as uppercase.
-            				}
-        				} else if (isdigit((unsigned char)token[0]) && strlen(token) >= 3) {
-            				uint32_t b = atoi(token);
-							for (int t = 0; t < 12; t++) {
-								if (b == baud_table[t].baud_num) sensor_one->baud = t;
-							}
-        				} else if (strlen(token) == 1 && (token[0] == '7' || token[0] == '8')) {
-            				sensor_one->data_f = token[0] - '0';
-        				} else if (strlen(token) == 1 && (token[0] == '1' || token[0] == '2')) {
-           					sensor_one->stop_b = token[0] - '0';
-        				}
-        				token = strtok_r(NULL, " ", &saveptr);
-    				}
-					DEBUG_PRINT("Baud P D S\t: %d %c %d %d\n",
-									baud_table[sensor_one->baud].baud_num,
-									sensor_one->parity,
-									(int)sensor_one->data_f,
-									(int)sensor_one->stop_b);
-					safe_serial_write(serial_fd, "Baud P D S\t: %d %c %d %d\n",
-									baud_table[sensor_one->baud].baud_num,
-									sensor_one->parity,
-									(int)sensor_one->data_f,
-									(int)sensor_one->stop_b);
+					    if (len == 1) {
+        					// Handle all single-character parameters
+        					unsigned char c = (unsigned char)token[0];
+
+        					if (isalpha(c)) {
+            					char p = toupper(c);
+            					// Vaisala Parity: N=None, E=Even, O=Odd
+            					if (p == 'N' || p == 'E' || p == 'O') {
+                					sensor_one->parity = (unsigned char)p;
+            					}
+        					} else if (c == '7' || c == '8') {
+            						sensor_one->data_f = c - '0';
+        					} else if (c == '1' || c == '2') {
+            						sensor_one->stop_b = c - '0';
+        					} else safe_console_error("Incorrect serial communications change request.\r\n");
+    					} else if (len >= 3 && isdigit((unsigned char)token[0])) {
+        					// Handle Baud rate
+        					uint32_t b = (uint32_t)atoi(token);
+        					for (int t = 0; t < 12; t++) {
+            					if (b == baud_table[t].baud_num) {
+                				sensor_one->baud = t;
+                				break; // Exit loop once match is found
+            					}
+        					}
+	    				} else safe_console_error("Incorrect serial communications change request.\r\n");
+    					token = strtok_r(NULL, " ", &saveptr);
+					}
 				}
 			break;
         case CMD_SNUM:
@@ -648,7 +650,7 @@ void* sender_thread(void* arg) {
             // Wait until that specific second arrives OR a signal interrupts us
             pthread_cond_timedwait(&send_cond, &send_mutex, &ts);
         } else {
-            // If in Polling Mode, wait indefinitely for a signal from the receiver
+            // If in Polling/Stop Mode, wait indefinitely for a signal from the receiver
             pthread_cond_wait(&send_cond, &send_mutex);
         }
 
@@ -771,6 +773,7 @@ int main(int argc, char *argv[]) {
 	handle_command(parse_command("ERRS\r\n", &p_cmd));
 	handle_command(parse_command("HELP\r\n", &p_cmd));
 	handle_command(parse_command("LOCK 2\r\n", &p_cmd));
+	handle_command(parse_command("SERI\r\n", &p_cmd));
 
     safe_console_print("Press 'q' + Enter to quit.\n");
     struct pollfd fds[1];
