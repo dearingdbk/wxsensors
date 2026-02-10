@@ -288,12 +288,15 @@ void process_and_send(ParsedMessage *msg) {
 
 	char msg_buffer[MAX_MSG_LENGTH]; // 512
 	if (msg == NULL) return;
-	int length = snprintf(msg_buffer, sizeof(msg_buffer), "%u", 2);
-
-	if (length > 0 && length < (int)sizeof(msg_buffer)) {
+	//int length = snprintf(msg_buffer, sizeof(msg_buffer), "%u", 2);
+	build_dynamic_output(msg, msg_buffer, sizeof(msg_buffer));
+	DEBUG_PRINT("Message Buffer holds %s\r\n",msg_buffer);
+	DEBUG_PRINT("The average is %f\n", msg->p_average);
+	safe_serial_write(serial_fd, "%s\r\n", msg_buffer);
+	/*if (length > 0 && length < (int)sizeof(msg_buffer)) {
 		uint16_t calculated_crc = crc16_ccitt((uint8_t*)msg_buffer, length);
 		safe_serial_write(serial_fd, "\x02%s %04X\x03\r\n", msg_buffer, calculated_crc);
-	}
+	}*/
 }
 
 /*
@@ -460,12 +463,79 @@ void handle_command(CommandType cmd) {
 			break;
 		case CMD_R:
 			DEBUG_PRINT("R Command Received with these params: %s\n", p_cmd.raw_params);
+			sensor_one->mode = SMODE_RUN;
+			pthread_cond_signal(&send_cond); // Wake our sender thread, to check if our mode has changed.
 			break;
-		case CMD_INTV:
+		case CMD_INTV: {
 			DEBUG_PRINT("INTV Command Received with these params: %s\n", p_cmd.raw_params);
-			break;
+    		int val = 0;
+    		char unit_str[MAX_INTV_STR] = {0};
+    		long multiplier = 1;
+
+    		// sscanf skips leading spaces automatically.
+		    // %d grabs the number, %15s grabs the following word.
+    		int found = sscanf(p_cmd.raw_params, "%d %15s", &val, unit_str);
+
+    		if (found >= 1) {
+        		// Handle the value limit (0-255 per Vaisala spec)
+        		if (val < 0) val = 0;
+        		if (val > 255) val = 255;
+
+        		if (found == 2) {
+            		// Check the unit (yyy)
+            		char unit = tolower((unsigned char)unit_str[0]);
+            		switch (unit) {
+                		case 's':
+							multiplier = 1;
+							sensor_one->intv_data.interval_units[0] = 's';
+							sensor_one->intv_data.interval_units[1] = '\0'; // manually terminate
+							break;
+                		case 'm':
+							multiplier = 60;
+							sensor_one->intv_data.interval_units[0] = 'm';
+							sensor_one->intv_data.interval_units[1] = 'i';
+							sensor_one->intv_data.interval_units[2] = 'n';
+							sensor_one->intv_data.interval_units[3] = '\0'; // manually terminate
+							break;
+                		case 'h':
+							multiplier = 3600;
+							sensor_one->intv_data.interval_units[0] = 'h';
+							sensor_one->intv_data.interval_units[1] = '\0'; // manually terminate
+							break;
+                		case 'd':
+							multiplier = 86400;
+							sensor_one->intv_data.interval_units[0] = 'd';
+							sensor_one->intv_data.interval_units[1] = '\0'; // manually terminate
+							break;
+                		default:
+							multiplier = 1;
+							sensor_one->intv_data.interval_units[0] = 's';
+							sensor_one->intv_data.interval_units[1] = '\0'; // manually terminate
+							break; // Default to seconds
+            		}
+        		} else {
+            		// If only 'xxx' was provided without 'yyy', Vaisala defaults to seconds
+            		multiplier = 1;
+        		}
+
+        		// Update the sensor state
+        		sensor_one->intv_data.interval = (long)val * multiplier;
+				DEBUG_PRINT("Output interval : %d %s\n", val, unit_str);
+				safe_serial_write(serial_fd, "Output interval %d %s\r\n", val, sensor_one->intv_data.interval_units);
+    		}
+			pthread_cond_signal(&send_cond); // Wake our sender thread, to check if our mode has changed.
+    		break;
+		}
 		case CMD_SEND:
 			DEBUG_PRINT("SEND Command Received with these params: %s\n", p_cmd.raw_params);
+        	char *line = get_next_line_copy(file_ptr, &file_mutex);
+
+        	if (line) {
+				parse_message(line, &p_msg);
+				process_and_send(&p_msg);
+            	free(line); // caller of get_next_line_copy() must free resource.
+				line = NULL;
+        	}
 			break;
 		case CMD_SMODE:
 			DEBUG_PRINT("SMODE Command Received with these params: %s\n", p_cmd.raw_params);
@@ -661,7 +731,7 @@ void* sender_thread(void* arg) {
             // Use current REALTIME + (Interval - Time Since Last Send)
             clock_gettime(CLOCK_MONOTONIC, &ts);
             // Add the continuous interval (in seconds) to the current time
-            ts.tv_sec += sensor_one->interval;
+            ts.tv_sec += sensor_one->intv_data.interval;
 
             // Wait until that specific second arrives OR a signal interrupts us
             pthread_cond_timedwait(&send_cond, &send_mutex, &ts);
@@ -790,6 +860,9 @@ int main(int argc, char *argv[]) {
 	handle_command(parse_command("HELP\r\n", &p_cmd));
 	handle_command(parse_command("LOCK 2\r\n", &p_cmd));
 	handle_command(parse_command("SERI\r\n", &p_cmd));
+	handle_command(parse_command("SEND\r\n", &p_cmd));
+	handle_command(parse_command("R\r\n", &p_cmd));
+	handle_command(parse_command("INTV 10 s\r\n", &p_cmd));
 
     safe_console_print("Press 'q' + Enter to quit.\n");
     struct pollfd fds[1];

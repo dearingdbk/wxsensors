@@ -19,6 +19,7 @@
 #define MAX_BATCH_NUM 64
 #define MAX_LITERAL_SIZE 32
 #define MAX_FORM_ITEMS 50
+#define MAX_INTV_STR 20
 
 typedef enum {
     SMODE_STOP,  // No output
@@ -115,6 +116,12 @@ typedef struct {
 } BAROModule;
 
 typedef struct {
+    uint32_t interval;       // In seconds
+	char interval_units[MAX_INTV_STR];
+
+} IntervalData;
+
+typedef struct {
     // Identity
     char serial_number[MAX_SN_LEN];
     char software_version[12];
@@ -124,7 +131,7 @@ typedef struct {
     // Configuration
     PTB330_SMode mode;
     PTB330_Unit units;
-    uint32_t interval;       // In seconds
+	IntervalData intv_data;
     char format_string[MAX_FORM_STR];
     uint16_t send_delay;     // ms
     bool echo_enabled;
@@ -369,5 +376,5 @@ bool ptb330_is_ready_to_send(ptb330_sensor *sensor);
 void ptb330_parse_command(const char *input, ptb330_command *cmd);
 void ptb330_format_output(ptb330_sensor *sensor, char *dest, size_t max_len);
 void parse_form_string(const char *input);
-
+void build_dynamic_output(ParsedMessage *live_date, char *output_buf, size_t buf_len);
 #endif

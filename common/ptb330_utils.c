@@ -48,6 +48,7 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
 	clock_gettime(CLOCK_MONOTONIC, &s->last_send_time);
     //s->last_send_time.tv_sec = 0; // Immediate first send
     //s->last_send_time.tv_nsec = 0;
+	parse_form_string("\" \"  P1 \" \" P2 \" \" P3 \" \" ERR \" \" P \" \" P3H \R"); // Sets our default FORM string.
     return 0;
 }
 
@@ -310,11 +311,27 @@ void build_dynamic_output(ParsedMessage *live_data, char *output_buf, size_t buf
                        		live_data->p3_pressure);
 				}
                 break;
-            case FORM_VAR_ERR:
-                // Fetch the CURRENT error state
-                written = snprintf(ptr, remaining, "%04X", live_data->p1_sensor_error);
-                break;
 
+            case FORM_VAR_P:
+                // Fetch the CURRENT value of P3
+				if (compiled_form[i].width == 0) {
+				    // 0.0 case: Revert to default sensor precision
+    				written = snprintf(ptr, remaining, "%8.2f", live_data->p_average);
+				} else {
+    				// Custom case: Use the x.y provided by the user
+    				written = snprintf(ptr, remaining, "%*.*f",
+                    	   	compiled_form[i].width,
+                       		compiled_form[i].precision,
+                       		live_data->p_average);
+				}
+				break;
+            case FORM_VAR_ERR: {
+				written = snprintf(ptr, remaining, "%X%X%X",
+                       live_data->p1_sensor_error,
+                       live_data->p2_sensor_error,
+                       live_data->p3_sensor_error);
+			    break;
+			}
             case FORM_VAR_P3H:
                 // Fetch the CURRENT 3-hour pressure trend
                 written = snprintf(ptr, remaining, "%+.2f", live_data->trend);
