@@ -63,7 +63,13 @@ void safe_serial_write(int fd, const char *fmt, ...) {
     va_start(args, fmt);
     int result = vdprintf(fd, fmt, args);
     va_end(args);
+
+	if (result >= 0) {
+        tcdrain(fd);  // Wait for output to be transmitted
+    }
+
     pthread_mutex_unlock(&serial_write_mutex);
+
     if (result < 0) {
         fprintf(stderr, "Serial write error: %s\n", strerror(errno));
     }

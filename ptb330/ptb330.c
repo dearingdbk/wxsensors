@@ -728,18 +728,20 @@ void* receiver_thread(void* arg) {
 void* sender_thread(void* arg) {
     (void)arg;
     struct timespec ts;
+	bool should_send = false;
+	int interval = 0;
 
     while (!terminate) {
         pthread_mutex_lock(&send_mutex);
 
 		// Determine if we should wait for a specific time or indefinitely
         if (sensor_one != NULL && sensor_one->mode == SMODE_RUN) {
+			interval = sensor_one->intv_data.interval;
             // Calculate absolute time: Last Send Time + Interval
             // Use current REALTIME + (Interval - Time Since Last Send)
             clock_gettime(CLOCK_MONOTONIC, &ts);
             // Add the continuous interval (in seconds) to the current time
-            ts.tv_sec += sensor_one->intv_data.interval;
-
+            ts.tv_sec += interval;
             // Wait until that specific second arrives OR a signal interrupts us
             pthread_cond_timedwait(&send_cond, &send_mutex, &ts);
         } else {
@@ -753,19 +755,29 @@ void* sender_thread(void* arg) {
         }
 
         // is_ready_to_send() handles the interval and timing logic internally, and checks if the sensor is Pollling or Continuous.
-        if (sensor_one != NULL && ptb330_is_ready_to_send(sensor_one)) {
-        	char *line = get_next_line_copy(file_ptr, &file_mutex); // Moved this into the check for is_ready_to_send to avoid depleting the data file.
+        should_send = (sensor_one != NULL && ptb330_is_ready_to_send(sensor_one));
 
-        	if (line) {
-				parse_message(line, &p_msg);
-				process_and_send(&p_msg);
-            	free(line); // caller of get_next_line_copy() must free resource.
-				line = NULL;
-        	}
-            // Update the last_send_time to the current monotonic clock
-            clock_gettime(CLOCK_MONOTONIC, &sensor_one->last_send_time);
+		pthread_mutex_unlock(&send_mutex);  // <-- UNLOCK BEFORE I/O
+
+        // Do I/O operations WITHOUT holding the mutex
+        if (should_send) {
+            char *line = get_next_line_copy(file_ptr, &file_mutex);
+
+            if (line) {
+                parse_message(line, &p_msg);
+                process_and_send(&p_msg);
+                fflush(NULL);  // Flush all output streams
+                free(line);
+                line = NULL;
+            }
+
+            // Update timestamp with lock
+            pthread_mutex_lock(&send_mutex);
+            if (sensor_one != NULL) {
+                clock_gettime(CLOCK_MONOTONIC, &sensor_one->last_send_time);
+            }
+            pthread_mutex_unlock(&send_mutex);
         }
-        pthread_mutex_unlock(&send_mutex);
     }
     return NULL;
 }

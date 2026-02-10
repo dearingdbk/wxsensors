@@ -220,10 +220,11 @@ void parse_form_string(const char *input) {
             // Handle Variables (P, P1, ERR, etc.)
             char var_name[10];
             int i = 0;
-            while (*p && !isspace(*p) && *p != '"' && i < 9) {
+            while (*p && !isspace(*p) && *p != '"' && *p != '\\' && i < 9) {
                 var_name[i++] = *p++;
             }
             var_name[i] = '\0';
+			printf("DEBUG_PRINT: What is in the VAR NAME, did it capture a \\ -> %s\n", var_name);
 
             if (strncmp(var_name, "P1", 2) == 0) compiled_form[form_item_count].type = FORM_VAR_P1;
             else if (strncmp(var_name, "P2", 2) == 0) compiled_form[form_item_count].type = FORM_VAR_P2;
