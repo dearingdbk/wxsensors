@@ -44,13 +44,16 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
 	s->parity = 'N';
 	s->stop_b = 1;
 	strncpy(s->batch_num, "1234", MAX_BATCH_NUM);
+	memset(&s->module_one, 0, sizeof(s->module_one));
+	memset(&s->module_two, 0, sizeof(s->module_two));
+	memset(&s->module_three, 0, sizeof(s->module_three));
+	memset(&s->module_four, 0, sizeof(s->module_four));
 	strncpy(s->module_one.serial_number, "M1234567", MAX_SN_LEN);
 	strncpy(s->module_two.serial_number, "M7654321", MAX_SN_LEN);
 	strncpy(s->module_three.serial_number, "M4713526", MAX_SN_LEN);
 	strncpy(s->module_one.batch_num, "550", MAX_BATCH_NUM);
 	strncpy(s->module_two.batch_num, "550", MAX_BATCH_NUM);
 	strncpy(s->module_three.batch_num, "550", MAX_BATCH_NUM);
-	memset(&s->module_four, 0, sizeof(s->module_four));
 	s->initialized = true;
 	clock_gettime(CLOCK_MONOTONIC, &s->last_send_time);
     //s->last_send_time.tv_sec = 0; // Immediate first send if required, uncomment these lines.
