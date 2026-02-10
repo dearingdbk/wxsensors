@@ -33,7 +33,7 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
     s->intv_data.interval = 1;
 	s->intv_data.interval_units[0] = 's';
 	s->intv_data.interval_units[1] = '\0'; // Manually terminate string.
-    strncpy(s->format_string, "\" \"  P1 \" \" P2 \" \" P3 \" \" ERR \" \" P \" \" P3H \\R", MAX_FORM_STR - 1); // Our default format P11A11.
+    strncpy(s->format_string, "\" \"  P1 \" \" P2 \" \" P3 \" \" ERR \" \" P \" \" P3H \\R\\N", MAX_FORM_STR - 1); // Our default format P11A11.
 	s->format_string[MAX_FORM_STR] = '\0'; // Manually terminate string.
 	parse_form_string(s->format_string);
     s->pressure = 1013.25;
@@ -278,7 +278,7 @@ void build_dynamic_output(ParsedMessage *p_msg, char *output_buf, size_t buf_len
 
         switch (compiled_form[i].type) {
             case FORM_LITERAL:
-                // Copy the static text the user wanted (e.g., "Pressure: ")
+                // Copy the static text the user wanted (e.g., "Pressure: " or any \t \r \n chars)
                 written = snprintf(ptr, remaining, "%s", compiled_form[i].literal);
                 break;
 

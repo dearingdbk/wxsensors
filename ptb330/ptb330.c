@@ -297,8 +297,7 @@ void process_and_send(ParsedMessage *msg) {
 	if (msg == NULL) return;
 	//int length = snprintf(msg_buffer, sizeof(msg_buffer), "%u", 2);
 	build_dynamic_output(msg, msg_buffer, sizeof(msg_buffer));
-	DEBUG_PRINT("Message Buffer holds %s\r\n",msg_buffer);
-	DEBUG_PRINT("The average is %f\n", msg->p_average);
+	DEBUG_PRINT("Message Buffer holds %s",msg_buffer);
 	safe_serial_write(serial_fd, "%s\r\n", msg_buffer);
 	/*if (length > 0 && length < (int)sizeof(msg_buffer)) {
 		uint16_t calculated_crc = crc16_ccitt((uint8_t*)msg_buffer, length);
@@ -597,6 +596,7 @@ void handle_command(CommandType cmd) {
 		case CMD_AVRG:
 			break;
 		case CMD_FORM:
+			parse_form_string(p_cmd.raw_params);
 			break;
 		case CMD_TIME:
 			break;
@@ -869,7 +869,8 @@ int main(int argc, char *argv[]) {
 	handle_command(parse_command("SERI\r\n", &p_cmd));
 	handle_command(parse_command("SEND\r\n", &p_cmd));
 	handle_command(parse_command("R\r\n", &p_cmd));
-	handle_command(parse_command("INTV 10 s\r\n", &p_cmd));
+	handle_command(parse_command("FORM P \" \" U \" \" P3H\\R\\N", &p_cmd));
+	handle_command(parse_command("INTV 2 s\r\n", &p_cmd));
 
     safe_console_print("Press 'q' + Enter to quit.\n");
     struct pollfd fds[1];
