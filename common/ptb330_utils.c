@@ -8,7 +8,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <ctype.h>
+#include "crc_utils.h"
 #include "ptb330_utils.h"
 
 FormItem compiled_form[MAX_FORM_ITEMS];
@@ -28,8 +30,12 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
     s->address = 0;
     s->mode = SMODE_STOP;
     s->units = UNIT_HPA;
-    s->interval = 1;
-    strcpy(s->format_string, "P = #P #U\\r\\n"); // Default Vaisala format
+    s->intv_data.interval = 1;
+	s->intv_data.interval_units[0] = 's';
+	s->intv_data.interval_units[1] = '\0'; // Manually terminate string.
+    strncpy(s->format_string, "\" \"  P1 \" \" P2 \" \" P3 \" \" ERR \" \" P \" \" P3H \\R", MAX_FORM_STR - 1); // Our default format P11A11.
+	s->format_string[MAX_FORM_STR] = '\0'; // Manually terminate string.
+	parse_form_string(s->format_string);
     s->pressure = 1013.25;
     s->offset = 0.0;
     s->initialized = true;
@@ -45,10 +51,11 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
 	strncpy(s->module_two.batch_num, "550", MAX_BATCH_NUM);
 	strncpy(s->module_three.batch_num, "550", MAX_BATCH_NUM);
 	memset(&s->module_four, 0, sizeof(s->module_four));
+	s->initialized = true;
 	clock_gettime(CLOCK_MONOTONIC, &s->last_send_time);
-    //s->last_send_time.tv_sec = 0; // Immediate first send
+    //s->last_send_time.tv_sec = 0; // Immediate first send if required, uncomment these lines.
     //s->last_send_time.tv_nsec = 0;
-	parse_form_string("\" \"  P1 \" \" P2 \" \" P3 \" \" ERR \" \" P \" \" P3H \R"); // Sets our default FORM string.
+
     return 0;
 }
 
@@ -88,7 +95,7 @@ bool ptb330_is_ready_to_send(ptb330_sensor *sensor) {
     clock_gettime(CLOCK_MONOTONIC, &now);
 
     long seconds = now.tv_sec - sensor->last_send_time.tv_sec;
-    if (seconds >= (long)sensor->interval) return true;
+    if (seconds >= (long)sensor->intv_data.interval) return true;
 
     return false;
 }
@@ -193,7 +200,7 @@ void parse_form_string(const char *input) {
 				}
             	form_item_count++; // Keep an eye on this, in the event \* is received.
         	} else if (1) {
-				// we need to implement a handler for '\205' or '\0' for data bytes with the specified value 0-255.
+				printf("We did not implement this case go to file:%s line:%d to implement\n", __FILE__, __LINE__);		// we need to implement a handler for '\205' or '\0' for data bytes with the specified value 0-255.
 			}
 		} else if (*p == 'U' || *p == 'u') {
 			compiled_form[form_item_count].type = FORM_VAR_UNIT;
@@ -254,14 +261,14 @@ void parse_form_string(const char *input) {
 
 
 // This function is called every time a measurement is requested (e.g., every 1 second)
-void build_dynamic_output(ParsedMessage *live_data, char *output_buf, size_t buf_len) {
+void build_dynamic_output(ParsedMessage *p_msg, char *output_buf, size_t buf_len) {
     char *ptr = output_buf;
     size_t remaining = buf_len;
-    // Clear the buffer
+    output_buf[0] = '\0';    // Clear the buffer
+
 	time_t t = time(NULL);
 	struct tm *tm_info = localtime(&t);
 
-    output_buf[0] = '\0';
 
     for (int i = 0; i < form_item_count; i++) {
         int written = 0;
@@ -276,39 +283,39 @@ void build_dynamic_output(ParsedMessage *live_data, char *output_buf, size_t buf
                 // Fetch the CURRENT value of P1
 				if (compiled_form[i].width == 0) {
 				    // 0.0 case: Revert to default sensor precision
-    				written = snprintf(ptr, remaining, "%8.2f", live_data->p1_pressure);
+    				written = snprintf(ptr, remaining, "%8.2f", p_msg->p1_pressure);
 				} else {
     				// Custom case: Use the x.y provided by the user
     				written = snprintf(ptr, remaining, "%*.*f",
                     	   	compiled_form[i].width,
                        		compiled_form[i].precision,
-                       		live_data->p1_pressure);
+                       		p_msg->p1_pressure);
 				}
                 break;
             case FORM_VAR_P2:
                 // Fetch the CURRENT value of P2
 				if (compiled_form[i].width == 0) {
 				    // 0.0 case: Revert to default sensor precision
-    				written = snprintf(ptr, remaining, "%8.2f", live_data->p2_pressure);
+    				written = snprintf(ptr, remaining, "%8.2f", p_msg->p2_pressure);
 				} else {
     				// Custom case: Use the x.y provided by the user
     				written = snprintf(ptr, remaining, "%*.*f",
                     	   	compiled_form[i].width,
                        		compiled_form[i].precision,
-                       		live_data->p2_pressure);
+                       		p_msg->p2_pressure);
 				}
                 break;
             case FORM_VAR_P3:
                 // Fetch the CURRENT value of P3
 				if (compiled_form[i].width == 0) {
 				    // 0.0 case: Revert to default sensor precision
-    				written = snprintf(ptr, remaining, "%8.2f", live_data->p3_pressure);
+    				written = snprintf(ptr, remaining, "%8.2f", p_msg->p3_pressure);
 				} else {
     				// Custom case: Use the x.y provided by the user
     				written = snprintf(ptr, remaining, "%*.*f",
                     	   	compiled_form[i].width,
                        		compiled_form[i].precision,
-                       		live_data->p3_pressure);
+                       		p_msg->p3_pressure);
 				}
                 break;
 
@@ -316,25 +323,25 @@ void build_dynamic_output(ParsedMessage *live_data, char *output_buf, size_t buf
                 // Fetch the CURRENT value of P3
 				if (compiled_form[i].width == 0) {
 				    // 0.0 case: Revert to default sensor precision
-    				written = snprintf(ptr, remaining, "%8.2f", live_data->p_average);
+    				written = snprintf(ptr, remaining, "%8.2f", p_msg->p_average);
 				} else {
     				// Custom case: Use the x.y provided by the user
     				written = snprintf(ptr, remaining, "%*.*f",
                     	   	compiled_form[i].width,
                        		compiled_form[i].precision,
-                       		live_data->p_average);
+                       		p_msg->p_average);
 				}
 				break;
             case FORM_VAR_ERR: {
 				written = snprintf(ptr, remaining, "%X%X%X",
-                       live_data->p1_sensor_error,
-                       live_data->p2_sensor_error,
-                       live_data->p3_sensor_error);
+                       p_msg->p1_sensor_error,
+                       p_msg->p2_sensor_error,
+                       p_msg->p3_sensor_error);
 			    break;
 			}
             case FORM_VAR_P3H:
                 // Fetch the CURRENT 3-hour pressure trend
-                written = snprintf(ptr, remaining, "%+.2f", live_data->trend);
+                written = snprintf(ptr, remaining, "%+.2f", p_msg->trend);
                 break;
 			case FORM_VAR_UNIT:
 				const char *unit_str = "hPa"; // get_current_unit_string(sensor_one->unit_index); // e.g., "hPa"
@@ -367,8 +374,162 @@ void build_dynamic_output(ParsedMessage *live_data, char *output_buf, size_t buf
                        tm_info->tm_sec);
 			    break;
 			}
-        }
+			case FORM_VAR_DP12: { // Delta p1 - p2
+				if (compiled_form[i].width == 0) {
+				    // 0.0 case: Revert to default sensor precision
+    				written = snprintf(ptr, remaining, "%8.2f", (p_msg->p1_pressure - p_msg->p2_pressure));
+				} else {
+    				// Custom case: Use the x.y provided by the user
+    				written = snprintf(ptr, remaining, "%*.*f",
+                    	   	compiled_form[i].width,
+                       		compiled_form[i].precision,
+                       		(p_msg->p1_pressure - p_msg->p2_pressure));
+				}
+				break;
+			}
+			case FORM_VAR_DP13: { // Delta p1 - p3
+				if (compiled_form[i].width == 0) {
+				    // 0.0 case: Revert to default sensor precision
+    				written = snprintf(ptr, remaining, "%8.2f", (p_msg->p1_pressure - p_msg->p3_pressure));
+				} else {
+    				// Custom case: Use the x.y provided by the user
+    				written = snprintf(ptr, remaining, "%*.*f",
+                    	   	compiled_form[i].width,
+                       		compiled_form[i].precision,
+                       		(p_msg->p1_pressure - p_msg->p3_pressure));
+				}
+				break;
+			}
+			case FORM_VAR_DP23: { // Delta p2 - p3
+				if (compiled_form[i].width == 0) {
+				    // 0.0 case: Revert to default sensor precision
+    				written = snprintf(ptr, remaining, "%8.2f", (p_msg->p2_pressure - p_msg->p3_pressure));
+				} else {
+    				// Custom case: Use the x.y provided by the user
+    				written = snprintf(ptr, remaining, "%*.*f",
+                    	   	compiled_form[i].width,
+                       		compiled_form[i].precision,
+                       		(p_msg->p2_pressure - p_msg->p3_pressure));
+				}
+				break;
+			}
+			case FORM_VAR_QNH: // Fall into HCP as the code is the same.
+			case FORM_VAR_HCP: {
+				double cor_altitude = get_hcp_pressure(p_msg->p_average, p_msg->altitude);
+				if (compiled_form[i].width == 0) {
+				    // 0.0 case: Revert to default sensor precision
+    				written = snprintf(ptr, remaining, "%8.2lf", cor_altitude);
+				} else {
+    				// Custom case: Use the x.y provided by the user
+    				written = snprintf(ptr, remaining, "%*.*lf",
+                    	   	compiled_form[i].width,
+                       		compiled_form[i].precision,
+                       		cor_altitude);
+				}
+				break;
+			}
+			case FORM_VAR_QFE: {
+				if (compiled_form[i].width == 0) {
+				    // 0.0 case: Revert to default sensor precision
+    				written = snprintf(ptr, remaining, "%8.2lf", p_msg->p_average);
+				} else {
+    				// Custom case: Use the x.y provided by the user
+    				written = snprintf(ptr, remaining, "%*.*lf",
+                    	   	compiled_form[i].width,
+                       		compiled_form[i].precision,
+                       		p_msg->p_average);
+				}
+				break;
+			}
+			case FORM_VAR_TP1: {
+				if (compiled_form[i].width == 0) {
+				    // 0.0 case: Revert to default sensor precision
+    				written = snprintf(ptr, remaining, "%3.2lf", p_msg->p1_temperature);
+				} else {
+    				// Custom case: Use the x.y provided by the user
+    				written = snprintf(ptr, remaining, "%*.*lf",
+                    	   	compiled_form[i].width,
+                       		compiled_form[i].precision,
+                       		p_msg->p1_temperature);
+				}
+				break;
+			}
+			case FORM_VAR_TP2: {
+				if (compiled_form[i].width == 0) {
+				    // 0.0 case: Revert to default sensor precision
+    				written = snprintf(ptr, remaining, "%3.2lf", p_msg->p2_temperature);
+				} else {
+    				// Custom case: Use the x.y provided by the user
+    				written = snprintf(ptr, remaining, "%*.*lf",
+                    	   	compiled_form[i].width,
+                       		compiled_form[i].precision,
+                       		p_msg->p2_temperature);
+				}
+				break;
+			}
+			case FORM_VAR_TP3: {
+				if (compiled_form[i].width == 0) {
+				    // 0.0 case: Revert to default sensor precision
+    				written = snprintf(ptr, remaining, "%3.2lf", p_msg->p3_temperature);
+				} else {
+    				// Custom case: Use the x.y provided by the user
+    				written = snprintf(ptr, remaining, "%*.*lf",
+                    	   	compiled_form[i].width,
+                       		compiled_form[i].precision,
+                       		p_msg->p3_temperature);
+				}
+				break;
+			}
+			case FORM_VAR_A3H: {
 
+				break;
+			}
+			case FORM_VAR_CS2: {
+				// Calculate length of string built up to this exact moment
+    			size_t current_len = (size_t)(ptr - output_buf);
+
+			    // Run the sum on the existing content
+			    unsigned char cs2_val = calculate_cs2(output_buf, current_len);
+
+			    // Print the hex result into the buffer
+			    written = snprintf(ptr, remaining, "%02X", cs2_val);
+			    break;
+			}
+			case FORM_VAR_CS4: {
+				// Calculate length of string built up to this exact moment
+    			size_t current_len = (size_t)(ptr - output_buf);
+
+			    // Run the sum on the existing content
+			    uint16_t cs4_val = calculate_cs4(output_buf, current_len);
+
+			    // Print the hex result into the buffer
+			    written = snprintf(ptr, remaining, "%02X", cs4_val);
+				break;
+			}
+			case FORM_VAR_CSX: {
+				// Calculate length of string built up to this exact moment
+    			size_t current_len = (size_t)(ptr - output_buf);
+
+			    // Run the sum on the existing content
+			    unsigned char csx_val = calculate_csx(output_buf, current_len);
+
+			    // Print the hex result into the buffer
+			    written = snprintf(ptr, remaining, "%02X", csx_val);
+				break;
+			}
+			case FORM_VAR_PSTAB: {
+			    written = snprintf(ptr, remaining, "OK");
+				break;
+			}
+			case FORM_VAR_SN: {
+			    written = snprintf(ptr, remaining, "%s", p_msg->serial_num);
+				break;
+			}
+			case FORM_VAR_ADDR: {
+			    written = snprintf(ptr, remaining, "%d", p_msg->address);
+				break;
+			}
+        }
         // Move the pointer forward so the next item appends to the end
         if (written > 0 && (size_t)written < remaining) {
             ptr += written;
@@ -465,3 +626,38 @@ void ptb330_format_output(ptb330_sensor *sensor, char *dest, size_t max_len) {
     temp[i] = '\0';
     strncpy(dest, temp, max_len);
 }*/
+
+
+double calculate_sea_level_pressure(double station_p, double elevation_m, double temp_c) {
+    double temp_k = temp_c + 273.15;
+    double lapse_rate = 0.0065; // K/m
+    double g = 9.80665;
+    double r = 287.05;
+
+    // The exponent part of the equation: (g / (R * L))
+    double exponent = g / (r * lapse_rate);
+
+    // The base part of the equation
+    double base = 1 - (lapse_rate * elevation_m) / (temp_k + lapse_rate * elevation_m);
+
+    return station_p / pow(base, exponent);
+}
+
+
+double get_hcp_pressure(double station_p, double altitude_m) {
+    // Standard atmosphere constants
+    const double sea_level_temp_k = 288.15; // 15 degrees C
+    const double lapse_rate = 0.0065;      // K/m
+    const double g = 9.80665;
+    const double r = 287.05;
+
+    // If altitude is 0, no correction needed
+    if (altitude_m == 0.0f) return station_p;
+
+    // ISA Formula: P = Ps * (1 - (L*H)/To)^(-g/RL)
+    // Note: To is usually the sea-level standard temperature (288.15K)
+    double exponent = g / (r * lapse_rate);
+    double base = 1.0 - (lapse_rate * altitude_m) / sea_level_temp_k;
+
+    return station_p / pow(base, exponent);
+}

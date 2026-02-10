@@ -251,6 +251,9 @@ void parse_message(char *msg, ParsedMessage *p_message) {
 
    	if ((token = NEXT_T)) p_message->p2_pressure = atof(token); // Set P2 pressure.
    	if ((token = NEXT_T)) p_message->p3_pressure = atof(token); // Set P3 pressure.
+	if ((token = NEXT_T)) p_message->p1_temperature = atof(token);
+	if ((token = NEXT_T)) p_message->p2_temperature = atof(token);
+	if ((token = NEXT_T)) p_message->p3_temperature = atof(token);
    	if ((token = NEXT_T)) {
 		if (atoi(token) == 1) {
 			p_message->p1_sensor_error = IS_ERROR;
@@ -269,6 +272,10 @@ void parse_message(char *msg, ParsedMessage *p_message) {
 	if ((token = NEXT_T)) p_message->p_average = atof(token);
 	if ((token = NEXT_T)) p_message->trend = atof(token);
 	#undef NEXT_T
+	p_message->altitude = sensor_one->hcp_altitude;
+	strncpy(p_message->serial_num, sensor_one->serial_number, MAX_SN_LEN - 1);
+	p_message->serial_num[MAX_SN_LEN] = '\0';
+	p_message->address = sensor_one->address;
 }
 
 /*

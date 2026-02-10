@@ -166,4 +166,38 @@ uint8_t checksumXOR(const char *str_to_chk) {
     return checksum;
 }
 
+unsigned char calculate_cs2(const char *str, size_t len) {
+    unsigned char sum = 0;
+
+    for (size_t i = 0; i < len; i++) {
+        sum += (unsigned char)str[i];
+    }
+
+    return sum;
+}
+
+
+uint16_t calculate_cs4(const char *str, size_t len) {
+    uint16_t sum = 0; // uint16_t naturally wraps at 65535
+    for (size_t i = 0; i < len; i++) {
+        sum += (unsigned char)str[i];
+    }
+    return sum;
+}
+
+unsigned char calculate_csx(const char *str, size_t len) {
+    unsigned char xor_result = 0;
+
+    for (size_t i = 0; i < len; i++) {
+        unsigned char b = (unsigned char)str[i];
+
+        // Apply the rule: b' = 0 if b = 36 ($) or 42 (*)
+        if (b == 36 || b == 42) {
+            b = 0;
+        }
+
+        xor_result ^= b;
+    }
+    return xor_result;
+}
 

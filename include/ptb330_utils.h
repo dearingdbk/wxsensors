@@ -19,7 +19,7 @@
 #define MAX_BATCH_NUM 64
 #define MAX_LITERAL_SIZE 32
 #define MAX_FORM_ITEMS 50
-#define MAX_INTV_STR 20
+#define MAX_INTV_STR 16
 
 typedef enum {
     SMODE_STOP,  // No output
@@ -110,9 +110,9 @@ static const BaudCodeMap baud_table[] = {
 
 typedef struct {
     char serial_number[MAX_SN_LEN];
-	float pressure;
+	double pressure;
+	double temperature;
 	char batch_num[MAX_BATCH_NUM];
-
 } BAROModule;
 
 typedef struct {
@@ -143,9 +143,9 @@ typedef struct {
 	StopBits stop_b;
 
     // Pressure State
-    float pressure;          // Current reading from file
-    float offset;            // Linear adjustment
-    float hcp_altitude;      // Height Corrected Pressure alt
+    double pressure;          // Current reading from file
+    double offset;            // Linear adjustment
+    double hcp_altitude;      // Height Corrected Pressure alt
     // Timing
     struct timespec last_send_time;
     bool initialized;
@@ -313,14 +313,20 @@ typedef enum {
 
 // Parsed message structure
 typedef struct {
-	float p1_pressure;
-	float p2_pressure;
-	float p3_pressure;
+	double p1_pressure;
+	double p2_pressure;
+	double p3_pressure;
+	double p1_temperature;
+	double p2_temperature;
+	double p3_temperature;
 	SensorError p1_sensor_error;
 	SensorError p2_sensor_error;
 	SensorError p3_sensor_error;
-	float p_average;
-	float trend;
+	double p_average;
+	double trend;
+	double altitude;
+	char serial_num[MAX_SN_LEN];
+	uint8_t address;
 } ParsedMessage;
 
 typedef enum {
@@ -341,12 +347,7 @@ typedef enum {
     FORM_VAR_TP2,		// TP2
     FORM_VAR_TP3,		// TP3
     FORM_VAR_A3H,		// A3H Tendency
-	FORM_VAR_T,			// \T #T
-	FORM_VAR_R,			// \R #R
-	FORM_VAR_N,			// \N #N
-	FORM_VAR_RN,		// \RN #RN
 	FORM_VAR_UNIT,		// Un
-	FORM_VAR_NN,		// n.n
 	FORM_VAR_CS2,		// CS2
 	FORM_VAR_CS4,		// CS4
 	FORM_VAR_CSX,		// CSX
@@ -377,4 +378,5 @@ void ptb330_parse_command(const char *input, ptb330_command *cmd);
 void ptb330_format_output(ptb330_sensor *sensor, char *dest, size_t max_len);
 void parse_form_string(const char *input);
 void build_dynamic_output(ParsedMessage *live_date, char *output_buf, size_t buf_len);
+double get_hcp_pressure(double station_p, double altitude_m);
 #endif
