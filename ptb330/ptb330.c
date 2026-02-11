@@ -539,6 +539,7 @@ void handle_command(CommandType cmd) {
         	if (line) {
 				parse_message(line, &p_msg);
 				process_and_send(&p_msg);
+				fflush(NULL);
             	free(line); // caller of get_next_line_copy() must free resource.
 				line = NULL;
         	}
@@ -596,7 +597,26 @@ void handle_command(CommandType cmd) {
 		case CMD_AVRG:
 			break;
 		case CMD_FORM:
-			parse_form_string(p_cmd.raw_params);
+			if (p_cmd.raw_params[0] == '\0') {
+				DEBUG_PRINT("Output format : %s\r\n", sensor_one->format_string);
+				safe_serial_write(serial_fd, "Output format : %s\r\n", sensor_one->format_string);
+			} else if (p_cmd.raw_params[0] == '?') {
+				if (p_cmd.raw_params[1] == '\0') {
+					DEBUG_PRINT("Output format : %s\r\n", sensor_one->format_string);
+					safe_serial_write(serial_fd, "Output format : %s\r\n", sensor_one->format_string);
+				} else if (p_cmd.raw_params[1] == '?') {
+					safe_serial_write(serial_fd, "P P3H P1 P2 P3 DP12 DP13 DP23 HCP QFE QNH TP1 TP2 TP3 A3H\n"
+												 "Additional parameters\n"
+												 "#T, #R, #N, #RN, Un, n.n, CS2, CS4, CSX, SN, ERR, PSTAB, ADDR, DATE, TIME\r\n");
+					DEBUG_PRINT("P P3H P1 P2 P3 DP12 DP13 DP23 HCP QFE QNH TP1 TP2 TP3 A3H\n"
+												 "Additional parameters\n"
+												 "#T, #R, #N, #RN, Un, n.n, CS2, CS4, CSX, SN, ERR, PSTAB, ADDR, DATE, TIME\r\n");
+				} else 	safe_console_error("Invalid Command Format: %s\n", strerror(errno));
+			} else {
+				strncpy(sensor_one->format_string, p_cmd.raw_params, MAX_FORM_STR - 1); // Copy the param string to the sensor, error handling?
+				sensor_one->format_string[MAX_FORM_STR] = '\0';
+				parse_form_string(p_cmd.raw_params); // This is going to go through the remaing string after FORM, and build the compiled_form[] fields.
+			}
 			break;
 		case CMD_TIME:
 			break;
@@ -865,24 +885,21 @@ int main(int argc, char *argv[]) {
 		cleanup_and_exit(1);
     }
 
-	handle_command(parse_command("BNUM\r\n", &p_cmd));
+//	handle_command(parse_command("BNUM\r\n", &p_cmd));
 	handle_command(parse_command("SERI\r\n", &p_cmd));
-	handle_command(parse_command("SERI o\n\r", &p_cmd));
-	handle_command(parse_command("SERI E\r\n", &p_cmd));
-	handle_command(parse_command("SERI N\n", &p_cmd));
-	handle_command(parse_command("SERI o\r", &p_cmd));
-	handle_command(parse_command("SERI e", &p_cmd));
-	handle_command(parse_command("SERI e", &p_cmd));
 	handle_command(parse_command("SERI 9600 e 1 7", &p_cmd));
 	handle_command(parse_command("SERI e 2 9600 7", &p_cmd));
-	handle_command(parse_command("ERRS\r\n", &p_cmd));
-	handle_command(parse_command("HELP\r\n", &p_cmd));
-	handle_command(parse_command("LOCK 2\r\n", &p_cmd));
-	handle_command(parse_command("SERI\r\n", &p_cmd));
+//	handle_command(parse_command("ERRS\r\n", &p_cmd));
+//	handle_command(parse_command("HELP\r\n", &p_cmd));
+//	handle_command(parse_command("LOCK 2\r\n", &p_cmd));
 	handle_command(parse_command("SEND\r\n", &p_cmd));
-	handle_command(parse_command("R\r\n", &p_cmd));
-	handle_command(parse_command("FORM P \" \" U \" \" P3H\\R\\N", &p_cmd));
+//	handle_command(parse_command("R\r\n", &p_cmd));
 	handle_command(parse_command("INTV 2 s\r\n", &p_cmd));
+	handle_command(parse_command("FORM", &p_cmd));
+	handle_command(parse_command("FORM P \" \" U \" \" P3H \" \" CS2 \\R\\N", &p_cmd));
+	handle_command(parse_command("FORM ?", &p_cmd));
+	handle_command(parse_command("FORM ??", &p_cmd));
+
 
     safe_console_print("Press 'q' + Enter to quit.\n");
     struct pollfd fds[1];

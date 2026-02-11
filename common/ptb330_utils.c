@@ -153,7 +153,7 @@ void parse_form_string(const char *input) {
     form_item_count = 0;
     const char *p = input;
 
-    while (*p && form_item_count < 20) {
+    while (*p && form_item_count < (MAX_FORM_ITEMS - 1)) { // This array is size 50, only add entries at 0-49.
 		if (isdigit((unsigned char)p[0])) {
         	// Update the "active" format state
         	active_width = atoi(p); // Pulls out the first integer, up to . without moving pointer.
@@ -169,7 +169,7 @@ void parse_form_string(const char *input) {
             // Handle string literals, i.e. anything in quotes.
             p++; // Skip leading quote
             int i = 0;
-            while (*p && *p != '"' && i < 31) {
+            while (*p && *p != '"' && i < (MAX_LITERAL_SIZE - 1)) { // char array 'literal' in struct is size 32.
                 compiled_form[form_item_count].literal[i++] = *p++;
             }
             compiled_form[form_item_count].literal[i] = '\0';
@@ -224,7 +224,6 @@ void parse_form_string(const char *input) {
                 var_name[i++] = *p++;
             }
             var_name[i] = '\0';
-			printf("DEBUG_PRINT: What is in the VAR NAME, did it capture a \\ -> %s\n", var_name);
 
             if (strncmp(var_name, "P1", 2) == 0) compiled_form[form_item_count].type = FORM_VAR_P1;
             else if (strncmp(var_name, "P2", 2) == 0) compiled_form[form_item_count].type = FORM_VAR_P2;

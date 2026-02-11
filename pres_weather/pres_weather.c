@@ -969,7 +969,7 @@ void* sender_thread(void* arg) {
             // Add the continuous interval (in seconds) to the current time
             ts.tv_sec += interval;
 
-            // 2. Wait until that specific second arrives OR a signal interrupts us
+            // Wait until that specific second arrives OR a signal interrupts us
             pthread_cond_timedwait(&send_cond, &send_mutex, &ts);
         } else {
             // If in Polling Mode, wait indefinitely for a signal from the receiver
