@@ -295,14 +295,9 @@ void process_and_send(ParsedMessage *msg) {
 
 	char msg_buffer[MAX_MSG_LENGTH]; // 512
 	if (msg == NULL) return;
-	//int length = snprintf(msg_buffer, sizeof(msg_buffer), "%u", 2);
 	build_dynamic_output(msg, msg_buffer, sizeof(msg_buffer));
-	DEBUG_PRINT("Message Buffer holds %s",msg_buffer);
+	DEBUG_PRINT("Message Buffer after Dynamic Build holds %s\n",msg_buffer);
 	safe_serial_write(serial_fd, "%s\r\n", msg_buffer);
-	/*if (length > 0 && length < (int)sizeof(msg_buffer)) {
-		uint16_t calculated_crc = crc16_ccitt((uint8_t*)msg_buffer, length);
-		safe_serial_write(serial_fd, "\x02%s %04X\x03\r\n", msg_buffer, calculated_crc);
-	}*/
 }
 
 /*
@@ -892,13 +887,13 @@ int main(int argc, char *argv[]) {
 //	handle_command(parse_command("ERRS\r\n", &p_cmd));
 //	handle_command(parse_command("HELP\r\n", &p_cmd));
 //	handle_command(parse_command("LOCK 2\r\n", &p_cmd));
-	handle_command(parse_command("SEND\r\n", &p_cmd));
 //	handle_command(parse_command("R\r\n", &p_cmd));
 	handle_command(parse_command("INTV 2 s\r\n", &p_cmd));
 	handle_command(parse_command("FORM", &p_cmd));
 	handle_command(parse_command("FORM P \" \" U \" \" P3H \" \" CS2 \\R\\N", &p_cmd));
 	handle_command(parse_command("FORM ?", &p_cmd));
 	handle_command(parse_command("FORM ??", &p_cmd));
+	handle_command(parse_command("SEND\r\n", &p_cmd));
 
 
     safe_console_print("Press 'q' + Enter to quit.\n");

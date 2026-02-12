@@ -1,5 +1,5 @@
 /*
- * File:     ptb330_utils.c
+q * File:     ptb330_utils.c
  * Author:   Bruce Dearing
  * Date:     16/01/2026
  * Purpose:  Implementation of PTB330-specific logic.
@@ -202,8 +202,14 @@ void parse_form_string(const char *input) {
 					} else p += 2;
 				}
             	form_item_count++; // Keep an eye on this, in the event \* is received.
-        	} else if (1) {
-				printf("We did not implement this case go to file:%s line:%d to implement\n", __FILE__, __LINE__);		// we need to implement a handler for '\205' or '\0' for data bytes with the specified value 0-255.
+        	} else if (isdigit((unsigned char)p[1])) {
+				p++; // move pointer past '\\' or '#'
+				int dec_val = atoi(p);
+				while(*p && isdigit(*p)) p++; // Move pointer past the decimal code byte numbers.
+				compiled_form[form_item_count].literal[0] = (unsigned char)dec_val;
+	            compiled_form[form_item_count].literal[1] = '\0';
+				form_item_count++;
+				// printf("We did not implement this case go to file:%s line:%d to implement\n", __FILE__, __LINE__);
 			}
 		} else if (*p == 'U' || *p == 'u') {
 			compiled_form[form_item_count].type = FORM_VAR_UNIT;
