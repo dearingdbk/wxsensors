@@ -20,6 +20,10 @@
 #define MAX_LITERAL_SIZE 32
 #define MAX_FORM_ITEMS 50
 #define MAX_INTV_STR 16
+#define MAX_DATE_STR 11
+#define SECONDS_IN_MIN 60
+#define SECONDS_IN_HOUR 3600
+#define SECONDS_IN_DAY 86400
 
 typedef enum {
     SMODE_STOP,  // No output
@@ -118,7 +122,7 @@ typedef struct {
 typedef struct {
     uint32_t interval;       // In seconds
 	char interval_units[MAX_INTV_STR];
-
+	uint16_t multiplier;
 } IntervalData;
 
 typedef struct {
@@ -135,7 +139,7 @@ typedef struct {
     char format_string[MAX_FORM_STR];
     uint16_t send_delay;     // ms
     bool echo_enabled;
-
+	char date_string[MAX_DATE_STR];
 	// Communication
 	BaudRateCode baud;
 	ParityFormat parity;

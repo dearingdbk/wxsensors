@@ -33,12 +33,14 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
     s->intv_data.interval = 1;
 	s->intv_data.interval_units[0] = 's';
 	s->intv_data.interval_units[1] = '\0'; // Manually terminate string.
-    strncpy(s->format_string, "\" \"  P1 \" \" P2 \" \" P3 \" \" ERR \" \" P \" \" P3H \\R\\N", MAX_FORM_STR - 1); // Our default format P11A11.
+	s->intv_data.multiplier = 1; // stored in seconds.
+    strncpy(s->format_string, "\" \"  P1 \" \" P2 \" \" P3 \" \" ERR \" \" P \" \" P3H \\R \\N", MAX_FORM_STR - 1); // Our default format P11A11.
 	s->format_string[MAX_FORM_STR] = '\0'; // Manually terminate string.
 	parse_form_string(s->format_string);
     s->pressure = 1013.25;
     s->offset = 0.0;
-    s->initialized = true;
+    s->echo_enabled = false;
+	s->initialized = true;
 	s->baud = 6; // 4800 default.
 	s->data_f = 8;
 	s->parity = 'N';
@@ -56,9 +58,8 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
 	strncpy(s->module_three.batch_num, "550", MAX_BATCH_NUM);
 	s->initialized = true;
 	clock_gettime(CLOCK_MONOTONIC, &s->last_send_time);
-    //s->last_send_time.tv_sec = 0; // Immediate first send if required, uncomment these lines.
-    //s->last_send_time.tv_nsec = 0;
-
+	time_t now = time(NULL);
+	strftime(s->date_string, sizeof(s->date_string), "%Y-%m-%d", gmtime(&now));
     return 0;
 }
 
