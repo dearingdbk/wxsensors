@@ -572,12 +572,13 @@ void handle_command(CommandType cmd) {
         		} else {
             		// If only 'xxx' was provided without 'yyy', Vaisala defaults to seconds
             		multiplier = 1;
+					sensor_one->intv_data.interval_units[0] = 's';
+					sensor_one->intv_data.interval_units[1] = '\0'; // manually terminate
         		}
 
         		// Update the sensor state
         		sensor_one->intv_data.interval = (long)val * multiplier;
 				sensor_one->intv_data.multiplier = multiplier;
-				DEBUG_PRINT("Output interval : %d %s\n", val, unit_str);
 				safe_serial_write(serial_fd, "Output interval %d %s\r\n", val, sensor_one->intv_data.interval_units);
     		}
 			pthread_cond_signal(&send_cond); // Wake our sender thread, to check if our mode has changed.
@@ -623,7 +624,6 @@ void handle_command(CommandType cmd) {
 			} else {
 				safe_serial_write(serial_fd, "Address : 2 ?  %hhu\r\n",sensor_one->address);
 			}
-			DEBUG_PRINT("ADDR Command Received with these params: %s\n", p_cmd.raw_params);
 			break;
 		case CMD_OPEN:
 			DEBUG_PRINT("OPEN Command Received with these params: %s\n", p_cmd.raw_params);

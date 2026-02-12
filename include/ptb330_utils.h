@@ -17,10 +17,11 @@
 #define MAX_ADDR_LEN 4
 #define MAX_SN_LEN 16
 #define MAX_BATCH_NUM 64
-#define MAX_LITERAL_SIZE 32
+#define MAX_LITERAL_SIZE 30
 #define MAX_FORM_ITEMS 50
 #define MAX_INTV_STR 16
 #define MAX_DATE_STR 11
+#define MAX_UNIT_STR 32
 #define SECONDS_IN_MIN 60
 #define SECONDS_IN_HOUR 3600
 #define SECONDS_IN_DAY 86400
@@ -240,12 +241,12 @@ typedef enum {
     CMD_INVALID_FORMAT  // Command format error
 } CommandType;
 
-typedef struct {
+/*typedef struct {
     CommandType type;
-    char raw_params[128];
+    char raw_params[MAX_FORM_STR];
     int addr_target;         // For RS-485 addressing
 } ptb330_command;
-
+*/
 
 typedef struct {
     const char *name;
@@ -294,7 +295,7 @@ typedef struct {
     bool crc_valid;
     uint16_t received_crc;
     uint16_t calculated_crc;
-    char raw_params[128];
+    char raw_params[MAX_FORM_STR];
 	union {
 
 		struct {
@@ -378,7 +379,7 @@ typedef struct {
 // Function Prototypes
 int init_ptb330_sensor(ptb330_sensor **ptr);
 bool ptb330_is_ready_to_send(ptb330_sensor *sensor);
-void ptb330_parse_command(const char *input, ptb330_command *cmd);
+//void ptb330_parse_command(const char *input, ptb330_command *cmd);
 void ptb330_format_output(ptb330_sensor *sensor, char *dest, size_t max_len);
 void parse_form_string(const char *input);
 void build_dynamic_output(ParsedMessage *live_date, char *output_buf, size_t buf_len);

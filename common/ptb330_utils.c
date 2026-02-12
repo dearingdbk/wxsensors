@@ -1,5 +1,5 @@
 /*
-q * File:     ptb330_utils.c
+ * File:     ptb330_utils.c
  * Author:   Bruce Dearing
  * Date:     16/01/2026
  * Purpose:  Implementation of PTB330-specific logic.
@@ -19,12 +19,28 @@ int form_item_count = 0;
 int active_width = 0;
 int active_precision = 0;
 
+/*
+ * Name:         init_ptb330_sensor
+ * Purpose:      Allocates memory for a PTB330 sensor structure and initializes
+ * 				 all members (serial, baud, modules, etc.) to default factory values.
+ * Arguments:    ptr - A pointer to a pointer of type ptb330_sensor, used to
+ * 				 return the address of the allocated memory.
+ *
+ * Output:       An allocated and populated ptb330_sensor structure.
+ * Modifies:     Allocates memory on the heap and updates the provided pointer.
+ * Returns:      0 on success, -1 if memory allocation fails.
+ * Assumptions:  The provided ptr is a valid address of a pointer.
+ *
+ * Bugs:         None known.
+ * Notes:        Uses CLOCK_MONOTONIC for thread timing and UTC (gmtime) for
+ * 				 the initial date string.
+ *				 Must be freed by the caller.
+ */
 int init_ptb330_sensor(ptb330_sensor **ptr) {
     *ptr = malloc(sizeof(ptb330_sensor));
     if (!*ptr) return -1;
 
     ptb330_sensor *s = *ptr;
-	//char *strncpy(char *destination, const char *source, size_t num);
     strncpy(s->serial_number, "G1234567", MAX_SN_LEN);
     strncpy(s->software_version, "1.12", 5);
     s->address = 0;
@@ -63,35 +79,23 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
     return 0;
 }
 
-void ptb330_parse_command(const char *input, ptb330_command *cmd) {
-    char buf[128];
-    strncpy(buf, input, sizeof(buf));
-    // Simple tokenizer for PTB330 commands
-    char *token = strtok(buf, " \r\n");
-    if (!token) {
-        cmd->type = CMD_UNKNOWN;
-        return;
-    }
-
-    // Convert to uppercase for comparison
-    for(int i = 0; token[i]; i++) token[i] = toupper(token[i]);
-
-    if (strcmp(token, "SEND") == 0)   cmd->type = CMD_SEND;
-    else if (strcmp(token, "R") == 0) cmd->type = CMD_R;
-    else if (strcmp(token, "S") == 0) cmd->type = CMD_S;
-    else if (strcmp(token, "INTV") == 0) cmd->type = CMD_INTV;
-    else if (strcmp(token, "SMODE") == 0) cmd->type = CMD_SMODE;
-    else if (strcmp(token, "FORM") == 0) cmd->type = CMD_FORM;
-    else if (strcmp(token, "UNIT") == 0) cmd->type = CMD_UNIT;
-    else if (strcmp(token, "VERS") == 0) cmd->type = CMD_VERS;
-    else cmd->type = CMD_UNKNOWN;
-
-    // Capture remaining params
-    char *params = strtok(NULL, "\r\n");
-    if (params) strncpy(cmd->raw_params, params, sizeof(cmd->raw_params));
-    else cmd->raw_params[0] = '\0';
-}
-
+/*
+ * Name:         ptb330_is_ready_to_send
+ * Purpose:      Determines if the required time interval has elapsed since the
+ * 				 last data transmission based on the sensor's configuration.
+ * Arguments:    sensor - Pointer to the ptb330_sensor structure containing
+ * 				 mode and timing data.
+ *
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      true if the sensor is in RUN mode and the interval has passed;
+ * 				 false otherwise.
+ * Assumptions:  sensor->last_send_time was initialized with CLOCK_MONOTONIC.
+ *
+ * Bugs:         None known.
+ * Notes:        Uses CLOCK_MONOTONIC to ensure timing remains consistent even
+ * 				 if the system real-time clock is adjusted.
+ */
 bool ptb330_is_ready_to_send(ptb330_sensor *sensor) {
     if (!sensor || sensor->mode != SMODE_RUN) return false;
 
@@ -122,6 +126,20 @@ static const UnitConversion unit_table[] = {
     {UNIT_PSI,   "psi",  0.0145038}
 };*/
 
+/*
+ * Name:         get_unit_str
+ * Purpose:      Look up the string label associated with a specific pressure
+ * 				 unit enumeration.
+ * Arguments:    unit - The PTB330_Unit enum value to look up.
+ *
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      A constant string pointer to the unit label (e.g., "hPa", "psi").
+ * Assumptions:  unit_table is globally defined and populated with UnitConversion mappings.
+ *
+ * Bugs:         None known.
+ * Notes:        If the unit is not found in the table, it defaults to returning "hPa".
+ */
 const char* get_unit_str(PTB330_Unit unit) {
     for (int i = 0; i < (int)(sizeof(unit_table)/sizeof(UnitConversion)); i++) {
         if (unit_table[i].unit == unit) return unit_table[i].label;
@@ -149,7 +167,23 @@ double get_scaled_pressure(float hpa_val, PTB330_Unit unit) {
     snprintf(dest, max_len, "P = %.2f %s\r\n", sensor->pressure + sensor->offset, unit_str);
 }*/
 
-
+/*
+ * Name:         parse_form_string
+ * Purpose:      Parses a PTB330 format string into a compiled array of items,
+ * 				 identifying literals, escape sequences, and sensor variables.
+ * Arguments:    input - The raw format string to be parsed (e.g., "P1 .3 P2 \R \N").
+ *
+ * Output:       Populates the global compiled_form array and form_item_count.
+ * Modifies:     Updates form_item_count, active_width, active_precision,
+ * 				 and the compiled_form array.
+ * Returns:      None.
+ * Assumptions:  The input string follows Vaisala PTB330 format syntax.
+ *
+ * Bugs:         None known.
+ * Notes:        Handles width/precision rules, quoted literals, and backslash
+ * 				 escapes (\R, \N, \T, or decimal codes). Limits items to
+ * 				 MAX_FORM_ITEMS - 1 (49) to ensure array bounds 0-49.
+ */
 void parse_form_string(const char *input) {
     form_item_count = 0;
     const char *p = input;
@@ -210,7 +244,6 @@ void parse_form_string(const char *input) {
 				compiled_form[form_item_count].literal[0] = (unsigned char)dec_val;
 	            compiled_form[form_item_count].literal[1] = '\0';
 				form_item_count++;
-				// printf("We did not implement this case go to file:%s line:%d to implement\n", __FILE__, __LINE__);
 			}
 		} else if (*p == 'U' || *p == 'u') {
 			compiled_form[form_item_count].type = FORM_VAR_UNIT;
@@ -271,6 +304,27 @@ void parse_form_string(const char *input) {
 
 
 // This function is called every time a measurement is requested (e.g., every 1 second)
+
+/*
+ * Name:         build_dynamic_output
+ * Purpose:      Constructs a formatted output string based on the compiled
+ * 				 representation of the PTB330 format string and the current sensor data.
+ * Arguments:    p_msg      - Pointer to the ParsedMessage containing current measurements.
+ * 				 output_buf - Destination buffer for the constructed string.
+ * 				 buf_len    - Maximum size of the destination buffer.
+ *
+ * Output:       The final formatted string stored in output_buf.
+ * Modifies:     Updates output_buf and moves internal pointer/remaining count
+ * 				 tracking to ensure safe snprintf calls.
+ * Returns:      None.
+ * Assumptions:  form_item_count and compiled_form are populated; output_buf
+ * 				 is large enough to hold the generated data.
+ *
+ * Bugs:         None known.
+ * Notes:        Handles variables (P1, P2, etc.), unit conversions, checksums
+ * 				 (CS2/CS4/CSX), and timestamp formatting. Uses *.*f for
+ * 				 dynamic width and precision control.
+ */
 void build_dynamic_output(ParsedMessage *p_msg, char *output_buf, size_t buf_len) {
     char *ptr = output_buf;
     size_t remaining = buf_len;
@@ -354,13 +408,15 @@ void build_dynamic_output(ParsedMessage *p_msg, char *output_buf, size_t buf_len
                 written = snprintf(ptr, remaining, "%+.2f", p_msg->trend);
                 break;
 			case FORM_VAR_UNIT:
+																											
 				const char *unit_str = "hPa"; // get_current_unit_string(sensor_one->unit_index); // e.g., "hPa"
     			int w = compiled_form[i].width;
 
     			if (w > 0) {
         			// Use a temporary buffer to handle the truncation/padding safely
-        			char temp_unit[10];
+        			char temp_unit[MAX_UNIT_STR];
         			// Format: Left-justified, fixed width 'w', max characters 'w'
+					if (w > (int)sizeof(temp_unit) - 1) w = (int)sizeof(temp_unit) - 1;
         			snprintf(temp_unit, sizeof(temp_unit), "%-*.*s", w, w, unit_str);
         			written = snprintf(ptr, remaining, "%s", temp_unit);
     			} else {
@@ -368,6 +424,7 @@ void build_dynamic_output(ParsedMessage *p_msg, char *output_buf, size_t buf_len
         			written = snprintf(ptr, remaining, "%s", unit_str);
     			}
 				break;
+																											
 			case FORM_VAR_DATE: {
     			// Format: 2026-02-09
     			written = snprintf(ptr, remaining, "%04d-%02d-%02d",
@@ -491,7 +548,7 @@ void build_dynamic_output(ParsedMessage *p_msg, char *output_buf, size_t buf_len
 				break;
 			}
 			case FORM_VAR_A3H: {
-
+																													
 				break;
 			}
 			case FORM_VAR_CS2: {
@@ -544,11 +601,11 @@ void build_dynamic_output(ParsedMessage *p_msg, char *output_buf, size_t buf_len
         if (written > 0 && (size_t)written < remaining) {
             ptr += written;
             remaining -= written;
-        }
+        } else break; // Buffer is full, break out of our loop here.
     }
 }
 
-
+/*
 void ptb330_format_output(ptb330_sensor *sensor, char *dest, size_t max_len) {
     char buffer[256] = {0};
     char *src = sensor->format_string;
@@ -593,7 +650,7 @@ void ptb330_format_output(ptb330_sensor *sensor, char *dest, size_t max_len) {
     }
     buffer[out_idx] = '\0';
     strncpy(dest, buffer, max_len);
-}
+}*/
 /*
 void ptb330_format_output(ptb330_sensor *sensor, char *dest, size_t max_len) {
     char temp[MAX_FORM_STR] = {0};
@@ -637,7 +694,23 @@ void ptb330_format_output(ptb330_sensor *sensor, char *dest, size_t max_len) {
     strncpy(dest, temp, max_len);
 }*/
 
-
+/*
+ * Name:         calculate_sea_level_pressure
+ * Purpose:      Calculates the barometric pressure at sea level (QNH/QFE) based
+ * 				 on station pressure, elevation, and current temperature.
+ * Arguments:    station_p   - The current pressure measured at the station.
+ * 				 elevation_m - The elevation of the station in meters.
+ * 				 temp_c      - The current ambient temperature in Celsius.
+ *
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      The calculated sea level pressure in the same units as station_p.
+ * Assumptions:  Uses the standard hypsometric formula with a constant lapse rate.
+ *
+ * Bugs:         None known.
+ * Notes:        Uses a standard lapse rate of 0.0065 K/m and the barometric
+ * 				 formula: $P_0 = P_s / (1 - \frac{L \cdot h}{T_s + L \cdot h})^{(g / (R \cdot L))}$
+ */
 double calculate_sea_level_pressure(double station_p, double elevation_m, double temp_c) {
     double temp_k = temp_c + 273.15;
     double lapse_rate = 0.0065; // K/m
@@ -654,6 +727,22 @@ double calculate_sea_level_pressure(double station_p, double elevation_m, double
 }
 
 
+/*
+ * Name:         get_hcp_pressure
+ * Purpose:      Calculates Height Corrected Pressure (HCP) using the
+ * 				 International Standard Atmosphere (ISA) model.
+ * Arguments:    station_p  - The current pressure measured at the station.
+ * 				 altitude_m - The elevation difference from sea level in meters.
+ *
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      The pressure corrected to sea level based on ISA constants.
+ * Assumptions:  Assumes a standard sea-level temperature of 288.15K (15°C).
+ *
+ * Bugs:         None known.
+ * Notes:        Uses the formula: $$P_0 = \frac{P_s}{(1 - \frac{L \cdot h}{T_0})^{\frac{g}{R \cdot L}}}$$
+ * 				 If altitude_m is 0.0, the function returns station_p directly.
+ */
 double get_hcp_pressure(double station_p, double altitude_m) {
     // Standard atmosphere constants
     const double sea_level_temp_k = 288.15; // 15 degrees C
