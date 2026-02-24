@@ -51,7 +51,7 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
 	s->intv_data.interval_units[1] = '\0'; // Manually terminate string.
 	s->intv_data.multiplier = 1; // stored in seconds.
     strncpy(s->format_string, "\" \"  P1 \" \" P2 \" \" P3 \" \" ERR \" \" P \" \" P3H \\R \\N", MAX_FORM_STR - 1); // Our default format P11A11.
-	s->format_string[MAX_FORM_STR] = '\0'; // Manually terminate string.
+	s->format_string[MAX_FORM_STR - 1] = '\0'; // Manually terminate string.
 	parse_form_string(s->format_string);
     s->pressure = 1013.25;
     s->offset = 0.0;
