@@ -266,11 +266,6 @@ void sdi12_wake_sensor(int fd) {
  */
 int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
 
-	if (!portname || !*portname) {
-    	fprintf(stderr, "Error: Invalid port name\n");
-    	return -1;
-	}
-
     int fd = open(portname, O_RDWR | O_NOCTTY | O_SYNC);
     if (fd < 0) {
         perror("Error opening serial port\n");
