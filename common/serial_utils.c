@@ -32,7 +32,7 @@
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B9600	     // Adjust as needed, main has logic to take arguments for a new baud rate
 #define MAX_LINE_LENGTH 1024
-
+#define MAX_MSG_BUF 256 // regerror message buffer max size.
 static pthread_mutex_t serial_write_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 
@@ -106,7 +106,15 @@ void serial_utils_cleanup(void) {
  * Notes:
  */
 speed_t get_baud_rate(const char *baud_rate) {
-    int baud = atoi(baud_rate);
+    char *endptr;
+    long baud = strtol(baud_rate, &endptr, 10);
+
+	// Check for conversion errors
+    if (*endptr != '\0' || baud <= 0) {
+        fprintf(stderr, "Warning: Invalid baud rate '%s', using default 9600\n", baud_rate);
+        return BAUD_RATE;
+    }
+
     switch (baud) {
         case 50: return B50;
         case 75: return B75;
@@ -178,8 +186,9 @@ int is_valid_tty(const char *str) {
         return 1;
     } else {
         // Error
-        char msgbuf[100];
+        char msgbuf[MAX_MSG_BUF]; // 256
         regerror(reti, &regex, msgbuf, sizeof(msgbuf));
+		msgbuf[sizeof(msgbuf) - 1] = '\0';  // Manually terminate for safety.
         fprintf(stderr, "Regex match failed: %s\n", msgbuf);
         return 1;
     }
@@ -257,15 +266,20 @@ void sdi12_wake_sensor(int fd) {
  */
 int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
 
+	if (!portname || !*portname) {
+    	fprintf(stderr, "Error: Invalid port name\n");
+    	return -1;
+	}
+
     int fd = open(portname, O_RDWR | O_NOCTTY | O_SYNC);
     if (fd < 0) {
-        perror("Error opening serial port");
+        perror("Error opening serial port\n");
         return -1;
     }
 
     struct termios tty;
     if (tcgetattr(fd, &tty) != 0) {
-        perror("Error from tcgetattr");
+        perror("Error from tcgetattr\n");
         close(fd);
         return -1;
     }
@@ -323,7 +337,7 @@ int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
     tty.c_cc[VTIME] = 1;
 
 	if (tcsetattr(fd, TCSANOW, &tty) != 0) {
-        perror("Error from tcsetattr");
+        perror("Error from tcsetattr\n");
         close(fd);
         return -1;
     }
@@ -340,7 +354,7 @@ int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
         rs485conf.delay_rts_after_send  = 0;
 
         if (ioctl(fd, TIOCSRS485, &rs485conf) < 0) {
-            perror("Warning: RS-485 mode not enabled (driver may not support)");
+            perror("Warning: RS-485 mode not enabled (driver may not support)\n");
             printf("Continuing in RS-422/RS-232 mode.\n");
         } else {
             printf("RS-485 half-duplex mode enabled via ioctl.\n");

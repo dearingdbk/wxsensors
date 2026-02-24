@@ -34,8 +34,7 @@
  * Notes:
  */
 unsigned short crc16(char *buffer, int length) {
-	if (buffer == NULL || length <= 0) return -1;
-    if (length > MAX_PACKET_LENGTH) return -1;
+	if (buffer == NULL || length <= 0 || length > MAX_PACKET_LENGTH) return 0;
 
     unsigned short crc = 0xFFFF;
     unsigned short m;
@@ -67,10 +66,12 @@ unsigned short crc16(char *buffer, int length) {
  * Notes:
  */
 unsigned int crc_ccitt(char *line_of_data) {
+	if (line_of_data == NULL) return 0;
     unsigned int crc; // Returned CRC value
     unsigned int i; // counter
     crc = 0x0000;
-    for (i=0; i < strlen(line_of_data); i++) {
+    size_t len = strlen(line_of_data);
+	for (i=0; i < len; i++) {
         unsigned crc_new = (unsigned char)(crc >> 8) | (crc << 8);
         crc_new ^= line_of_data[i];
         crc_new ^= (unsigned char)(crc_new & 0xff) >> 4;
@@ -131,7 +132,7 @@ uint8_t checksum_m256(const uint8_t *str_to_chk, size_t length) {
 
     uint8_t checksum = 0;
     if (str_to_chk == NULL || length == 0 || length > MAX_PACKET_LENGTH) {
-        return -1;
+        return 0;
     }
 
 	for (size_t i = 0; i < length; i++) {

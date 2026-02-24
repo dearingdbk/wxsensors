@@ -94,7 +94,6 @@
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B4800	     // Adjust as needed, main has logic to take arguments for a new baud rate
 #define MAX_LINE_LENGTH 1024
-#define CPU_WAIT_NANOSECONDS 10000000
 #define MAX_CMD_LENGTH 256
 #define MAX_MSG_LENGTH 512
 #define CPU_WAIT_USEC 10000
@@ -370,12 +369,12 @@ void handle_command(CommandType cmd) {
 	 switch (cmd) {
         case CMD_BNUM:
 			DEBUG_PRINT("BNUM Command Received with these params: %s\n", p_cmd.raw_params);
-			safe_serial_write(serial_fd, "PTB330 Batch Numbers:\vSensor:%8s\n%38s %s\n%38s %s\n%38s %s\n",
+			safe_serial_write(serial_fd, "PTB330 Batch Numbers:\n\tSensor: %s\n\t%s %s\n\t%s %s\n\t%s %s\r\n",
 									sensor_one->batch_num,
 									"Module 1:", sensor_one->module_one.batch_num,
 									"Module 2:", sensor_one->module_two.batch_num,
 									"Module 3:", sensor_one->module_three.batch_num);
-			DEBUG_PRINT("PTB330 Batch Numbers:\vSensor:%7s\n%38s %s\n%38s %s\n%38s %s\n",
+			DEBUG_PRINT("PTB330 Batch Numbers:\n\tSensor: %s\n\t%s %s\n\t%s %s\n\t%s %s\n",
 									sensor_one->batch_num,
 									"Module 1:", sensor_one->module_one.batch_num,
 									"Module 2:", sensor_one->module_two.batch_num,
@@ -431,12 +430,12 @@ void handle_command(CommandType cmd) {
 			break;
         case CMD_SNUM:
 			DEBUG_PRINT("SNUM Command Received with these params: %s\n", p_cmd.raw_params);
-			safe_serial_write(serial_fd, "PTB330 Serial Numbers:\vSensor: %7s\n%39s %s\n%39s %s\n%39s %s\n",
+			safe_serial_write(serial_fd, "PTB330 Serial Numbers:\n\tSensor: %s\n\t%s %s\n\t%s %s\n\t%s %s\r\n",
 									sensor_one->serial_number,
 									"Module 1:", sensor_one->module_one.serial_number,
 									"Module 2:", sensor_one->module_two.serial_number,
 									"Module 3:", sensor_one->module_three.serial_number);
-			DEBUG_PRINT("PTB330 Serial Numbers:\vSensor: %10s\n%39s %s\n%39s %s\n%39s %s\n",
+			DEBUG_PRINT("PTB330 Serial Numbers:\n\tSensor: %s\n\t%s %s\n\t%s %s\n\t%s %s\n",
 									sensor_one->serial_number,
 									"Module 1:", sensor_one->module_one.serial_number,
 									"Module 2:", sensor_one->module_two.serial_number,
@@ -579,7 +578,7 @@ void handle_command(CommandType cmd) {
         		// Update the sensor state
         		sensor_one->intv_data.interval = (long)val * multiplier;
 				sensor_one->intv_data.multiplier = multiplier;
-				safe_serial_write(serial_fd, "Output interval %d %s\r\n", val, sensor_one->intv_data.interval_units);
+				safe_serial_write(serial_fd, "Output interval %d %s\r\n", sensor_one->intv_data.interval, sensor_one->intv_data.interval_units);
     		}
 			pthread_cond_signal(&send_cond); // Wake our sender thread, to check if our mode has changed.
     		break;
@@ -609,7 +608,9 @@ void handle_command(CommandType cmd) {
 					sensor_one->mode = SMODE_RUN;
 				} else if (strncmp(token, "SEND", 4) == 0) {
 					sensor_one->mode = SMODE_SEND;
-				} else DEBUG_PRINT("No Match of mode\n");
+				} else {
+					DEBUG_PRINT("No Match of mode\n");
+				}
 			}
 			pthread_cond_signal(&send_cond); // Wake our sender thread, to check if our mode has changed.
 			break;
