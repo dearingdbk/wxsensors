@@ -41,9 +41,12 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
     if (!*ptr) return -1;
 
     ptb330_sensor *s = *ptr;
-    strncpy(s->serial_number, "G1234567", MAX_SN_LEN);
+	// Identity
+	strncpy(s->serial_number, "G1234567", MAX_SN_LEN);
     strncpy(s->software_version, "1.12", 5);
     s->address = 0;
+	strncpy(s->batch_num, "1234", MAX_BATCH_NUM);
+	// Configuration
     s->mode = SMODE_STOP;
     s->units = UNIT_HPA;
     s->intv_data.interval = 1;
@@ -61,7 +64,6 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
 	s->data_f = 8;
 	s->parity = 'N';
 	s->stop_b = 1;
-	strncpy(s->batch_num, "1234", MAX_BATCH_NUM);
 	memset(&s->module_one, 0, sizeof(s->module_one));
 	memset(&s->module_two, 0, sizeof(s->module_two));
 	memset(&s->module_three, 0, sizeof(s->module_three));
@@ -109,7 +111,7 @@ bool ptb330_is_ready_to_send(ptb330_sensor *sensor) {
 }
 
 
-/*typedef struct {
+typedef struct {
     PTB330_Unit unit;
     const char *label;
     double multiplier; // Multiplier to convert from hPa to this unit
@@ -118,13 +120,16 @@ bool ptb330_is_ready_to_send(ptb330_sensor *sensor) {
 static const UnitConversion unit_table[] = {
     {UNIT_HPA,   "hPa",  1.0},
     {UNIT_MBAR,  "mbar", 1.0},
+	{UNIT_BAR,   "bar",  0.001},
+	{UNIT_MMH20, "mmH2O", 10.19716},
+	{UNIT_INH20, "inH2O", 0.401463},
     {UNIT_KPA,   "kPa",  0.1},
     {UNIT_PA,    "Pa",   100.0},
     {UNIT_INHG,  "inHg", 0.0295299},
     {UNIT_MMHG,  "mmHg", 0.750062},
     {UNIT_TORR,  "torr", 0.750062},
     {UNIT_PSI,   "psi",  0.0145038}
-};*/
+};
 
 /*
  * Name:         get_unit_str
@@ -147,6 +152,20 @@ const char* get_unit_str(PTB330_Unit unit) {
     return "hPa";
 }
 
+/*
+ * Name:         get_scaled_pressure
+ * Purpose:      Converts pressure from hPa to the specified unit.
+ * Arguments:    hpa_val - Pressure value in hectopascals (hPa)
+ *               unit    - Target unit for conversion
+ *
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      Converted pressure value, or original hPa if unit not found.
+ * Assumptions:  unit_table is properly initialized with valid multipliers.
+ *
+ * Notes:        Looks up conversion multiplier in unit_table.
+ *               Returns original value if unit not found (should not happen).
+ */
 double get_scaled_pressure(float hpa_val, PTB330_Unit unit) {
     for (int i = 0; i < (int)(sizeof(unit_table)/sizeof(UnitConversion)); i++) {
         if (unit_table[i].unit == unit) return (double)hpa_val * unit_table[i].multiplier;
@@ -154,18 +173,6 @@ double get_scaled_pressure(float hpa_val, PTB330_Unit unit) {
     return (double)hpa_val;
 }
 
-/*void ptb330_format_output(ptb330_sensor *sensor, char *dest, size_t max_len) {
-    // In a full implementation, you would parse the format_string (e.g., #P, #U)
-    // For now, we provide the standard PTB330 default output.
-    const char* unit_str = "hPa";
-    switch(sensor->units) {
-        case UNIT_INHG: unit_str = "inHg"; break;
-        case UNIT_PSI:  unit_str = "psi"; break;
-        default:        unit_str = "hPa"; break;
-    }
-
-    snprintf(dest, max_len, "P = %.2f %s\r\n", sensor->pressure + sensor->offset, unit_str);
-}*/
 
 /*
  * Name:         parse_form_string
