@@ -196,29 +196,6 @@ void cleanup_and_exit(int exit_code) {
 }
 
 
-/*
- * Name:         strip_whitespace
- * Purpose:      helper function to strip all whitespace from the string.
- * Arguments:    s the destination string pointer.
- *
- * Output:       None.
- * Modifies:     s.
- * Returns:      None.
- * Assumptions:
- *
- * Bugs:         None known.
- * Notes:		 s and d point to the same string pointer, advancing s if it is a space, moves non-space chars up the string.
- */
-void strip_whitespace(char* s) {
-    char* d = s; // Destination pointer
-    do {
-        // isspace checks for ' ', \t, \n, \v, \f, \r
-        while (isspace((unsigned char)*s)) {
-            s++;
-        }
-    } while ((*d++ = *s++));
-}
-
 // ---------------- Command handling ----------------
 
 
@@ -246,33 +223,35 @@ void parse_message(char *msg, ParsedMessage *p_message) {
 
 	if ((token = strtok_r(msg, ",", &saveptr))) p_message->p1_pressure = atof(token);  // Set P1 pressure.
    	#define NEXT_T strtok_r(NULL, ",", &saveptr) // Small macro to keep the code below cleaner.
-
+	// These are pulled from a text file in this format:
+	// 1013.25,1013.24,1013.26,23.4,23.5,23.2,0,0,0,1013.25,0.00
+	// P1 Pressure,P2 Pressure,P3 Pressure,P1 Temp,P2 Temp,P3 Temp,P1 Error,P2 Error, P3, Error,Pressure Average,Pressure Trend
    	if ((token = NEXT_T)) p_message->p2_pressure = atof(token); // Set P2 pressure.
    	if ((token = NEXT_T)) p_message->p3_pressure = atof(token); // Set P3 pressure.
-	if ((token = NEXT_T)) p_message->p1_temperature = atof(token);
-	if ((token = NEXT_T)) p_message->p2_temperature = atof(token);
-	if ((token = NEXT_T)) p_message->p3_temperature = atof(token);
-   	if ((token = NEXT_T)) {
+	if ((token = NEXT_T)) p_message->p1_temperature = atof(token); // Set P1 temperature.
+	if ((token = NEXT_T)) p_message->p2_temperature = atof(token); // Set P2 temperature.
+	if ((token = NEXT_T)) p_message->p3_temperature = atof(token); // Set P3 temperature.
+   	if ((token = NEXT_T)) { // Set P1 error.
 		if (atoi(token) == 1) {
 			p_message->p1_sensor_error = IS_ERROR;
 		} else p_message->p1_sensor_error = NO_ERROR;
 	}
-   	if ((token = NEXT_T)) {
+   	if ((token = NEXT_T)) { // Set P2 error.
 		if (atoi(token) == 1) {
 			p_message->p2_sensor_error = IS_ERROR;
 		} else p_message->p2_sensor_error = NO_ERROR;
 	}
-   	if ((token = NEXT_T)) {
+   	if ((token = NEXT_T)) { // Set P3 error.
 		if (atoi(token) == 1) {
 			p_message->p3_sensor_error = IS_ERROR;
 		} else p_message->p3_sensor_error = NO_ERROR;
 	}
-	if ((token = NEXT_T)) p_message->p_average = atof(token);
-	if ((token = NEXT_T)) p_message->trend = atof(token);
+	if ((token = NEXT_T)) p_message->p_average = atof(token); // Set Pressure Average.
+	if ((token = NEXT_T)) p_message->trend = atof(token); // Set Pressure Trend.
 	#undef NEXT_T
-	p_message->altitude = sensor_one->hcp_altitude;
+	p_message->altitude = sensor_one->hcp_altitude; // Update the sensor hcp_altitude.
 	strncpy(p_message->serial_num, sensor_one->serial_number, MAX_SN_LEN - 1);
-	p_message->serial_num[MAX_SN_LEN] = '\0';
+	p_message->serial_num[MAX_SN_LEN - 1] = '\0';
 	p_message->address = sensor_one->address;
 }
 
@@ -315,7 +294,7 @@ void process_and_send(ParsedMessage *msg) {
 CommandType parse_command(const char *buf, ParsedCommand *cmd) {
     if (buf == NULL || cmd == NULL) return CMD_UNKNOWN;
 
-	memset(cmd, 0, sizeof(ParsedCommand));
+	memset(cmd, 0, sizeof(ParsedCommand)); // zero out the contents of our ParsedCommand
     const char *ptr = buf;
 
     while (*ptr && isspace((unsigned char)*ptr)) ptr++; // Skip any leading whitespace.
@@ -332,7 +311,7 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
                 // Skip spaces to point at arguments
                 while (*ptr && isspace((unsigned char)*ptr)) ptr++;
 
-				size_t param_len = strcspn(ptr, "\n\r");
+				size_t param_len = strcspn(ptr, "\n\r"); // Get the size of the string, up to the \n \r
 
 				if (param_len > sizeof(cmd->raw_params) - 1) {
     				param_len = sizeof(cmd->raw_params) - 1;
@@ -686,10 +665,12 @@ void handle_command(CommandType cmd) {
 					DEBUG_PRINT("P P3H P1 P2 P3 DP12 DP13 DP23 HCP QFE QNH TP1 TP2 TP3 A3H\n"
 												 "Additional parameters\n"
 												 "#T, #R, #N, #RN, Un, n.n, CS2, CS4, CSX, SN, ERR, PSTAB, ADDR, DATE, TIME\r\n");
-				} else 	safe_console_error("Invalid Command Format: %s\n", strerror(errno));
+				} else 	{
+				      safe_console_error("Invalid Command Format: %s\n", strerror(errno));
+				}
 			} else {
 				strncpy(sensor_one->format_string, p_cmd.raw_params, MAX_FORM_STR - 1); // Copy the param string to the sensor, error handling?
-				sensor_one->format_string[MAX_FORM_STR] = '\0';
+				sensor_one->format_string[MAX_FORM_STR - 1] = '\0';
 				parse_form_string(p_cmd.raw_params); // This is going to go through the remaing string after FORM, and build the compiled_form[] fields.
 			}
 			break;
@@ -960,24 +941,12 @@ int main(int argc, char *argv[]) {
 		cleanup_and_exit(1);
     }
 
-	handle_command(parse_command("SNUM\r\n", &p_cmd));
-	handle_command(parse_command("BNUM\r\n", &p_cmd));
-	handle_command(parse_command("SERI\r\n", &p_cmd));
-	handle_command(parse_command("SERI 9600 e 1 7", &p_cmd));
-	handle_command(parse_command("SERI n 1 4800 8", &p_cmd));
 //	handle_command(parse_command("ERRS\r\n", &p_cmd));
 //	handle_command(parse_command("HELP\r\n", &p_cmd));
 //	handle_command(parse_command("LOCK 2\r\n", &p_cmd));
-//	handle_command(parse_command("R\r\n", &p_cmd));
 //	handle_command(parse_command("INTV 2 s\r\n", &p_cmd));
-//	handle_command(parse_command("FORM", &p_cmd));
-//	handle_command(parse_command("FORM P \" \" U \" \" P3H \" \" CS2 \\R\\N", &p_cmd));
-//	handle_command(parse_command("FORM ??", &p_cmd));
-//	handle_command(parse_command("SEND\r\n", &p_cmd));
-//	handle_command(parse_command("OPEN 0", &p_cmd));
-//	handle_command(parse_command("CLOSER", &p_cmd));
-	handle_command(parse_command("VERS\r\n", &p_cmd));
-	handle_command(parse_command("?", &p_cmd));
+	handle_command(parse_command("FORM P \" \" U \" \" P1  \" :\" CS4", &p_cmd));
+	handle_command(parse_command("R\r\n", &p_cmd));
 
 
     safe_console_print("Press 'q' + Enter to quit.\n");

@@ -188,7 +188,7 @@ void parse_form_string(const char *input) {
     form_item_count = 0;
     const char *p = input;
 
-    while (*p && form_item_count < (MAX_FORM_ITEMS - 1)) { // This array is size 50, only add entries at 0-49.
+    while (*p && form_item_count < (MAX_FORM_ITEMS)) { // This array is size 50, only add entries at 0-49.
 		if (isdigit((unsigned char)p[0])) {
         	// Update the "active" format state
         	active_width = atoi(p); // Pulls out the first integer, up to . without moving pointer.
@@ -205,11 +205,17 @@ void parse_form_string(const char *input) {
             p++; // Skip leading quote
             int i = 0;
             while (*p && *p != '"' && i < (MAX_LITERAL_SIZE - 1)) { // char array 'literal' in struct is size 32.
-                compiled_form[form_item_count].literal[i++] = *p++;
+                compiled_form[form_item_count].literal[i++] = toupper((unsigned char)*p++);
             }
-            compiled_form[form_item_count].literal[i] = '\0';
-            compiled_form[form_item_count].type = FORM_LITERAL;
-            if (*p == '"') p++; // Skip trailing quote
+            if (*p == '"') {
+				p++; // Skip trailing quote, if there was no trailing quote the string is likely truncated and full of junk.
+            	compiled_form[form_item_count].literal[i] = '\0'; // here is why we need the (MAX_LITERAL_SIZE - 1) above.
+            	compiled_form[form_item_count].type = FORM_LITERAL;
+			} else { // There was no trailing quote, null out the string and shout.
+				fprintf(stderr, "Error: Unclosed string literal in format\n");
+            	compiled_form[form_item_count].literal[0] = '\0'; // NULL terminate the string, this dumps all the consumed string.
+            	compiled_form[form_item_count].type = FORM_LITERAL;
+			}
             form_item_count++;
         } else if (*p == '\\' || *p == '#') {
 			char next = toupper((unsigned char)*(p + 1));
@@ -244,6 +250,8 @@ void parse_form_string(const char *input) {
 				compiled_form[form_item_count].literal[0] = (unsigned char)dec_val;
 	            compiled_form[form_item_count].literal[1] = '\0';
 				form_item_count++;
+			} else {
+				p++; // Catch the bug if someone enters \\ or \* into the string.
 			}
 		} else if (*p == 'U' || *p == 'u') {
 			compiled_form[form_item_count].type = FORM_VAR_UNIT;
@@ -260,11 +268,12 @@ void parse_form_string(const char *input) {
             // Handle Variables (P, P1, ERR, etc.)
             char var_name[10];
             int i = 0;
+			bool bad_cmd = false;
             while (*p && !isspace(*p) && *p != '"' && *p != '\\' && i < 9) {
-                var_name[i++] = *p++;
+                var_name[i++] = toupper((unsigned char)*p++);
             }
             var_name[i] = '\0';
-
+			// make sure that it cascades into selection, i.e. check for PSTAB before P.
             if (strncmp(var_name, "P1", 2) == 0) compiled_form[form_item_count].type = FORM_VAR_P1;
             else if (strncmp(var_name, "P2", 2) == 0) compiled_form[form_item_count].type = FORM_VAR_P2;
             else if (strncmp(var_name, "P3H", 3) == 0) compiled_form[form_item_count].type = FORM_VAR_P3H;
@@ -289,11 +298,14 @@ void parse_form_string(const char *input) {
             else if (strncmp(var_name, "DATE", 4) == 0) compiled_form[form_item_count].type = FORM_VAR_DATE;
             else if (strncmp(var_name, "TIME", 4) == 0) compiled_form[form_item_count].type = FORM_VAR_TIME;
             else if (strncmp(var_name, "P", 1) == 0) compiled_form[form_item_count].type = FORM_VAR_P;
-            // ... and so on
+            else bad_cmd = true;
+			// ... and so on
 
-			compiled_form[form_item_count].width = active_width;
-        	compiled_form[form_item_count].precision = active_precision;
-        	form_item_count++;
+			if (!bad_cmd) {
+				compiled_form[form_item_count].width = active_width;
+        		compiled_form[form_item_count].precision = active_precision;
+        		form_item_count++;
+			}
         }
         else {
             p++; // Skip spaces between tokens
