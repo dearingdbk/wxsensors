@@ -253,6 +253,7 @@ void parse_message(char *msg, ParsedMessage *p_message) {
 	strncpy(p_message->serial_num, sensor_one->serial_number, MAX_SN_LEN - 1);
 	p_message->serial_num[MAX_SN_LEN - 1] = '\0';
 	p_message->address = sensor_one->address;
+	p_message->units = sensor_one->units;
 }
 
 /*
@@ -679,6 +680,44 @@ void handle_command(CommandType cmd) {
 		case CMD_DATE:
 			break;
 		case CMD_UNIT:
+			DEBUG_PRINT("UNIT Command Received with these params: %s\n", p_cmd.raw_params);
+			// Parse up to two tokens: "UNIT Pa" or "UNIT P mmHg"
+		    char *sptr;
+    		char *first = strtok_r(p_cmd.raw_params, " \t\r\n", &sptr);
+    		char *second = strtok_r(NULL, " \t\r\n", &sptr);
+
+    		if (!first || first[0] == '\0' || first[0] == '?') {
+        		// Query current unit setting
+        		safe_serial_write(serial_fd, "Unit: %s\r\n", get_unit_str(sensor_one->units));
+        		break;
+    		}
+
+			PTB330_Unit new_unit = UNIT_HPA; // default
+
+			if (!second) {
+		        // Single argument: "UNIT Pa" - set global default
+		        // Find matching unit in table
+        		for (size_t j = 0; j < sizeof(unit_table)/sizeof(UnitConversion); j++) {
+            		if (strcasecmp(first, unit_table[j].label) == 0) {
+                		new_unit = unit_table[j].unit;
+                		break;
+            		}
+        		}
+		        sensor_one->units = new_unit;
+        		safe_serial_write(serial_fd, "Unit: %s\r\n", get_unit_str(sensor_one->units));
+    		} else {
+     			// Two arguments: "UNIT P mmHg" - variable-specific (store for later)
+		        // Find matching unit in table
+        		for (size_t j = 0; j < sizeof(unit_table)/sizeof(UnitConversion); j++) {
+            		if (strcasecmp(second, unit_table[j].label) == 0) {
+                		new_unit = unit_table[j].unit;
+                		break;
+            		}
+        		}
+			    // TODO: Implement per-variable unit storage
+		        sensor_one->units = new_unit;
+        		safe_serial_write(serial_fd, "Unit: %s\r\n", get_unit_str(sensor_one->units));
+    		}
 			break;
 		case CMD_DSEL:
 			break;
@@ -945,6 +984,8 @@ int main(int argc, char *argv[]) {
 //	handle_command(parse_command("HELP\r\n", &p_cmd));
 //	handle_command(parse_command("LOCK 2\r\n", &p_cmd));
 //	handle_command(parse_command("INTV 2 s\r\n", &p_cmd));
+
+	handle_command(parse_command("UNIT mmHG", &p_cmd));
 	handle_command(parse_command("FORM P \" \" U \" \" P1  \" :\" CS4", &p_cmd));
 	handle_command(parse_command("R\r\n", &p_cmd));
 

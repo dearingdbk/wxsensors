@@ -34,8 +34,8 @@ typedef enum {
 } PTB330_SMode;
 
 typedef enum {
-    UNIT_HPA, UNIT_MBAR, UNIT_KPA, UNIT_PA,
-    UNIT_INHG, UNIT_MMH2O, UNIT_MMHG, UNIT_TORR, UNIT_PSI
+    UNIT_HPA, UNIT_MBAR, UNIT_KPA, UNIT_PA, UNIT_BAR,
+    UNIT_INHG, UNIT_MMH2O, UNIT_MMHG, UNIT_TORR, UNIT_PSI, UNIT_INH2O
 } PTB330_Unit;
 
 
@@ -48,6 +48,9 @@ typedef struct {
 static const UnitConversion unit_table[] = {
     {UNIT_HPA,   "hPa",  1.0},
     {UNIT_MBAR,  "mbar", 1.0},
+	{UNIT_BAR,   "bar",  0.001},
+	{UNIT_MMH2O, "mmH2O", 10.19716},
+	{UNIT_INH2O, "inH2O", 0.401463},
     {UNIT_KPA,   "kPa",  0.1},
     {UNIT_PA,    "Pa",   100.0},
     {UNIT_INHG,  "inHg", 0.0295299},
@@ -332,6 +335,7 @@ typedef struct {
 	double altitude;
 	char serial_num[MAX_SN_LEN];
 	uint8_t address;
+	PTB330_Unit units;
 } ParsedMessage;
 
 typedef enum {
@@ -384,4 +388,5 @@ void ptb330_format_output(ptb330_sensor *sensor, char *dest, size_t max_len);
 void parse_form_string(const char *input);
 void build_dynamic_output(ParsedMessage *live_date, char *output_buf, size_t buf_len);
 double get_hcp_pressure(double station_p, double altitude_m);
+const char* get_unit_str(PTB330_Unit unit);
 #endif
