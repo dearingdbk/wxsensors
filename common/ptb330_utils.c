@@ -327,7 +327,7 @@ void parse_form_string(const char *input) {
 void build_dynamic_output(ParsedMessage *p_msg, char *output_buf, size_t buf_len) {
     char *ptr = output_buf;
     size_t remaining = buf_len;
-    output_buf[0] = '\0';    // Clear the buffer
+    output_buf[0] = '\0';    // Terminate the string at the first char.
 
 	time_t t = time(NULL);
 	struct tm *tm_info = localtime(&t);
@@ -545,7 +545,16 @@ void build_dynamic_output(ParsedMessage *p_msg, char *output_buf, size_t buf_len
 				break;
 			}
 			case FORM_VAR_A3H: {
-																													
+				if (compiled_form[i].width == 0) {
+				    // 0.0 case: Revert to default sensor precision
+	                written = snprintf(ptr, remaining, "%+.2f", p_msg->tendency);
+				} else {
+    				// Custom case: Use the x.y provided by the user
+    				written = snprintf(ptr, remaining, "%*.*lf",
+                    	   	compiled_form[i].width,
+                       		compiled_form[i].precision,
+                       		p_msg->tendency);
+				}
 				break;
 			}
 			case FORM_VAR_CS2: {

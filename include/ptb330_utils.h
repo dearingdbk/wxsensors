@@ -332,6 +332,7 @@ typedef struct {
 	SensorError p3_sensor_error;
 	double p_average;
 	double trend;
+	double tendency;
 	double altitude;
 	char serial_num[MAX_SN_LEN];
 	uint8_t address;

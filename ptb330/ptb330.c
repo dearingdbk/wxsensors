@@ -120,9 +120,6 @@ const char *program_name = "unknown";
 // This needs to be freed upon exit.
 ptb330_sensor *sensor_one = NULL; // Global pointer to struct for atmosvue30 sensor .
 
-ParsedCommand p_cmd;
-ParsedMessage p_msg;
-
 /* Synchronization primitives */
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -248,6 +245,7 @@ void parse_message(char *msg, ParsedMessage *p_message) {
 	}
 	if ((token = NEXT_T)) p_message->p_average = atof(token); // Set Pressure Average.
 	if ((token = NEXT_T)) p_message->trend = atof(token); // Set Pressure Trend.
+	if ((token = NEXT_T)) p_message->tendency = atof(token); // Set Pressure Tendency.
 	#undef NEXT_T
 	p_message->altitude = sensor_one->hcp_altitude; // Update the sensor hcp_altitude.
 	strncpy(p_message->serial_num, sensor_one->serial_number, MAX_SN_LEN - 1);
@@ -344,11 +342,11 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
  * Bugs:         None known.
  * Notes:
  */
-void handle_command(CommandType cmd) {
+void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 
 	 switch (cmd) {
         case CMD_BNUM:
-			DEBUG_PRINT("BNUM Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("BNUM Command Received with these params: %s\n", p_cmd->raw_params);
 			safe_serial_write(serial_fd, "PTB330 Batch Numbers:\n\tSensor: %s\n\t%s %s\n\t%s %s\n\t%s %s\r\n",
 									sensor_one->batch_num,
 									"Module 1:", sensor_one->module_one.batch_num,
@@ -361,11 +359,11 @@ void handle_command(CommandType cmd) {
 									"Module 3:", sensor_one->module_three.batch_num);
 			break;
         case CMD_SERI:
-			DEBUG_PRINT("SERI Command Received with these params: %s\n", p_cmd.raw_params);
-				if (p_cmd.raw_params[0] != '\0') { // changes required.
+			DEBUG_PRINT("SERI Command Received with these params: %s\n", p_cmd->raw_params);
+				if (p_cmd->raw_params[0] != '\0') { // changes required.
     				// Tokenize the parameters (works for "9600 o 1" or "o", or any order of params)
     				char *saveptr;
-    				char *token = strtok_r(p_cmd.raw_params, " ", &saveptr);
+    				char *token = strtok_r(p_cmd->raw_params, " ", &saveptr);
 					while (token != NULL) {
     					size_t len = strlen(token);
 
@@ -409,7 +407,7 @@ void handle_command(CommandType cmd) {
 								(int)sensor_one->stop_b);
 			break;
         case CMD_SNUM:
-			DEBUG_PRINT("SNUM Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("SNUM Command Received with these params: %s\n", p_cmd->raw_params);
 			safe_serial_write(serial_fd, "PTB330 Serial Numbers:\n\tSensor: %s\n\t%s %s\n\t%s %s\n\t%s %s\r\n",
 									sensor_one->serial_number,
 									"Module 1:", sensor_one->module_one.serial_number,
@@ -422,13 +420,13 @@ void handle_command(CommandType cmd) {
 									"Module 3:", sensor_one->module_three.serial_number);
             break;
 		case CMD_ERRS:
-			DEBUG_PRINT("ERRS Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("ERRS Command Received with these params: %s\n", p_cmd->raw_params);
 			break;
 		case CMD_HELP:
-			DEBUG_PRINT("HELP Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("HELP Command Received with these params: %s\n", p_cmd->raw_params);
 			break;
 		case CMD_LOCK:
-			DEBUG_PRINT("LOCK Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("LOCK Command Received with these params: %s\n", p_cmd->raw_params);
 			break;
 		case CMD_INFO:
 			char current_time[20];
@@ -468,9 +466,9 @@ void handle_command(CommandType cmd) {
 								sensor_one->echo_enabled ? 1 : 0);
 			break;
 		case CMD_ECHO:
-			if (p_cmd.raw_params[0] != '\0') {
+			if (p_cmd->raw_params[0] != '\0') {
     			char *saveptr;
-    			char *token = strtok_r(p_cmd.raw_params, " \r\n", &saveptr);
+    			char *token = strtok_r(p_cmd->raw_params, " \r\n", &saveptr);
 				if (token != NULL) {
 					char *ptr = token; // Temp pointer so we can walk through the string with toupper().
 					for (; *ptr; ++ptr) *ptr = toupper((unsigned char)*ptr); // Uppercase all the strings!
@@ -484,32 +482,32 @@ void handle_command(CommandType cmd) {
 			safe_serial_write(serial_fd, "Echo\t: %s\r\n", sensor_one->echo_enabled ? "ON" : "OFF");
 			break;
 		case CMD_RESET:
-			DEBUG_PRINT("RESET Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("RESET Command Received with these params: %s\n", p_cmd->raw_params);
 			break;
 		case CMD_VERS:
-			DEBUG_PRINT("VERS Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("VERS Command Received with these params: %s\n", p_cmd->raw_params);
 			safe_serial_write(serial_fd, "PTB330 / %s\r\n", sensor_one->software_version );
 			break;
 		case CMD_MODS:
-			DEBUG_PRINT("MODS Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("MODS Command Received with these params: %s\n", p_cmd->raw_params);
 			break;
 		case CMD_CON:
-			DEBUG_PRINT("CON Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("CON Command Received with these params: %s\n", p_cmd->raw_params);
 			break;
 		case CMD_R:
-			DEBUG_PRINT("R Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("R Command Received with these params: %s\n", p_cmd->raw_params);
 			sensor_one->mode = SMODE_RUN;
 			pthread_cond_signal(&send_cond); // Wake our sender thread, to check if our mode has changed.
 			break;
 		case CMD_INTV: {
-			DEBUG_PRINT("INTV Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("INTV Command Received with these params: %s\n", p_cmd->raw_params);
     		int val = 0;
     		char unit_str[MAX_INTV_STR] = {0};
     		long multiplier = 1;
 
     		// sscanf skips leading spaces automatically.
 		    // %d grabs the number, %15s grabs the following word.
-    		int found = sscanf(p_cmd.raw_params, "%d %15s", &val, unit_str);
+    		int found = sscanf(p_cmd->raw_params, "%d %15s", &val, unit_str);
 
     		if (found >= 1) {
         		// Handle the value limit (0-255 per Vaisala spec)
@@ -564,21 +562,22 @@ void handle_command(CommandType cmd) {
     		break;
 		}
 		case CMD_SEND:
-			DEBUG_PRINT("SEND Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("SEND Command Received with these params: %s\n", p_cmd->raw_params);
         	char *line = get_next_line_copy(file_ptr, &file_mutex);
 
         	if (line) {
-				parse_message(line, &p_msg);
-				process_and_send(&p_msg);
+		        ParsedMessage local_msg;  // LOCAL
+				parse_message(line, &local_msg);
+				process_and_send(&local_msg);
 				fflush(NULL);
             	free(line); // caller of get_next_line_copy() must free resource.
 				line = NULL;
         	}
 			break;
 		case CMD_SMODE:
-			DEBUG_PRINT("SMODE Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("SMODE Command Received with these params: %s\n", p_cmd->raw_params);
 			char *saveptr;
-			char *token = strtok_r(p_cmd.raw_params, " ", &saveptr);
+			char *token = strtok_r(p_cmd->raw_params, " ", &saveptr);
 			if (token != NULL) {
 				if (strncmp(token, "STOP", 4) == 0) {
 					sensor_one->mode = SMODE_STOP;
@@ -595,11 +594,11 @@ void handle_command(CommandType cmd) {
 			pthread_cond_signal(&send_cond); // Wake our sender thread, to check if our mode has changed.
 			break;
 		case CMD_SDELAY:
-			DEBUG_PRINT("SDELAY Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("SDELAY Command Received with these params: %s\n", p_cmd->raw_params);
 			break;
 		case CMD_ADDR:
-			if (p_cmd.raw_params[0] != '\0') {
-				uint8_t new_address = (uint8_t)atoi(p_cmd.raw_params);
+			if (p_cmd->raw_params[0] != '\0') {
+				uint8_t new_address = (uint8_t)atoi(p_cmd->raw_params);
 				sensor_one->address = new_address;
 				safe_serial_write(serial_fd, "Address : 2 ?  %hhu\r\n",sensor_one->address);
 			} else {
@@ -607,9 +606,9 @@ void handle_command(CommandType cmd) {
 			}
 			break;
 		case CMD_OPEN:
-			DEBUG_PRINT("OPEN Command Received with these params: %s\n", p_cmd.raw_params);
-			if (p_cmd.raw_params[0] != '\0') {
-				uint8_t req_address = (uint8_t)atoi(p_cmd.raw_params);
+			DEBUG_PRINT("OPEN Command Received with these params: %s\n", p_cmd->raw_params);
+			if (p_cmd->raw_params[0] != '\0') {
+				uint8_t req_address = (uint8_t)atoi(p_cmd->raw_params);
 				if (sensor_one->mode == SMODE_POLL && sensor_one->address == req_address) {
 					sensor_one->mode = SMODE_STOP;
 					safe_serial_write(serial_fd, "PTB330: %hhu line opened for operator commands\r\n", sensor_one->address);
@@ -620,7 +619,7 @@ void handle_command(CommandType cmd) {
 			}
 			break;
 		case CMD_CLOSE:
-			DEBUG_PRINT("CLOSE Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("CLOSE Command Received with these params: %s\n", p_cmd->raw_params);
 			if (sensor_one->mode == SMODE_STOP) {
 				sensor_one->mode = SMODE_POLL;
 				safe_serial_write(serial_fd, "line closed\r\n");
@@ -628,38 +627,38 @@ void handle_command(CommandType cmd) {
 			}
 			break;
 		case CMD_SCOM:
-			DEBUG_PRINT("SCOM Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("SCOM Command Received with these params: %s\n", p_cmd->raw_params);
 			// If required this can be enabled in the handling of CMD_UNKNOWN
 			break;
 		case CMD_TQFE:
-			DEBUG_PRINT("TQFE Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("TQFE Command Received with these params: %s\n", p_cmd->raw_params);
 			break;
 		case CMD_DPMAX:
-			DEBUG_PRINT("DPMAX Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("DPMAX Command Received with these params: %s\n", p_cmd->raw_params);
 			break;
 		case CMD_HHCP:
-			DEBUG_PRINT("HHCP Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("HHCP Command Received with these params: %s\n", p_cmd->raw_params);
 			break;
 		case CMD_HQFE:
-			DEBUG_PRINT("HQFE Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("HQFE Command Received with these params: %s\n", p_cmd->raw_params);
 			break;
 		case CMD_HQNH:
-			DEBUG_PRINT("HQNH Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("HQNH Command Received with these params: %s\n", p_cmd->raw_params);
 			break;
 		case CMD_PSTAB:
-			DEBUG_PRINT("PSTAB Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("PSTAB Command Received with these params: %s\n", p_cmd->raw_params);
 			break;
 		case CMD_AVRG:
 			break;
 		case CMD_FORM:
-			if (p_cmd.raw_params[0] == '\0') {
+			if (p_cmd->raw_params[0] == '\0') {
 				DEBUG_PRINT("Output format : %s\r\n", sensor_one->format_string);
 				safe_serial_write(serial_fd, "Output format : %s\r\n", sensor_one->format_string);
-			} else if (p_cmd.raw_params[0] == '?') {
-				if (p_cmd.raw_params[1] == '\0') {
+			} else if (p_cmd->raw_params[0] == '?') {
+				if (p_cmd->raw_params[1] == '\0') {
 					DEBUG_PRINT("Output format : %s\r\n", sensor_one->format_string);
 					safe_serial_write(serial_fd, "Output format : %s\r\n", sensor_one->format_string);
-				} else if (p_cmd.raw_params[1] == '?') {
+				} else if (p_cmd->raw_params[1] == '?') {
 					safe_serial_write(serial_fd, "P P3H P1 P2 P3 DP12 DP13 DP23 HCP QFE QNH TP1 TP2 TP3 A3H\n"
 												 "Additional parameters\n"
 												 "#T, #R, #N, #RN, Un, n.n, CS2, CS4, CSX, SN, ERR, PSTAB, ADDR, DATE, TIME\r\n");
@@ -670,9 +669,9 @@ void handle_command(CommandType cmd) {
 				      safe_console_error("Invalid Command Format: %s\n", strerror(errno));
 				}
 			} else {
-				strncpy(sensor_one->format_string, p_cmd.raw_params, MAX_FORM_STR - 1); // Copy the param string to the sensor, error handling?
+				strncpy(sensor_one->format_string, p_cmd->raw_params, MAX_FORM_STR - 1); // Copy the param string to the sensor, error handling?
 				sensor_one->format_string[MAX_FORM_STR - 1] = '\0';
-				parse_form_string(p_cmd.raw_params); // This is going to go through the remaing string after FORM, and build the compiled_form[] fields.
+				parse_form_string(p_cmd->raw_params); // This is going to go through the remaing string after FORM, and build the compiled_form[] fields.
 			}
 			break;
 		case CMD_TIME:
@@ -680,10 +679,10 @@ void handle_command(CommandType cmd) {
 		case CMD_DATE:
 			break;
 		case CMD_UNIT:
-			DEBUG_PRINT("UNIT Command Received with these params: %s\n", p_cmd.raw_params);
+			DEBUG_PRINT("UNIT Command Received with these params: %s\n", p_cmd->raw_params);
 			// Parse up to two tokens: "UNIT Pa" or "UNIT P mmHg"
 		    char *sptr;
-    		char *first = strtok_r(p_cmd.raw_params, " \t\r\n", &sptr);
+    		char *first = strtok_r(p_cmd->raw_params, " \t\r\n", &sptr);
     		char *second = strtok_r(NULL, " \t\r\n", &sptr);
 
     		if (!first || first[0] == '\0' || first[0] == '?') {
@@ -803,8 +802,12 @@ void* receiver_thread(void* arg) {
 	    	if (c == '\r' || c == '\n') {
                 if (len > 0) {
                     line[len] = '\0'; // Terminate with NULL for safety.
+
+                    ParsedCommand local_cmd;
+                    CommandType cmd_type = parse_command(line, &local_cmd);
+
 					pthread_mutex_lock(&send_mutex);   // <--- LOCK HERE
-		    		handle_command(parse_command(line, &p_cmd)); // handle received command here.
+		    		handle_command(cmd_type, &local_cmd); // handle received command here.
                     pthread_mutex_unlock(&send_mutex); // <--- UNLOCK HERE
                     len = 0;
                 } else { // empty line ignore
@@ -879,8 +882,9 @@ void* sender_thread(void* arg) {
             char *line = get_next_line_copy(file_ptr, &file_mutex);
 
             if (line) {
-                parse_message(line, &p_msg);
-                process_and_send(&p_msg);
+                ParsedMessage local_msg;  // LOCAL, not global
+                parse_message(line, &local_msg);
+                process_and_send(&local_msg);
                 fflush(NULL);  // Flush all output streams
                 free(line);
                 line = NULL;
@@ -980,15 +984,16 @@ int main(int argc, char *argv[]) {
 		cleanup_and_exit(1);
     }
 
+    ParsedCommand local_cmd;
+
 //	handle_command(parse_command("ERRS\r\n", &p_cmd));
 //	handle_command(parse_command("HELP\r\n", &p_cmd));
 //	handle_command(parse_command("LOCK 2\r\n", &p_cmd));
-//	handle_command(parse_command("INTV 2 s\r\n", &p_cmd));
+//	handle_command(parse_command("INTV 5 s\r\n", &local_cmd), &local_cmd);
 
-	handle_command(parse_command("UNIT mmHG", &p_cmd));
-	handle_command(parse_command("FORM P \" \" U \" \" P1  \" :\" CS4", &p_cmd));
-	handle_command(parse_command("R\r\n", &p_cmd));
-
+//	handle_command(parse_command("UNIT mmHG", &local_cmd), &local_cmd);
+	handle_command(parse_command("FORM P \" \" U \" \" P1  \" \" U \" :\" A3H", &local_cmd), &local_cmd);
+	handle_command(parse_command("R\r\n", &local_cmd), &local_cmd);
 
     safe_console_print("Press 'q' + Enter to quit.\n");
     struct pollfd fds[1];
