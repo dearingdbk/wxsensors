@@ -239,9 +239,6 @@ uint8_t address = 0;
 // This needs to be freed upon exit.
 av30_sensor *sensor_one = NULL; // Global pointer to struct for atmosvue30 sensor .
 
-ParsedCommand p_cmd;
-ParsedMessage p_msg;
-
 /* Synchronization primitives */
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -532,8 +529,6 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 	uint16_t received = (uint16_t)strtol(hex_tmp, NULL, 16);
 
  	// Check if the CRC received is the same as the data sent with it.
-	DEBUG_PRINT("Calculated CRC is %04X\n", calculated);
-	DEBUG_PRINT("Received CRC is %04X\n", received);
 	if (calculated != received && sensor_one->crc_checking_enabled) return CMD_INVALID_CRC;
 
     // --- IDENTIFY ENUM & PARSE CONTENT ---
@@ -676,14 +671,15 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
  * Bugs:         None known.
  * Notes:
  */
-void handle_command(CommandType cmd) {
+void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 
 	 switch (cmd) {
         case CMD_POLL:
         	char *line = get_next_line_copy(file_ptr, &file_mutex);
         	if (line) {
-				parse_message(line, &p_msg);
-				process_and_send(&p_msg);
+				ParsedMessage local_msg;
+				parse_message(line, &local_msg);
+				process_and_send(&local_msg);
             	free(line); // caller of get_next_line_copy() must free resource.
 				line = NULL;
         	}
@@ -722,120 +718,120 @@ void handle_command(CommandType cmd) {
             // Switch Fall-Through SET and SETNC run the same code.
         case CMD_SET:
 			// Update sensor id if a change is required.
-			if (p_cmd.sensor_id != p_cmd.params.set_params.new_sensor_id && p_cmd.params.set_params.new_sensor_id <= MAX_ADDRESS_NUM) {
-				sensor_one->sensor_id = p_cmd.params.set_params.new_sensor_id;
+			if (p_cmd->sensor_id != p_cmd->params.set_params.new_sensor_id && p_cmd->params.set_params.new_sensor_id <= MAX_ADDRESS_NUM) {
+				sensor_one->sensor_id = p_cmd->params.set_params.new_sensor_id;
 			}
 			// Update if alarm 1 is set TRUE/FALSE
-			if (sensor_one->user_alarms.alarm1_set != p_cmd.params.set_params.alarm1_set) {
-				sensor_one->user_alarms.alarm1_set = p_cmd.params.set_params.alarm1_set;
+			if (sensor_one->user_alarms.alarm1_set != p_cmd->params.set_params.alarm1_set) {
+				sensor_one->user_alarms.alarm1_set = p_cmd->params.set_params.alarm1_set;
 			}
 			// Update if alarm 1 is active TRUE/FALSE
-			if (sensor_one->user_alarms.alarm1_active != p_cmd.params.set_params.alarm1_active) {
-				sensor_one->user_alarms.alarm1_active = p_cmd.params.set_params.alarm1_active;
+			if (sensor_one->user_alarms.alarm1_active != p_cmd->params.set_params.alarm1_active) {
+				sensor_one->user_alarms.alarm1_active = p_cmd->params.set_params.alarm1_active;
 			}
 			// Update Visibility Units if required. Moved up to above the set distance evaluations to eliminate a check for current units.
-			if (sensor_one->visibility_units != p_cmd.params.set_params.vis_units &&
-				p_cmd.params.set_params.vis_units <= UNITS_FEET) {
-				sensor_one->visibility_units = p_cmd.params.set_params.vis_units;
+			if (sensor_one->visibility_units != p_cmd->params.set_params.vis_units &&
+				p_cmd->params.set_params.vis_units <= UNITS_FEET) {
+				sensor_one->visibility_units = p_cmd->params.set_params.vis_units;
 			}
 			// Update alarm 1 distance.
-			if (sensor_one->user_alarms.alarm1_distance != p_cmd.params.set_params.alarm1_dist) {
+			if (sensor_one->user_alarms.alarm1_distance != p_cmd->params.set_params.alarm1_dist) {
 				uint32_t upper_limit = (sensor_one->visibility_units == 0) ? MAX_VISIBILITY_M : MAX_VISIBILITY_FT;
 				uint32_t lower_limit = (sensor_one->visibility_units == 0) ? MIN_VISIBILITY_M : MIN_VISIBILITY_FT;
-				uint32_t new_distance = p_cmd.params.set_params.alarm1_dist;
+				uint32_t new_distance = p_cmd->params.set_params.alarm1_dist;
 				if (new_distance <= upper_limit && new_distance >= lower_limit) {
 					sensor_one->user_alarms.alarm1_distance = new_distance;
 				}
 			}
 			// Update if alarm 2 is set TRUE/FALSE
-			if (sensor_one->user_alarms.alarm2_set != p_cmd.params.set_params.alarm2_set) {
-				sensor_one->user_alarms.alarm2_set = p_cmd.params.set_params.alarm2_set;
+			if (sensor_one->user_alarms.alarm2_set != p_cmd->params.set_params.alarm2_set) {
+				sensor_one->user_alarms.alarm2_set = p_cmd->params.set_params.alarm2_set;
 			}
 			// Update if alarm 2 is active TRUE/FALSE
-			if (sensor_one->user_alarms.alarm2_active != p_cmd.params.set_params.alarm2_active) {
-				sensor_one->user_alarms.alarm2_active = p_cmd.params.set_params.alarm2_active;
+			if (sensor_one->user_alarms.alarm2_active != p_cmd->params.set_params.alarm2_active) {
+				sensor_one->user_alarms.alarm2_active = p_cmd->params.set_params.alarm2_active;
 			}
 			// Update alarm 2 distance.
-			if (sensor_one->user_alarms.alarm2_distance != p_cmd.params.set_params.alarm2_dist) {
+			if (sensor_one->user_alarms.alarm2_distance != p_cmd->params.set_params.alarm2_dist) {
 				uint32_t upper_limit = (sensor_one->visibility_units == 0) ? MAX_VISIBILITY_M : MAX_VISIBILITY_FT;
 				uint32_t lower_limit = (sensor_one->visibility_units == 0) ? MIN_VISIBILITY_M : MIN_VISIBILITY_FT;
-				uint32_t new_distance = p_cmd.params.set_params.alarm2_dist;
+				uint32_t new_distance = p_cmd->params.set_params.alarm2_dist;
 				if (new_distance <= upper_limit && new_distance >= lower_limit) {
 					sensor_one->user_alarms.alarm2_distance = new_distance;
 				}
 			}
 			// Update baud rate of sensor if required. Likely will not implement changes to anything in our serial settings.
-			if (sensor_one->baud_rate != p_cmd.params.set_params.baud_rate && p_cmd.params.set_params.baud_rate <= 5) {
-				sensor_one->baud_rate = p_cmd.params.set_params.baud_rate;
+			if (sensor_one->baud_rate != p_cmd->params.set_params.baud_rate && p_cmd->params.set_params.baud_rate <= 5) {
+				sensor_one->baud_rate = p_cmd->params.set_params.baud_rate;
 			}
 			// Update sensor serial number if required.
-			if (p_cmd.params.set_params.serial_num[0] != '\0') {
+			if (p_cmd->params.set_params.serial_num[0] != '\0') {
 
-		    	if (strncmp(sensor_one->serial_number, p_cmd.params.set_params.serial_num, MAX_SERIAL_STR - 1) != 0) {
-		        	strncpy(sensor_one->serial_number, p_cmd.params.set_params.serial_num, MAX_SERIAL_STR - 1);
+		    	if (strncmp(sensor_one->serial_number, p_cmd->params.set_params.serial_num, MAX_SERIAL_STR - 1) != 0) {
+		        	strncpy(sensor_one->serial_number, p_cmd->params.set_params.serial_num, MAX_SERIAL_STR - 1);
 		        	sensor_one->serial_number[MAX_SERIAL_STR - 1] = '\0';
 			    }
 			}
 			// Update the continuous sending interval.
-			if (sensor_one->continuous_interval != p_cmd.params.set_params.continuous_interval &&
-				p_cmd.params.set_params.continuous_interval <= MAX_CONT_INTERVAL) {
-				sensor_one->continuous_interval = p_cmd.params.set_params.continuous_interval;
+			if (sensor_one->continuous_interval != p_cmd->params.set_params.continuous_interval &&
+				p_cmd->params.set_params.continuous_interval <= MAX_CONT_INTERVAL) {
+				sensor_one->continuous_interval = p_cmd->params.set_params.continuous_interval;
 			}
 			// Update the Operating Mode if required Polling or Continuous).
-			if (sensor_one->mode != p_cmd.params.set_params.op_mode && p_cmd.params.set_params.op_mode <= MODE_POLLING) {
-				sensor_one->mode = p_cmd.params.set_params.op_mode;
+			if (sensor_one->mode != p_cmd->params.set_params.op_mode && p_cmd->params.set_params.op_mode <= MODE_POLLING) {
+				sensor_one->mode = p_cmd->params.set_params.op_mode;
 			}
 			// Update message format if required.
-			if (sensor_one->message_format != p_cmd.params.set_params.msg_format && p_cmd.params.set_params.msg_format <= MSG_RVR_OUTPUT) {
-				sensor_one->message_format = p_cmd.params.set_params.msg_format;
+			if (sensor_one->message_format != p_cmd->params.set_params.msg_format && p_cmd->params.set_params.msg_format <= MSG_RVR_OUTPUT) {
+				sensor_one->message_format = p_cmd->params.set_params.msg_format;
 			}
 			// Update Communications Type.
-			if (sensor_one->comm_type != p_cmd.params.set_params.comm_mode && p_cmd.params.set_params.comm_mode <= COMM_RS485) {
-				sensor_one->comm_type = p_cmd.params.set_params.comm_mode;
+			if (sensor_one->comm_type != p_cmd->params.set_params.comm_mode && p_cmd->params.set_params.comm_mode <= COMM_RS485) {
+				sensor_one->comm_type = p_cmd->params.set_params.comm_mode;
 			}
 			// Update Averaging period if required.
-			if (sensor_one->averaging_period != p_cmd.params.set_params.averaging_period &&
-				(p_cmd.params.set_params.averaging_period == 1 || p_cmd.params.set_params.averaging_period == 10)) {
-				sensor_one->averaging_period = p_cmd.params.set_params.averaging_period;
+			if (sensor_one->averaging_period != p_cmd->params.set_params.averaging_period &&
+				(p_cmd->params.set_params.averaging_period == 1 || p_cmd->params.set_params.averaging_period == 10)) {
+				sensor_one->averaging_period = p_cmd->params.set_params.averaging_period;
 			}
 			// Update sample timing if required
-			if (sensor_one->sample_timing != p_cmd.params.set_params.sample_timing) {
-				sensor_one->sample_timing = p_cmd.params.set_params.sample_timing;
+			if (sensor_one->sample_timing != p_cmd->params.set_params.sample_timing) {
+				sensor_one->sample_timing = p_cmd->params.set_params.sample_timing;
 			}
 			// Update dew_heater_override TRUE/FALSE
-			if (sensor_one->dew_heater_override != p_cmd.params.set_params.dew_heater_override) {
-				sensor_one->dew_heater_override = p_cmd.params.set_params.dew_heater_override;
+			if (sensor_one->dew_heater_override != p_cmd->params.set_params.dew_heater_override) {
+				sensor_one->dew_heater_override = p_cmd->params.set_params.dew_heater_override;
 			}
 			// Update hood_heater_override TRUE/FALSE
-			if (sensor_one->hood_heater_override != p_cmd.params.set_params.hood_heater_override) {
-				sensor_one->hood_heater_override = p_cmd.params.set_params.hood_heater_override;
+			if (sensor_one->hood_heater_override != p_cmd->params.set_params.hood_heater_override) {
+				sensor_one->hood_heater_override = p_cmd->params.set_params.hood_heater_override;
 			}
 			// Update dirty window compensation TRUE/FALSE
-			if (sensor_one->dirty_window_compensation != p_cmd.params.set_params.dirty_window_compensation) {
-				sensor_one->dirty_window_compensation = p_cmd.params.set_params.dirty_window_compensation;
+			if (sensor_one->dirty_window_compensation != p_cmd->params.set_params.dirty_window_compensation) {
+				sensor_one->dirty_window_compensation = p_cmd->params.set_params.dirty_window_compensation;
 			}
 			// Update CRC checking
-			if (sensor_one->crc_checking_enabled != p_cmd.params.set_params.crc_check_en) {
-				sensor_one->crc_checking_enabled = p_cmd.params.set_params.crc_check_en;
+			if (sensor_one->crc_checking_enabled != p_cmd->params.set_params.crc_check_en) {
+				sensor_one->crc_checking_enabled = p_cmd->params.set_params.crc_check_en;
 			}
 			// Update power down voltage.
-			if (sensor_one->power_down_voltage != p_cmd.params.set_params.pwr_down_volt) {
-				sensor_one->power_down_voltage = p_cmd.params.set_params.pwr_down_volt;
+			if (sensor_one->power_down_voltage != p_cmd->params.set_params.pwr_down_volt) {
+				sensor_one->power_down_voltage = p_cmd->params.set_params.pwr_down_volt;
 			}
 			// Update RH Threshold
-			if (sensor_one->rh_threshold != p_cmd.params.set_params.rh_threshold && p_cmd.params.set_params.rh_threshold <= MAX_HUMIDITY) {
-				sensor_one->rh_threshold = p_cmd.params.set_params.rh_threshold;
+			if (sensor_one->rh_threshold != p_cmd->params.set_params.rh_threshold && p_cmd->params.set_params.rh_threshold <= MAX_HUMIDITY) {
+				sensor_one->rh_threshold = p_cmd->params.set_params.rh_threshold;
 			}
 
-			if (sensor_one->data_format != p_cmd.params.set_params.data_format) {
-				sensor_one->data_format = p_cmd.params.set_params.data_format;
+			if (sensor_one->data_format != p_cmd->params.set_params.data_format) {
+				sensor_one->data_format = p_cmd->params.set_params.data_format;
 			}
-			safe_serial_write(serial_fd, "%s", p_cmd.params.set_params.full_cmd_string);
+			safe_serial_write(serial_fd, "%s", p_cmd->params.set_params.full_cmd_string);
 			// Wake up our sender thread, to check if continuous interval changed, or our mode went from polled to continuous.
 			pthread_cond_signal(&send_cond);
             break;
 		case CMD_MSGSET: {
-        	uint32_t requested_bits = p_cmd.params.msgset.field_bitmap;
+        	uint32_t requested_bits = p_cmd->params.msgset.field_bitmap;
 			// Bitmask 0x3FFF (Binary: 0011 1111 1111 1111)
          	// Allows all defined fields from Bit 0 (Averaging) to Bit 13 (Humidity).
          	// Blocks Bits 14 & 15 which are "Reserved" (8000 and 4000).
@@ -856,7 +852,6 @@ void handle_command(CommandType cmd) {
 					uint16_t hex_str_crc = crc16_ccitt((uint8_t*)hex_buf, len);
 					//uint16_t calculated_crc = crc16_ccitt((uint8_t*)crc_work_buffer, length);
 					safe_serial_write(serial_fd, "\x02%s %04X\x03\r\n", hex_buf, hex_str_crc);
-					DEBUG_PRINT("\x02%s %04X\x03\r\n", hex_buf, hex_str_crc);
             	} else {
                 	safe_console_error("Error: Invalid msgset bits (Mask: 0x%04X, Received: 0x%04X)\n", allowed_mask, requested_bits);
             	}
@@ -865,7 +860,7 @@ void handle_command(CommandType cmd) {
 			break;
 		case CMD_ACCRES:
 			sensor_one->present_weather.accumulation = 0;
-			safe_serial_write(serial_fd, "%s", p_cmd.params.set_params.full_cmd_string);
+			safe_serial_write(serial_fd, "%s", p_cmd->params.set_params.full_cmd_string);
 			break;
 		case CMD_ERROR:
         	safe_console_error("Error: %s\n", strerror(errno));
@@ -914,8 +909,10 @@ void* receiver_thread(void* arg) {
 	    	if (c == '\r' || c == '\n') {
                 if (len > 0) {
                     line[len] = '\0'; // Terminate with NULL for safety.
+                    ParsedCommand local_cmd;
+                    CommandType cmd_type = parse_command(line, &local_cmd);
 					pthread_mutex_lock(&send_mutex);   // <--- LOCK HERE
-		    		handle_command(parse_command(line, &p_cmd)); // handle received command here.
+		    		handle_command(cmd_type, &local_cmd); // handle received command here.
                     pthread_mutex_unlock(&send_mutex); // <--- UNLOCK HERE
                     len = 0;
                 } else { // empty line ignore
@@ -990,8 +987,9 @@ void* sender_thread(void* arg) {
         	char *line = get_next_line_copy(file_ptr, &file_mutex); // Moved this into the check for is_ready_to_send to avoid depleting the data file.
 
         	if (line) {
-				parse_message(line, &p_msg);
-				process_and_send(&p_msg);
+				ParsedMessage local_msg;  // LOCAL, not global
+				parse_message(line, &local_msg);
+				process_and_send(&local_msg);
 				fflush(NULL);
             	free(line); // caller of get_next_line_copy() must free resource.
 				line = NULL;
@@ -1091,9 +1089,6 @@ int main(int argc, char *argv[]) {
         pthread_join(recv_thread, NULL);
 		cleanup_and_exit(1);
     }
-
-	handle_command(parse_command("\x02MSGSET:0:321C:B500:\x03\r\n", &p_cmd));
-	handle_command(parse_command("\x02MSGSET:0:121C:5868:\x03\r\n", &p_cmd));
 
     safe_console_print("Press 'q' + Enter to quit.\n");
     struct pollfd fds[1];
