@@ -992,7 +992,7 @@ int main(int argc, char *argv[]) {
 //	handle_command(parse_command("INTV 5 s\r\n", &local_cmd), &local_cmd);
 
 //	handle_command(parse_command("UNIT mmHG", &local_cmd), &local_cmd);
-	handle_command(parse_command("FORM P \" \" U \" \" P1  \" \" U \" :\" A3H", &local_cmd), &local_cmd);
+//	handle_command(parse_command("FORM P \" \" U \" \" P1  \" \" U \" :\" A3H", &local_cmd), &local_cmd);
 	handle_command(parse_command("R\r\n", &local_cmd), &local_cmd);
 
     safe_console_print("Press 'q' + Enter to quit.\n");
