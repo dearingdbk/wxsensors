@@ -289,7 +289,6 @@
 #include <termios.h>
 #include <pthread.h>
 #include <sys/ioctl.h>
-//#include <linux/serial.h>
 #include <regex.h>
 #include <signal.h>
 #include <stdatomic.h>
@@ -330,7 +329,7 @@ int serial_fd = -1;
 const char *program_name = "unknown";
 
 // This needs to be freed upon exit.
-ptb330_sensor *sensor_one = NULL; // Global pointer to struct for atmosvue30 sensor .
+skyvue8_sensor *sensor_one = NULL; // Global pointer to struct for skyvue8 sensor .
 
 /* Synchronization primitives */
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
@@ -426,7 +425,7 @@ void cleanup_and_exit(int exit_code) {
  *               Ensures string fields (METAR, BLM) are safely null-terminated.
  */
 void parse_message(char *msg, ParsedMessage *p_message) {
-	memset(p_message, 0, sizeof(ParsedMessage)); // zero out the ParsedMessage struct.
+/*	memset(p_message, 0, sizeof(ParsedMessage)); // zero out the ParsedMessage struct.
 	char *saveptr; // Our place keeper in the msg string.
 	char *token; // Where we temporarily store each token.
 
@@ -463,7 +462,7 @@ void parse_message(char *msg, ParsedMessage *p_message) {
 	strncpy(p_message->serial_num, sensor_one->serial_number, MAX_SN_LEN - 1);
 	p_message->serial_num[MAX_SN_LEN - 1] = '\0';
 	p_message->address = sensor_one->address;
-	p_message->units = sensor_one->units;
+	p_message->units = sensor_one->units; */
 }
 
 /*
@@ -483,7 +482,7 @@ void process_and_send(ParsedMessage *msg) {
 
 	char msg_buffer[MAX_MSG_LENGTH]; // 512
 	if (msg == NULL) return;
-	build_dynamic_output(msg, msg_buffer, sizeof(msg_buffer));
+	//build_dynamic_output(msg, msg_buffer, sizeof(msg_buffer));
 	DEBUG_PRINT("Message Buffer after Dynamic Build holds %s\n",msg_buffer);
 	safe_serial_write(serial_fd, "%s\r\n", msg_buffer);
 }
@@ -510,7 +509,7 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 
     while (*ptr && isspace((unsigned char)*ptr)) ptr++; // Skip any leading whitespace.
 
-    for (size_t i = 0; i < CMD_TABLE_SIZE; i++) {
+    /*for (size_t i = 0; i < CMD_TABLE_SIZE; i++) {
 
         if (strncasecmp(ptr, cmd_table[i].name, cmd_table[i].len) == 0) {
             // Ensure exact match (don't match "R" if the command is "RESET")
@@ -534,7 +533,7 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
                 return cmd->type;
             }
         }
-    }
+    }*/
     // cmd->type = CMD_UNKNOWN;
     return CMD_UNKNOWN;
 }
@@ -556,29 +555,28 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
  */
 void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 
-	 switch (cmd) {
+/*	 switch (cmd) {
         case CMD_BNUM:
 			DEBUG_PRINT("BNUM Command Received with these params: %s\n", p_cmd->raw_params);
-			safe_serial_write(serial_fd, "PTB330 Batch Numbers:\n\tSensor: %s\n\t%s %s\n\t%s %s\n\t%s %s\r\n",
-									sensor_one->batch_num,
-									"Module 1:", sensor_one->module_one.batch_num,
-									"Module 2:", sensor_one->module_two.batch_num,
-									"Module 3:", sensor_one->module_three.batch_num);
+			//safe_serial_write(serial_fd, "PTB330 Batch Numbers:\n\tSensor: %s\n\t%s %s\n\t%s %s\n\t%s %s\r\n",
+			//						sensor_one->batch_num,
+			//						"Module 1:", sensor_one->module_one.batch_num,
+			//						"Module 2:", sensor_one->module_two.batch_num,
+			//						"Module 3:", sensor_one->module_three.batch_num);
 			DEBUG_PRINT("PTB330 Batch Numbers:\n\tSensor: %s\n\t%s %s\n\t%s %s\n\t%s %s\n",
-									sensor_one->batch_num,
-									"Module 1:", sensor_one->module_one.batch_num,
-									"Module 2:", sensor_one->module_two.batch_num,
-									"Module 3:", sensor_one->module_three.batch_num);
+			//						sensor_one->batch_num,
+			//						"Module 1:", sensor_one->module_one.batch_num,
+			//						"Module 2:", sensor_one->module_two.batch_num,
+			//						"Module 3:", sensor_one->module_three.batch_num);
 			break;
         case CMD_SERI:
 			DEBUG_PRINT("SERI Command Received with these params: %s\n", p_cmd->raw_params);
-				if (p_cmd->raw_params[0] != '\0') { // changes required.
+			/*	if (p_cmd->raw_params[0] != '\0') { // changes required.
     				// Tokenize the parameters (works for "9600 o 1" or "o", or any order of params)
     				char *saveptr;
     				char *token = strtok_r(p_cmd->raw_params, " ", &saveptr);
 					while (token != NULL) {
     					size_t len = strlen(token);
-
 					    if (len == 1) {
         					// Handle all single-character parameters
         					unsigned char c = (unsigned char)token[0];
@@ -986,7 +984,7 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
         default:
 			safe_console_error("%s: Unknown or Bad Command:\n", program_name);
             break;
-    }
+    }*/
 }
 
 
@@ -1065,8 +1063,8 @@ void* sender_thread(void* arg) {
         pthread_mutex_lock(&send_mutex);
 
 		// Determine if we should wait for a specific time or indefinitely
-        if (sensor_one != NULL && sensor_one->mode == SMODE_RUN) {
-			interval = sensor_one->intv_data.interval;
+        if (sensor_one != NULL) { // && sensor_one->mode == SMODE_RUN) {
+			interval = 2; // sensor_one->intv_data.interval;
             // Calculate absolute time: Last Send Time + Interval
             // Use current REALTIME + (Interval - Time Since Last Send)
             clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -1085,7 +1083,7 @@ void* sender_thread(void* arg) {
         }
 
         // is_ready_to_send() handles the interval and timing logic internally, and checks if the sensor is Pollling or Continuous.
-        should_send = (sensor_one != NULL && ptb330_is_ready_to_send(sensor_one));
+        should_send = (sensor_one != NULL && skyvue8_is_ready_to_send(sensor_one));
 
 		pthread_mutex_unlock(&send_mutex);  // <-- UNLOCK BEFORE I/O
 
@@ -1164,7 +1162,7 @@ int main(int argc, char *argv[]) {
         cleanup_and_exit(1);
     }
 
-	if (init_ptb330_sensor(&sensor_one) != 0) {
+	if (init_skyvue8_sensor(&sensor_one) != 0) {
         safe_console_error("Failed to initialize sensor_one\n");
 	  	cleanup_and_exit(1);
     }

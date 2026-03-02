@@ -15,11 +15,11 @@
 
 #define OUTPUT_STRING "\" \"  P1 \" \" P2 \" \" P3 \" \" ERR \" \" P \" \" P3H \\R \\N"
 
-FormItem compiled_form[MAX_FORM_ITEMS];
-int form_item_count = 0;
+//FormItem compiled_form[MAX_FORM_ITEMS];
+//int form_item_count = 0;
 
-int active_width = 0;
-int active_precision = 0;
+//int active_width = 0;
+//int active_precision = 0;
 
 /*
  * Name:         init_ptb330_sensor
@@ -38,13 +38,13 @@ int active_precision = 0;
  * 				 the initial date string.
  *				 Must be freed by the caller.
  */
-int init_ptb330_sensor(ptb330_sensor **ptr) {
-    *ptr = malloc(sizeof(ptb330_sensor));
-    if (!*ptr) return -1;
+int init_skyvue8_sensor(skyvue8_sensor **ptr) {
+    // *ptr = malloc(sizeof(skyvue8_sensor));
+    //if (!*ptr) return -1;
 
-    ptb330_sensor *s = *ptr;
+    skyvue8_sensor *s = *ptr;
 	// Identity
-	strncpy(s->serial_number, "G1234567", MAX_SN_LEN);
+	/* strncpy(s->serial_number, "G1234567", MAX_SN_LEN);
     strncpy(s->software_version, "1.12", 5);
     s->address = 0;
 	strncpy(s->batch_num, "1234", MAX_BATCH_NUM);
@@ -76,7 +76,7 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
 	strncpy(s->module_one.batch_num, "550", MAX_BATCH_NUM);
 	strncpy(s->module_two.batch_num, "550", MAX_BATCH_NUM);
 	strncpy(s->module_three.batch_num, "550", MAX_BATCH_NUM);
-	s->initialized = true;
+	s->initialized = true; */
 	clock_gettime(CLOCK_MONOTONIC, &s->last_send_time);
 	time_t now = time(NULL);
 	strftime(s->date_string, sizeof(s->date_string), "%Y-%m-%d", gmtime(&now));
@@ -100,14 +100,15 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
  * Notes:        Uses CLOCK_MONOTONIC to ensure timing remains consistent even
  * 				 if the system real-time clock is adjusted.
  */
-bool ptb330_is_ready_to_send(ptb330_sensor *sensor) {
-    if (!sensor || sensor->mode != SMODE_RUN) return false;
+bool skyvue8_is_ready_to_send(skyvue8_sensor *sensor) {
+    //if (!sensor || sensor->mode != SMODE_RUN) return false;
+    if (!sensor) return false;
 
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
 
     long seconds = now.tv_sec - sensor->last_send_time.tv_sec;
-    if (seconds >= (long)sensor->intv_data.interval) return true;
+    //if (seconds >= (long)sensor->intv_data.interval) return true;
 
     return false;
 }
@@ -126,13 +127,13 @@ bool ptb330_is_ready_to_send(ptb330_sensor *sensor) {
  *
  * Bugs:         None known.
  * Notes:        If the unit is not found in the table, it defaults to returning "hPa".
- */
+ */ /*
 const char* get_unit_str(PTB330_Unit unit) {
     for (int i = 0; i < (int)(sizeof(unit_table)/sizeof(UnitConversion)); i++) {
         if (unit_table[i].unit == unit) return unit_table[i].label;
     }
     return "hPa";
-}
+} */
 
 /*
  * Name:         get_scaled_pressure
@@ -147,13 +148,13 @@ const char* get_unit_str(PTB330_Unit unit) {
  *
  * Notes:        Looks up conversion multiplier in unit_table.
  *               Returns original value if unit not found (should not happen).
- */
+ */ /*
 double get_scaled_pressure(float hpa_val, PTB330_Unit unit) {
     for (int i = 0; i < (int)(sizeof(unit_table)/sizeof(UnitConversion)); i++) {
         if (unit_table[i].unit == unit) return (double)hpa_val * unit_table[i].multiplier;
     }
     return (double)hpa_val;
-}
+}*/
 
 
 /*
@@ -172,7 +173,7 @@ double get_scaled_pressure(float hpa_val, PTB330_Unit unit) {
  * Notes:        Handles width/precision rules, quoted literals, and backslash
  * 				 escapes (\R, \N, \T, or decimal codes). Limits items to
  * 				 MAX_FORM_ITEMS - 1 (49) to ensure array bounds 0-49.
- */
+ */ /*
 void parse_form_string(const char *input) {
     form_item_count = 0;
     const char *p = input;
@@ -300,7 +301,7 @@ void parse_form_string(const char *input) {
             p++; // Skip spaces between tokens
         }
     }
-}
+} */
 
 
 
@@ -325,7 +326,7 @@ void parse_form_string(const char *input) {
  * Notes:        Handles variables (P1, P2, etc.), unit conversions, checksums
  * 				 (CS2/CS4/CSX), and timestamp formatting. Uses *.*f for
  * 				 dynamic width and precision control.
- */
+ */ /*
 void build_dynamic_output(ParsedMessage *p_msg, char *output_buf, size_t buf_len) {
     char *ptr = output_buf;
     size_t remaining = buf_len;
@@ -611,7 +612,7 @@ void build_dynamic_output(ParsedMessage *p_msg, char *output_buf, size_t buf_len
             remaining -= written;
         } else break; // Buffer is full, break out of our loop here.
     }
-}
+}*/
 
 /*
 void ptb330_format_output(ptb330_sensor *sensor, char *dest, size_t max_len) {
@@ -718,7 +719,7 @@ void ptb330_format_output(ptb330_sensor *sensor, char *dest, size_t max_len) {
  * Bugs:         None known.
  * Notes:        Uses a standard lapse rate of 0.0065 K/m and the barometric
  * 				 formula: $P_0 = P_s / (1 - \frac{L \cdot h}{T_s + L \cdot h})^{(g / (R \cdot L))}$
- */
+ */ /*
 double calculate_sea_level_pressure(double station_p, double elevation_m, double temp_c) {
     double temp_k = temp_c + 273.15;
     double lapse_rate = 0.0065; // K/m
@@ -732,7 +733,7 @@ double calculate_sea_level_pressure(double station_p, double elevation_m, double
     double base = 1 - (lapse_rate * elevation_m) / (temp_k + lapse_rate * elevation_m);
 
     return station_p / pow(base, exponent);
-}
+} */
 
 
 /*
@@ -750,7 +751,7 @@ double calculate_sea_level_pressure(double station_p, double elevation_m, double
  * Bugs:         None known.
  * Notes:        Uses the formula: $$P_0 = \frac{P_s}{(1 - \frac{L \cdot h}{T_0})^{\frac{g}{R \cdot L}}}$$
  * 				 If altitude_m is 0.0, the function returns station_p directly.
- */
+ */ /*
 double get_hcp_pressure(double station_p, double altitude_m) {
     // Standard atmosphere constants
     const double sea_level_temp_k = 288.15; // 15 degrees C
@@ -767,4 +768,4 @@ double get_hcp_pressure(double station_p, double altitude_m) {
     double base = 1.0 - (lapse_rate * altitude_m) / sea_level_temp_k;
 
     return station_p / pow(base, exponent);
-}
+} */

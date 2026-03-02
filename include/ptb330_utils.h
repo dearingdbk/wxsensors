@@ -244,13 +244,6 @@ typedef enum {
     CMD_INVALID_FORMAT  // Command format error
 } CommandType;
 
-/*typedef struct {
-    CommandType type;
-    char raw_params[MAX_FORM_STR];
-    int addr_target;         // For RS-485 addressing
-} ptb330_command;
-*/
-
 typedef struct {
     const char *name;
     CommandType type;

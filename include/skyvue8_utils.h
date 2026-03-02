@@ -26,6 +26,7 @@
 #define SECONDS_IN_HOUR 3600
 #define SECONDS_IN_DAY 86400
 
+/*
 typedef enum {
     SMODE_STOP,  // No output
     SMODE_POLL,  // Output only on SEND
@@ -128,7 +129,7 @@ typedef struct {
 	char interval_units[MAX_INTV_STR];
 	uint16_t multiplier;
 } IntervalData;
-
+*/
 typedef struct {
     // Identity
     char serial_number[MAX_SN_LEN];
@@ -137,18 +138,18 @@ typedef struct {
 	char batch_num[MAX_BATCH_NUM];
 
     // Configuration
-    PTB330_SMode mode;
-    PTB330_Unit units;
-	IntervalData intv_data;
+    //PTB330_SMode mode;
+    //PTB330_Unit units;
+	//IntervalData intv_data;
     char format_string[MAX_FORM_STR];
     uint16_t send_delay;     // ms
     bool echo_enabled;
 	char date_string[MAX_DATE_STR];
 	// Communication
-	BaudRateCode baud;
-	ParityFormat parity;
-	DataFormat data_f;
-	StopBits stop_b;
+	//BaudRateCode baud;
+	//ParityFormat parity;
+	//DataFormat data_f;
+	//StopBits stop_b;
 
     // Pressure State
     double pressure;          // Current reading from file
@@ -157,11 +158,11 @@ typedef struct {
     // Timing
     struct timespec last_send_time;
     bool initialized;
-	BAROModule module_one;
-	BAROModule module_two;
-	BAROModule module_three;
-	BAROModule module_four;
-} ptb330_sensor;
+	//BAROModule module_one;
+	//BAROModule module_two;
+	//BAROModule module_three;
+	//BAROModule module_four;
+} skyvue8_sensor;
 
 
 // Command type enumeration
@@ -250,7 +251,7 @@ typedef enum {
     int addr_target;         // For RS-485 addressing
 } ptb330_command;
 */
-
+/*
 typedef struct {
     const char *name;
     CommandType type;
@@ -290,7 +291,7 @@ static const CommandMap cmd_table[] = {
 };
 
 #define CMD_TABLE_SIZE (sizeof(cmd_table) / sizeof(CommandMap))
-
+*/
 // Parsed command structure
 typedef struct {
     CommandType type;
@@ -336,9 +337,10 @@ typedef struct {
 	double altitude;
 	char serial_num[MAX_SN_LEN];
 	uint8_t address;
-	PTB330_Unit units;
+	//PTB330_Unit units;
 } ParsedMessage;
 
+/*
 typedef enum {
     FORM_LITERAL, 		// Anything user defined within quotes.
     FORM_VAR_P, 		// P
@@ -380,14 +382,15 @@ typedef struct {
 // FormItem compiled_form[MAX_FORM_ITEMS];
 // int form_item_count = 0;
 
-
+*/
 // Function Prototypes
-int init_ptb330_sensor(ptb330_sensor **ptr);
-bool ptb330_is_ready_to_send(ptb330_sensor *sensor);
+int init_skyvue8_sensor(skyvue8_sensor **ptr);
+bool skyvue8_is_ready_to_send(skyvue8_sensor *sensor);
 //void ptb330_parse_command(const char *input, ptb330_command *cmd);
-void ptb330_format_output(ptb330_sensor *sensor, char *dest, size_t max_len);
-void parse_form_string(const char *input);
-void build_dynamic_output(ParsedMessage *live_date, char *output_buf, size_t buf_len);
-double get_hcp_pressure(double station_p, double altitude_m);
-const char* get_unit_str(PTB330_Unit unit);
+//void ptb330_format_output(ptb330_sensor *sensor, char *dest, size_t max_len);
+//void parse_form_string(const char *input);
+//void build_dynamic_output(ParsedMessage *live_date, char *output_buf, size_t buf_len);
+//double get_hcp_pressure(double station_p, double altitude_m);
+//const char* get_unit_str(PTB330_Unit unit);
+
 #endif
