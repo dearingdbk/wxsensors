@@ -13,11 +13,6 @@
 #include "crc_utils.h"
 #include "skyvue8_utils.h"
 
-//FormItem compiled_form[MAX_FORM_ITEMS];
-//int form_item_count = 0;
-
-//int active_width = 0;
-//int active_precision = 0;
 
 /*
  * Name:         init_skyvue8_sensor
@@ -44,21 +39,11 @@ int init_skyvue8_sensor(skyvue8_sensor **ptr) {
 	// Identity
 	strncpy(s->serial_number, "SN1000", MAX_SN_LEN);
     strncpy(s->software_version, "001", 4);
-    s->address = 0;
-	//strncpy(s->batch_num, "1234", MAX_BATCH_NUM);
+    s->address = '0';
 	// Configuration
     s->mode = SMODE_POLL;
     s->measurement_period = 0; // 0 means the skyvue8 is polled.
     s->message_interval = 0; // 0 means the skyvue8 is polled.
-//    s->intv_data.interval = 1;
-//	s->intv_data.interval_units[0] = 's';
-//	s->intv_data.interval_units[1] = '\0'; // Manually terminate string.
-//	s->intv_data.multiplier = 1; // stored in seconds.
-    //strncpy(s->format_string, OUTPUT_STRING, MAX_FORM_STR - 1); // Our default format P11A11.
-	// s->format_string[MAX_FORM_STR - 1] = '\0'; // Manually terminate string.
-	//parse_form_string(s->format_string);
-    //s->pressure = 1013.25;
-    //s->offset = 0.0;
 	s->initialized = true;
 	s->baud = 10; // 115200 default.
 	s->data_f = 8;
@@ -93,7 +78,6 @@ int init_skyvue8_sensor(skyvue8_sensor **ptr) {
  */
 bool skyvue8_is_ready_to_send(skyvue8_sensor *sensor) {
     if (!sensor || sensor->mode != SMODE_RUN) return false;
-    if (!sensor) return false;
 
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);

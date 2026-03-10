@@ -24,9 +24,7 @@
 #define MAX_DATE_STR 11
 #define MAX_TIME_STR 10
 #define MAX_UNIT_STR 32
-#define MAX_WIN_TX 4
 #define MAX_HEIGHT_STR 6
-#define MAX_ALARM_WRD 5
 #define SECONDS_IN_MIN 60
 #define SECONDS_IN_HOUR 3600
 #define SECONDS_IN_DAY 86400
@@ -38,6 +36,13 @@ typedef enum {
     SMODE_RUN,   // Continuous output on startup
     SMODE_SEND   // Output once on startup, then STOP
 } Skyvue8_SMode;
+
+typedef enum {
+    MSG_001 = 1,  // No Profile / No Sky Condition
+    MSG_002 = 2,  // Profile / No Sky Condition
+    MSG_003 = 3,  // No Profile / Sky Condition
+    MSG_004 = 4   //
+} Skyvue8_MessageID;
 
 typedef enum {
 	RS232_FULL = 0,
@@ -99,30 +104,21 @@ static const BaudCodeMap baud_table[] = {
 	{76800,		BAUD_76800},
 	{115200, 	BAUD_115200}
 };
-/*
-typedef struct {
-    char serial_number[MAX_SN_LEN];
-	double pressure;
-	double temperature;
-	char batch_num[MAX_BATCH_NUM];
-} BAROModule;
-*/
 
 typedef struct {
     // Identity
     char serial_number[MAX_SN_LEN];
 	char product_name[MAX_PROD_NAME];
     char software_version[12];
-    uint8_t address; // Sensor Identification Number
+    char address; // Sensor Identification Number 0-9, a-z, or A-Z.
 	char batch_num[MAX_BATCH_NUM];
 
     // Configuration
     Skyvue8_SMode mode;
-    // PTB330_Unit units;
-//    char format_string[MAX_FORM_STR];
     uint16_t send_delay;     // ms
 	char date_string[MAX_DATE_STR];
 	char time_string[MAX_TIME_STR];
+
 	// Communication
 	BaudRateCode baud;
 	ParityFormat parity;
@@ -131,8 +127,7 @@ typedef struct {
 	Skyvue8_SerialMode smode;
     uint16_t measurement_period; // 0, or 2-600 seconds  - 0 is polled.
     uint16_t message_interval; // 0, or 2-600 seconds - 0 is polled.
-//    double offset;            // Linear adjustment
-//    double hcp_altitude;      // Height Corrected Pressure alt
+
     // Timing
     struct timespec last_send_time;
     bool initialized;
@@ -150,13 +145,6 @@ typedef enum {
     CMD_INVALID_ID,     // Sensor ID mismatch
     CMD_INVALID_FORMAT  // Command format error
 } CommandType;
-
-/*typedef struct {
-    CommandType type;
-    char raw_params[MAX_FORM_STR];
-    int addr_target;         // For RS-485 addressing
-} ptb330_command;
-*/
 
 typedef struct {
     const char *name;
@@ -204,70 +192,22 @@ typedef enum {
 typedef struct {
 	char detection_status;
 	char alarm_status;
-	char win_tx_per[MAX_WIN_TX];
+	uint8_t win_trans_per;
 	// Cloud Heights
 	char first_height[MAX_HEIGHT_STR];
 	char second_height[MAX_HEIGHT_STR];
 	char third_height[MAX_HEIGHT_STR];
 	char fourth_height[MAX_HEIGHT_STR];
 	// Alarm Words
-	char most_sig_alarm[MAX_ALARM_WRD];
-	char middle_sig_alarm[MAX_ALARM_WRD];
-	char least_sig_alarm[MAX_ALARM_WRD];
-	uint8_t address;
+	uint16_t most_sig_alarm;
+	uint16_t middle_sig_alarm;
+	uint16_t least_sig_alarm;
+	uint8_t sensor_id;
+	uint8_t message_id;
 } ParsedMessage;
 
-/*
-typedef enum {
-    FORM_LITERAL, 		// Anything user defined within quotes.
-    FORM_VAR_P, 		// P
-    FORM_VAR_P1, 		// P1
-    FORM_VAR_P2,		// P2
-    FORM_VAR_P3,		// P3
-    FORM_VAR_ERR,		// ERR
-    FORM_VAR_P3H,		// P3H
-    FORM_VAR_DP12,		// DP12
-    FORM_VAR_DP13,		// DP13
-    FORM_VAR_DP23,		// DP23
-    FORM_VAR_HCP,		// HCP
-    FORM_VAR_QFE,		// QFE
-    FORM_VAR_QNH,		// QNH
-    FORM_VAR_TP1,		// TP1
-    FORM_VAR_TP2,		// TP2
-    FORM_VAR_TP3,		// TP3
-    FORM_VAR_A3H,		// A3H Tendency
-	FORM_VAR_UNIT,		// Un
-	FORM_VAR_CS2,		// CS2
-	FORM_VAR_CS4,		// CS4
-	FORM_VAR_CSX,		// CSX
-	FORM_VAR_SN,		// SN
-	FORM_VAR_PSTAB,		// PSTAB
-	FORM_VAR_ADDR,		// ADDR
-	FORM_VAR_DATE,		// DATE
-	FORM_VAR_TIME		// TIME
-    // ... add others as needed
-} FormItemType;
-
-typedef struct {
-    FormItemType type;
-    char literal[MAX_LITERAL_SIZE]; // For things like " ", " hPa", or ":" 32 chars.
-	uint8_t width; // 0 means natural length, 1-9 is fixed width.
-	uint8_t precision; // y in the x.y or n.n field.
-} FormItem;
-
-// Store the compiled format here
-// FormItem compiled_form[MAX_FORM_ITEMS];
-// int form_item_count = 0;
-
-*/
 // Function Prototypes
 int init_skyvue8_sensor(skyvue8_sensor **ptr);
 bool skyvue8_is_ready_to_send(skyvue8_sensor *sensor);
-//void ptb330_parse_command(const char *input, ptb330_command *cmd);
-//void ptb330_format_output(ptb330_sensor *sensor, char *dest, size_t max_len);
-//void parse_form_string(const char *input);
-//void build_dynamic_output(ParsedMessage *live_date, char *output_buf, size_t buf_len);
-//double get_hcp_pressure(double station_p, double altitude_m);
-//const char* get_unit_str(PTB330_Unit unit);
 
 #endif

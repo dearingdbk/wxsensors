@@ -1,4 +1,4 @@
-;;/*
+/*
  * File:     ceilometer.c
  * Author:   Bruce Dearing
  * Date:     27/02/2026
@@ -425,40 +425,33 @@ void parse_message(char *msg, ParsedMessage *p_message) {
 	char *saveptr; // Our place keeper in the msg string.
 	char *token; // Where we temporarily store each token.
 
-	if ((token = strtok_r(msg, ",", &saveptr))) p_message->p1_pressure = atof(token);  // Set P1 pressure.
+	if ((token = strtok_r(msg, ",", &saveptr))) p_message->detection_status = (char)token[0];  // Set detection status.
    	#define NEXT_T strtok_r(NULL, ",", &saveptr) // Small macro to keep the code below cleaner.
 	// These are pulled from a text file in this format:
-	// 1013.25,1013.24,1013.26,23.4,23.5,23.2,0,0,0,1013.25,0.00
-	// P1 Pressure,P2 Pressure,P3 Pressure,P1 Temp,P2 Temp,P3 Temp,P1 Error,P2 Error, P3, Error,Pressure Average,Pressure Trend
-   	if ((token = NEXT_T)) p_message->p2_pressure = atof(token); // Set P2 pressure.
-   	if ((token = NEXT_T)) p_message->p3_pressure = atof(token); // Set P3 pressure.
-	if ((token = NEXT_T)) p_message->p1_temperature = atof(token); // Set P1 temperature.
-	if ((token = NEXT_T)) p_message->p2_temperature = atof(token); // Set P2 temperature.
-	if ((token = NEXT_T)) p_message->p3_temperature = atof(token); // Set P3 temperature.
-   	if ((token = NEXT_T)) { // Set P1 error.
-		if (atoi(token) == 1) {
-			p_message->p1_sensor_error = IS_ERROR;
-		} else p_message->p1_sensor_error = NO_ERROR;
+	// 1,0,085,010000,/////,/////,/////,8000,0000,0000
+	// Detection Status, Alarm Status, Window Trans %, 1st Height, 2nd Height, 3rd Height, 4th Height, Most Significant Alarm Word, Middle Alarm Word, Least Significant Alarm Word
+   	if ((token = NEXT_T)) p_message->alarm_status = (char)token[0]; // Set Alarm Status.
+   	if ((token = NEXT_T)) p_message->win_trans_per = atoi(token); // Set Window Transmission Percentage.
+	if ((token = NEXT_T)) {
+		strncpy(p_message->first_height, token, MAX_HEIGHT_STR - 1); // Set the First Cloud Height.
+		p_message->first_height[MAX_HEIGHT_STR - 1] = '\0';
 	}
-   	if ((token = NEXT_T)) { // Set P2 error.
-		if (atoi(token) == 1) {
-			p_message->p2_sensor_error = IS_ERROR;
-		} else p_message->p2_sensor_error = NO_ERROR;
+	if ((token = NEXT_T)) {
+		strncpy(p_message->second_height, token, MAX_HEIGHT_STR - 1); // Set the Second Cloud Height.
+		p_message->second_height[MAX_HEIGHT_STR - 1] = '\0';
 	}
-   	if ((token = NEXT_T)) { // Set P3 error.
-		if (atoi(token) == 1) {
-			p_message->p3_sensor_error = IS_ERROR;
-		} else p_message->p3_sensor_error = NO_ERROR;
+	if ((token = NEXT_T)) {
+		strncpy(p_message->third_height, token, MAX_HEIGHT_STR - 1); // Set the Third Cloud Height.
+		p_message->third_height[MAX_HEIGHT_STR - 1] = '\0';
 	}
-	if ((token = NEXT_T)) p_message->p_average = atof(token); // Set Pressure Average.
-	if ((token = NEXT_T)) p_message->trend = atof(token); // Set Pressure Trend.
-	if ((token = NEXT_T)) p_message->tendency = atof(token); // Set Pressure Tendency.
+	if ((token = NEXT_T)) {
+		strncpy(p_message->fourth_height, token, MAX_HEIGHT_STR - 1); // Set the Fourth Cloud Height.
+		p_message->fourth_height[MAX_HEIGHT_STR - 1] = '\0';
+	}
+	if ((token = NEXT_T)) p_message->most_sig_alarm = (uint16_t)strtol(token, NULL, 16);  // Set Most Significant Alarm Word "8000" -> 0x8000.
+	if ((token = NEXT_T)) p_message->middle_sig_alarm = (uint16_t)strtol(token, NULL, 16);  // Set Middle Significant Alarm Word "0000" -> 0x0000.
+	if ((token = NEXT_T)) p_message->least_sig_alarm = (uint16_t)strtol(token, NULL, 16);  // Set Least Significant Alarm Word "0000" -> 0x0000.
 	#undef NEXT_T
-	p_message->altitude = sensor_one->hcp_altitude; // Update the sensor hcp_altitude.
-	strncpy(p_message->serial_num, sensor_one->serial_number, MAX_SN_LEN - 1);
-	p_message->serial_num[MAX_SN_LEN - 1] = '\0';
-	p_message->address = sensor_one->address;
-	p_message->units = sensor_one->units; */
 }
 
 /*
@@ -478,6 +471,34 @@ void process_and_send(ParsedMessage *msg) {
 
 	char msg_buffer[MAX_MSG_LENGTH]; // 512
 	if (msg == NULL) return;
+		switch(msg->message_id) {
+			case MSG_001: {
+				int length = snprintf(msg_buffer, sizeof(msg_buffer), "\x01CS%c%s\x02\r\n%c%c %03d %s %s %s %s %04X%04X%04X\r\n\x03",
+    				(char)sensor_one->address,						// 1.  char - Sensor ID
+    				sensor_one->software_version,		   			// 2.  char* - Operating System
+    				(char)msg->detection_status,	       			// 3.  char - Detection Status
+    				(char)msg->alarm_status,		  				// 4.  char - Alarm Status
+    				(uint8_t)msg->win_trans_per,       				// 5.  uint8_t - Window Transmission Percent
+    				msg->first_height,								// 6.  char* - First Height
+		    		msg->second_height,      						// 7.  char* - Second Height
+    				msg->third_height,           					// 8.  char* - Third Height
+		    		msg->fourth_height,						  		// 9.  char* - Fourth Height
+    				msg->most_sig_alarm,							// 10. uint16_t - Most Significant Alarm
+		    		msg->middle_sig_alarm,							// 11. uint16_t - Middle Significant Alarm
+    				msg->least_sig_alarm 				  			// 12. uint16_t - Least Significant Alarm
+					);
+
+				if (length > 0 && length < (int)sizeof(msg_buffer)) {
+					uint16_t calculated_crc = crc16(msg_buffer, length);
+					safe_serial_write(serial_fd, "%s%04X\x04\r\n", msg_buffer, calculated_crc);
+					DEBUG_PRINT("Message Buffer after Dynamic Build holds %s%04X\n",msg_buffer, calculated_crc);
+				}
+				break;
+			}
+			default:
+				break;
+	}
+
 	//build_dynamic_output(msg, msg_buffer, sizeof(msg_buffer));
 	DEBUG_PRINT("Message Buffer after Dynamic Build holds %s\n",msg_buffer);
 	safe_serial_write(serial_fd, "%s\r\n", msg_buffer);
@@ -510,7 +531,7 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
         if (strncasecmp(ptr, cmd_table[i].name, cmd_table[i].len) == 0) {
             // Ensure exact match (don't match "R" if the command is "RESET")
             char next = ptr[cmd_table[i].len];
-            if (next == '\0' || isspace((unsigned char)next) || next == '?' || next == '=') {
+            if (next == '\0' || isspace((unsigned char)next)) {
                 cmd->type = cmd_table[i].type;
                 ptr += cmd_table[i].len; // Jump past command
 
@@ -530,7 +551,7 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
             }
         }
     }
-    // cmd->type = CMD_UNKNOWN;
+    cmd->type = CMD_UNKNOWN;
     return CMD_UNKNOWN;
 }
 
@@ -554,11 +575,19 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 	 switch (cmd) {
 		case CMD_POLL:
 			DEBUG_PRINT("POLL Command Received with these params: %s\n", p_cmd->raw_params);
-        	char *line = get_next_line_copy(file_ptr, &file_mutex);
+			char *saveptr; // Our place keeper in the msg string.
+			char *token; // Where we temporarily store each token.
+			uint8_t sensor_id;
+			uint8_t message_id;
+			if ((token = strtok_r(p_cmd->raw_params, " \r\n", &saveptr))) sensor_id = atoi(token);  // Set sensor ID.
+			if ((token = strtok_r(p_cmd->raw_params, " \r\n", &saveptr))) message_id = atoi(token);  // Set message ID.
 
+        	char *line = get_next_line_copy(file_ptr, &file_mutex);
         	if (line) {
 		        ParsedMessage local_msg;  // LOCAL
 				parse_message(line, &local_msg);
+				local_msg.sensor_id = sensor_id; // Add the sensor_id, and message_id before sending.
+				local_msg.message_id = message_id;
 				process_and_send(&local_msg);
 				fflush(NULL);
             	free(line); // caller of get_next_line_copy() must free resource.
@@ -566,7 +595,7 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
         	}
 			break;
 		case CMD_ERROR:
-			    // TODO: Implement per-variable unit storage
+			    // TODO: Implement
 			break;
 		case CMD_INVALID_CRC:
 			break;
@@ -661,8 +690,8 @@ void* sender_thread(void* arg) {
         pthread_mutex_lock(&send_mutex);
 
 		// Determine if we should wait for a specific time or indefinitely
-        if (sensor_one != NULL) { // && sensor_one->mode == SMODE_RUN) {
-			interval = 2; // sensor_one->intv_data.interval;
+        if (sensor_one != NULL && sensor_one->mode == SMODE_RUN) {
+			interval = sensor_one->message_interval;
             // Calculate absolute time: Last Send Time + Interval
             // Use current REALTIME + (Interval - Time Since Last Send)
             clock_gettime(CLOCK_MONOTONIC, &ts);
