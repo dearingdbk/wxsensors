@@ -24,6 +24,9 @@
 #define MAX_DATE_STR 11
 #define MAX_TIME_STR 10
 #define MAX_UNIT_STR 32
+#define MAX_WIN_TX 4
+#define MAX_HEIGHT_STR 6
+#define MAX_ALARM_WRD 5
 #define SECONDS_IN_MIN 60
 #define SECONDS_IN_HOUR 3600
 #define SECONDS_IN_DAY 86400
@@ -141,7 +144,6 @@ typedef enum {
     CMD_UNKNOWN,
 // General Commands
 	CMD_POLL,
-
 // Error responses
     CMD_ERROR,          // General error
     CMD_INVALID_CRC,    // CRC check failed
@@ -182,7 +184,7 @@ typedef struct {
 
 		struct {
 
-		} form_params;
+		} poll_params;
 
 		struct {
 
@@ -200,22 +202,19 @@ typedef enum {
 
 // Parsed message structure
 typedef struct {
-	double p1_pressure;
-	double p2_pressure;
-	double p3_pressure;
-	double p1_temperature;
-	double p2_temperature;
-	double p3_temperature;
-	SensorError p1_sensor_error;
-	SensorError p2_sensor_error;
-	SensorError p3_sensor_error;
-	double p_average;
-	double trend;
-	double tendency;
-	double altitude;
-	char serial_num[MAX_SN_LEN];
+	char detection_status;
+	char alarm_status;
+	char win_tx_per[MAX_WIN_TX];
+	// Cloud Heights
+	char first_height[MAX_HEIGHT_STR];
+	char second_height[MAX_HEIGHT_STR];
+	char third_height[MAX_HEIGHT_STR];
+	char fourth_height[MAX_HEIGHT_STR];
+	// Alarm Words
+	char most_sig_alarm[MAX_ALARM_WRD];
+	char middle_sig_alarm[MAX_ALARM_WRD];
+	char least_sig_alarm[MAX_ALARM_WRD];
 	uint8_t address;
-	//PTB330_Unit units;
 } ParsedMessage;
 
 /*

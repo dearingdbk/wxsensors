@@ -1,4 +1,4 @@
-/*
+;;/*
  * File:     ceilometer.c
  * Author:   Bruce Dearing
  * Date:     27/02/2026
@@ -421,7 +421,7 @@ void cleanup_and_exit(int exit_code) {
  *               Ensures string fields (METAR, BLM) are safely null-terminated.
  */
 void parse_message(char *msg, ParsedMessage *p_message) {
-/*	memset(p_message, 0, sizeof(ParsedMessage)); // zero out the ParsedMessage struct.
+	memset(p_message, 0, sizeof(ParsedMessage)); // zero out the ParsedMessage struct.
 	char *saveptr; // Our place keeper in the msg string.
 	char *token; // Where we temporarily store each token.
 
@@ -505,7 +505,7 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 
     while (*ptr && isspace((unsigned char)*ptr)) ptr++; // Skip any leading whitespace.
 
-    /*for (size_t i = 0; i < CMD_TABLE_SIZE; i++) {
+    for (size_t i = 0; i < CMD_TABLE_SIZE; i++) {
 
         if (strncasecmp(ptr, cmd_table[i].name, cmd_table[i].len) == 0) {
             // Ensure exact match (don't match "R" if the command is "RESET")
@@ -529,7 +529,7 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
                 return cmd->type;
             }
         }
-    }*/
+    }
     // cmd->type = CMD_UNKNOWN;
     return CMD_UNKNOWN;
 }
@@ -551,224 +551,9 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
  */
 void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 
-/*	 switch (cmd) {
-        case CMD_BNUM:
-			DEBUG_PRINT("BNUM Command Received with these params: %s\n", p_cmd->raw_params);
-			//safe_serial_write(serial_fd, "PTB330 Batch Numbers:\n\tSensor: %s\n\t%s %s\n\t%s %s\n\t%s %s\r\n",
-			//						sensor_one->batch_num,
-			//						"Module 1:", sensor_one->module_one.batch_num,
-			//						"Module 2:", sensor_one->module_two.batch_num,
-			//						"Module 3:", sensor_one->module_three.batch_num);
-			DEBUG_PRINT("PTB330 Batch Numbers:\n\tSensor: %s\n\t%s %s\n\t%s %s\n\t%s %s\n",
-			//						sensor_one->batch_num,
-			//						"Module 1:", sensor_one->module_one.batch_num,
-			//						"Module 2:", sensor_one->module_two.batch_num,
-			//						"Module 3:", sensor_one->module_three.batch_num);
-			break;
-        case CMD_SERI:
-			DEBUG_PRINT("SERI Command Received with these params: %s\n", p_cmd->raw_params);
-			/*	if (p_cmd->raw_params[0] != '\0') { // changes required.
-    				// Tokenize the parameters (works for "9600 o 1" or "o", or any order of params)
-    				char *saveptr;
-    				char *token = strtok_r(p_cmd->raw_params, " ", &saveptr);
-					while (token != NULL) {
-    					size_t len = strlen(token);
-					    if (len == 1) {
-        					// Handle all single-character parameters
-        					unsigned char c = (unsigned char)token[0];
-
-        					if (isalpha(c)) {
-            					char p = toupper(c);
-            					// Vaisala Parity: N=None, E=Even, O=Odd
-            					if (p == 'N' || p == 'E' || p == 'O') {
-                					sensor_one->parity = (unsigned char)p;
-            					}
-        					} else if (c == '7' || c == '8') {
-            						sensor_one->data_f = c - '0';
-        					} else if (c == '1' || c == '2') {
-            						sensor_one->stop_b = c - '0';
-        					} else safe_console_error("Incorrect serial communications change request.\r\n");
-    					} else if (len >= 3 && isdigit((unsigned char)token[0])) {
-        					// Handle Baud rate
-        					uint32_t b = (uint32_t)atoi(token);
-        					for (int t = 0; t < 12; t++) {
-            					if (b == baud_table[t].baud_num) {
-                				sensor_one->baud = t;
-                				break; // Exit loop once match is found
-            					}
-        					}
-	    				} else safe_console_error("Incorrect serial communications change request.\r\n");
-    					token = strtok_r(NULL, " ", &saveptr);
-					}
-				}
-				DEBUG_PRINT("Baud P D S\t: %d %c %d %d\n",
-								baud_table[sensor_one->baud].baud_num,
-								sensor_one->parity,
-								(int)sensor_one->data_f,
-								(int)sensor_one->stop_b);
-				safe_serial_write(serial_fd, "Baud P D S\t: %d %c %d %d\n",
-								baud_table[sensor_one->baud].baud_num,
-								sensor_one->parity,
-								(int)sensor_one->data_f,
-								(int)sensor_one->stop_b);
-			break;
-        case CMD_SNUM:
-			DEBUG_PRINT("SNUM Command Received with these params: %s\n", p_cmd->raw_params);
-			safe_serial_write(serial_fd, "PTB330 Serial Numbers:\n\tSensor: %s\n\t%s %s\n\t%s %s\n\t%s %s\r\n",
-									sensor_one->serial_number,
-									"Module 1:", sensor_one->module_one.serial_number,
-									"Module 2:", sensor_one->module_two.serial_number,
-									"Module 3:", sensor_one->module_three.serial_number);
-			DEBUG_PRINT("PTB330 Serial Numbers:\n\tSensor: %s\n\t%s %s\n\t%s %s\n\t%s %s\n",
-									sensor_one->serial_number,
-									"Module 1:", sensor_one->module_one.serial_number,
-									"Module 2:", sensor_one->module_two.serial_number,
-									"Module 3:", sensor_one->module_three.serial_number);
-            break;
-		case CMD_ERRS:
-			DEBUG_PRINT("ERRS Command Received with these params: %s\n", p_cmd->raw_params);
-			break;
-		case CMD_HELP:
-			DEBUG_PRINT("HELP Command Received with these params: %s\n", p_cmd->raw_params);
-			break;
-		case CMD_LOCK:
-			DEBUG_PRINT("LOCK Command Received with these params: %s\n", p_cmd->raw_params);
-			break;
-		case CMD_INFO:
-			char current_time[20];
-			time_t now = time(NULL);
-			strftime(current_time, sizeof(current_time), "%H:%M:%S", localtime(&now));
-			safe_serial_write(serial_fd, "\nPTB330 / %s\nSerial number\t: %s\n"
-									"Batch number\t: %s\n"
-									"Output format\t: %s\n"
-									"Adjust. date\t: %s\n"
-									"Adjust. info\t: %s\n"
-									"Date\t\t: %s\n"
-									"Time\t\t: %s\n"
-									"Start mode\t: STOP\n"
-									"Baud P D S\t: %d %c %d %d\n"
-									"Output interval\t: %d %s\n"
-									"Address\t\t: %hhu\n"
-									"Echo\t\t: %hhu\n"
-									"Module 1\t: BARO-1\n"
-									"Module 2\t: BARO-1\n"
-									"Module 3\t: BARO-1\n"
-									"Module 4\t: EMPTY\r\n",
-								sensor_one->software_version,
-								sensor_one->serial_number,
-								sensor_one->batch_num,
-								sensor_one->format_string,
-								sensor_one->date_string,
-								"VAISALA",
-								sensor_one->date_string,
-								current_time,
-								baud_table[sensor_one->baud].baud_num,
-								sensor_one->parity,
-								(int)sensor_one->data_f,
-								(int)sensor_one->stop_b,
-								(sensor_one->intv_data.interval / sensor_one->intv_data.multiplier),
-								sensor_one->intv_data.interval_units,
-								sensor_one->address,
-								sensor_one->echo_enabled ? 1 : 0);
-			break;
-		case CMD_ECHO:
-			if (p_cmd->raw_params[0] != '\0') {
-    			char *saveptr;
-    			char *token = strtok_r(p_cmd->raw_params, " \r\n", &saveptr);
-				if (token != NULL) {
-					char *ptr = token; // Temp pointer so we can walk through the string with toupper().
-					for (; *ptr; ++ptr) *ptr = toupper((unsigned char)*ptr); // Uppercase all the strings!
-					if (strncmp(token, "OFF", 3) == 0) {
-						sensor_one->echo_enabled = false;
-					} else if (strncmp(token, "ON", 2) == 0) {
-						sensor_one->echo_enabled = true;
-					}
-				}
-			}
-			safe_serial_write(serial_fd, "Echo\t: %s\r\n", sensor_one->echo_enabled ? "ON" : "OFF");
-			break;
-		case CMD_RESET:
-			DEBUG_PRINT("RESET Command Received with these params: %s\n", p_cmd->raw_params);
-			break;
-		case CMD_VERS:
-			DEBUG_PRINT("VERS Command Received with these params: %s\n", p_cmd->raw_params);
-			safe_serial_write(serial_fd, "PTB330 / %s\r\n", sensor_one->software_version );
-			break;
-		case CMD_MODS:
-			DEBUG_PRINT("MODS Command Received with these params: %s\n", p_cmd->raw_params);
-			break;
-		case CMD_CON:
-			DEBUG_PRINT("CON Command Received with these params: %s\n", p_cmd->raw_params);
-			break;
-		case CMD_R:
-			DEBUG_PRINT("R Command Received with these params: %s\n", p_cmd->raw_params);
-			sensor_one->mode = SMODE_RUN;
-			pthread_cond_signal(&send_cond); // Wake our sender thread, to check if our mode has changed.
-			break;
-		case CMD_INTV: {
-			DEBUG_PRINT("INTV Command Received with these params: %s\n", p_cmd->raw_params);
-    		int val = 0;
-    		char unit_str[MAX_INTV_STR] = {0};
-    		long multiplier = 1;
-
-    		// sscanf skips leading spaces automatically.
-		    // %d grabs the number, %15s grabs the following word.
-    		int found = sscanf(p_cmd->raw_params, "%d %15s", &val, unit_str);
-
-    		if (found >= 1) {
-        		// Handle the value limit (0-255 per Vaisala spec)
-        		if (val < 0) val = 0;
-        		if (val > 255) val = 255;
-
-        		if (found == 2) {
-            		// Check the unit (yyy)
-            		char unit = tolower((unsigned char)unit_str[0]);
-            		switch (unit) {
-                		case 's':
-							multiplier = 1;
-							sensor_one->intv_data.interval_units[0] = 's';
-							sensor_one->intv_data.interval_units[1] = '\0'; // manually terminate
-							break;
-                		case 'm':
-							multiplier = SECONDS_IN_MIN;
-							sensor_one->intv_data.interval_units[0] = 'm';
-							sensor_one->intv_data.interval_units[1] = 'i';
-							sensor_one->intv_data.interval_units[2] = 'n';
-							sensor_one->intv_data.interval_units[3] = '\0'; // manually terminate
-							break;
-                		case 'h':
-							multiplier = SECONDS_IN_HOUR;
-							sensor_one->intv_data.interval_units[0] = 'h';
-							sensor_one->intv_data.interval_units[1] = '\0'; // manually terminate
-							break;
-                		case 'd':
-							multiplier = SECONDS_IN_DAY;
-							sensor_one->intv_data.interval_units[0] = 'd';
-							sensor_one->intv_data.interval_units[1] = '\0'; // manually terminate
-							break;
-                		default:
-							multiplier = 1;
-							sensor_one->intv_data.interval_units[0] = 's';
-							sensor_one->intv_data.interval_units[1] = '\0'; // manually terminate
-							break; // Default to seconds
-            		}
-        		} else {
-            		// If only 'xxx' was provided without 'yyy', Vaisala defaults to seconds
-            		multiplier = 1;
-					sensor_one->intv_data.interval_units[0] = 's';
-					sensor_one->intv_data.interval_units[1] = '\0'; // manually terminate
-        		}
-
-        		// Update the sensor state
-        		sensor_one->intv_data.interval = (long)val * multiplier;
-				sensor_one->intv_data.multiplier = multiplier;
-				safe_serial_write(serial_fd, "Output interval %d %s\r\n", sensor_one->intv_data.interval, sensor_one->intv_data.interval_units);
-    		}
-			pthread_cond_signal(&send_cond); // Wake our sender thread, to check if our mode has changed.
-    		break;
-		}
-		case CMD_SEND:
-			DEBUG_PRINT("SEND Command Received with these params: %s\n", p_cmd->raw_params);
+	 switch (cmd) {
+		case CMD_POLL:
+			DEBUG_PRINT("POLL Command Received with these params: %s\n", p_cmd->raw_params);
         	char *line = get_next_line_copy(file_ptr, &file_mutex);
 
         	if (line) {
@@ -780,196 +565,13 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 				line = NULL;
         	}
 			break;
-		case CMD_SMODE:
-			DEBUG_PRINT("SMODE Command Received with these params: %s\n", p_cmd->raw_params);
-			char *saveptr;
-			char *token = strtok_r(p_cmd->raw_params, " ", &saveptr);
-			if (token != NULL) {
-				if (strncmp(token, "STOP", 4) == 0) {
-					sensor_one->mode = SMODE_STOP;
-				} else if (strncmp(token, "POLL", 4) == 0) {
-					sensor_one->mode = SMODE_POLL;
-				} else if (strncmp(token, "RUN", 3) == 0) {
-					sensor_one->mode = SMODE_RUN;
-				} else if (strncmp(token, "SEND", 4) == 0) {
-					sensor_one->mode = SMODE_SEND;
-				} else {
-					DEBUG_PRINT("No Match of mode\n");
-				}
-			}
-			pthread_cond_signal(&send_cond); // Wake our sender thread, to check if our mode has changed.
-			break;
-		case CMD_SDELAY:
-			DEBUG_PRINT("SDELAY Command Received with these params: %s\n", p_cmd->raw_params);
-			break;
-		case CMD_ADDR:
-			if (p_cmd->raw_params[0] != '\0') {
-				uint8_t new_address = (uint8_t)atoi(p_cmd->raw_params);
-				sensor_one->address = new_address;
-				safe_serial_write(serial_fd, "Address : 2 ?  %hhu\r\n",sensor_one->address);
-			} else {
-				safe_serial_write(serial_fd, "Address : 2 ?  %hhu\r\n",sensor_one->address);
-			}
-			break;
-		case CMD_OPEN:
-			DEBUG_PRINT("OPEN Command Received with these params: %s\n", p_cmd->raw_params);
-			if (p_cmd->raw_params[0] != '\0') {
-				uint8_t req_address = (uint8_t)atoi(p_cmd->raw_params);
-				if (sensor_one->mode == SMODE_POLL && sensor_one->address == req_address) {
-					sensor_one->mode = SMODE_STOP;
-					safe_serial_write(serial_fd, "PTB330: %hhu line opened for operator commands\r\n", sensor_one->address);
-					pthread_cond_signal(&send_cond); // Wake our sender thread, to check if our mode has changed.
-				}
-			} else {
-				safe_console_error("%s: %s\n", program_name, "Open command received without an address");
-			}
-			break;
-		case CMD_CLOSE:
-			DEBUG_PRINT("CLOSE Command Received with these params: %s\n", p_cmd->raw_params);
-			if (sensor_one->mode == SMODE_STOP) {
-				sensor_one->mode = SMODE_POLL;
-				safe_serial_write(serial_fd, "line closed\r\n");
-				pthread_cond_signal(&send_cond); // Wake our sender thread, to check if our mode has changed.
-			}
-			break;
-		case CMD_SCOM:
-			DEBUG_PRINT("SCOM Command Received with these params: %s\n", p_cmd->raw_params);
-			// If required this can be enabled in the handling of CMD_UNKNOWN
-			break;
-		case CMD_TQFE:
-			DEBUG_PRINT("TQFE Command Received with these params: %s\n", p_cmd->raw_params);
-			break;
-		case CMD_DPMAX:
-			DEBUG_PRINT("DPMAX Command Received with these params: %s\n", p_cmd->raw_params);
-			break;
-		case CMD_HHCP:
-			DEBUG_PRINT("HHCP Command Received with these params: %s\n", p_cmd->raw_params);
-			break;
-		case CMD_HQFE:
-			DEBUG_PRINT("HQFE Command Received with these params: %s\n", p_cmd->raw_params);
-			break;
-		case CMD_HQNH:
-			DEBUG_PRINT("HQNH Command Received with these params: %s\n", p_cmd->raw_params);
-			break;
-		case CMD_PSTAB:
-			DEBUG_PRINT("PSTAB Command Received with these params: %s\n", p_cmd->raw_params);
-			break;
-		case CMD_AVRG:
-			break;
-		case CMD_FORM:
-			if (p_cmd->raw_params[0] == '\0') {
-				DEBUG_PRINT("Output format : %s\r\n", sensor_one->format_string);
-				safe_serial_write(serial_fd, "Output format : %s\r\n", sensor_one->format_string);
-			} else if (p_cmd->raw_params[0] == '?') {
-				if (p_cmd->raw_params[1] == '\0') {
-					DEBUG_PRINT("Output format : %s\r\n", sensor_one->format_string);
-					safe_serial_write(serial_fd, "Output format : %s\r\n", sensor_one->format_string);
-				} else if (p_cmd->raw_params[1] == '?') {
-					safe_serial_write(serial_fd, "P P3H P1 P2 P3 DP12 DP13 DP23 HCP QFE QNH TP1 TP2 TP3 A3H\n"
-												 "Additional parameters\n"
-												 "#T, #R, #N, #RN, Un, n.n, CS2, CS4, CSX, SN, ERR, PSTAB, ADDR, DATE, TIME\r\n");
-					DEBUG_PRINT("P P3H P1 P2 P3 DP12 DP13 DP23 HCP QFE QNH TP1 TP2 TP3 A3H\n"
-												 "Additional parameters\n"
-												 "#T, #R, #N, #RN, Un, n.n, CS2, CS4, CSX, SN, ERR, PSTAB, ADDR, DATE, TIME\r\n");
-				} else 	{
-				      safe_console_error("Invalid Command Format: %s\n", strerror(errno));
-				}
-			} else {
-				strncpy(sensor_one->format_string, p_cmd->raw_params, MAX_FORM_STR - 1); // Copy the param string to the sensor, error handling?
-				sensor_one->format_string[MAX_FORM_STR - 1] = '\0';
-				parse_form_string(p_cmd->raw_params); // This is going to go through the remaing string after FORM, and build the compiled_form[] fields.
-			}
-			break;
-		case CMD_TIME:
-			break;
-		case CMD_DATE:
-			break;
-		case CMD_UNIT:
-			DEBUG_PRINT("UNIT Command Received with these params: %s\n", p_cmd->raw_params);
-			// Parse up to two tokens: "UNIT Pa" or "UNIT P mmHg"
-		    char *sptr;
-    		char *first = strtok_r(p_cmd->raw_params, " \t\r\n", &sptr);
-    		char *second = strtok_r(NULL, " \t\r\n", &sptr);
-
-    		if (!first || first[0] == '\0' || first[0] == '?') {
-        		// Query current unit setting
-        		safe_serial_write(serial_fd, "Unit: %s\r\n", get_unit_str(sensor_one->units));
-        		break;
-    		}
-
-			PTB330_Unit new_unit = UNIT_HPA; // default
-
-			if (!second) {
-		        // Single argument: "UNIT Pa" - set global default
-		        // Find matching unit in table
-        		for (size_t j = 0; j < sizeof(unit_table)/sizeof(UnitConversion); j++) {
-            		if (strcasecmp(first, unit_table[j].label) == 0) {
-                		new_unit = unit_table[j].unit;
-                		break;
-            		}
-        		}
-		        sensor_one->units = new_unit;
-        		safe_serial_write(serial_fd, "Unit: %s\r\n", get_unit_str(sensor_one->units));
-    		} else {
-     			// Two arguments: "UNIT P mmHg" - variable-specific (store for later)
-		        // Find matching unit in table
-        		for (size_t j = 0; j < sizeof(unit_table)/sizeof(UnitConversion); j++) {
-            		if (strcasecmp(second, unit_table[j].label) == 0) {
-                		new_unit = unit_table[j].unit;
-                		break;
-            		}
-        		}
+		case CMD_ERROR:
 			    // TODO: Implement per-variable unit storage
-		        sensor_one->units = new_unit;
-        		safe_serial_write(serial_fd, "Unit: %s\r\n", get_unit_str(sensor_one->units));
-    		}
-			break;
-		case CMD_DSEL:
-			break;
-		case CMD_DELETE:
-			break;
-		case CMD_UNDELETE:
-			break;
-		case CMD_DIR:
-			break;
-		case CMD_PLAY:
-			break;
-		case CMD_CDATE:
-			break;
-		case CMD_LCP1:
-			break;
-		case CMD_LCP2:
-			break;
-		case CMD_LCP3:
-			break;
-		case CMD_MPCP1:
-			break;
-		case CMD_MPCP2:
-			break;
-		case CMD_MPCP3:
-			break;
-		case CMD_CTEXT:
-			break;
-		case CMD_AMODE:
-			break;
-		case CMD_ASEL:
-			break;
-		case CMD_ACAL:
-			break;
-		case CMD_AERR:
-			break;
-		case CMD_ATEST:
-			break;
-		case CMD_RSEL:
-			break;
-		case CMD_RTEST:
-			break;
-		case CMD_ICAOQNH:
 			break;
 		case CMD_INVALID_CRC:
 			break;
 		case CMD_INVALID_ID:
-			safe_console_error("%s: Failed to open file: %s\n", program_name, strerror(errno));
+			safe_console_error("%s: Invalid sensor ID: %s\n", program_name, strerror(errno));
 			break;
 		case CMD_INVALID_FORMAT:
 			safe_console_error("%s: Invalid Command Format: %s\n", program_name, strerror(errno));
@@ -980,7 +582,7 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
         default:
 			safe_console_error("%s: Unknown or Bad Command:\n", program_name);
             break;
-    }*/
+    }
 }
 
 
