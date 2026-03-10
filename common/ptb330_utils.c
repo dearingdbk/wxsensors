@@ -107,7 +107,7 @@ bool ptb330_is_ready_to_send(ptb330_sensor *sensor) {
     clock_gettime(CLOCK_MONOTONIC, &now);
 
     long seconds = now.tv_sec - sensor->last_send_time.tv_sec;
-    if (seconds >= (long)sensor->intv_data.interval) return true;
+    if (seconds >= (long)(sensor->intv_data.interval * sensor->intv_data.multiplier)) return true;
 
     return false;
 }

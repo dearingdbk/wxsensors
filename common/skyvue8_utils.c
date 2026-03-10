@@ -13,8 +13,6 @@
 #include "crc_utils.h"
 #include "skyvue8_utils.h"
 
-#define OUTPUT_STRING "\" \"  P1 \" \" P2 \" \" P3 \" \" ERR \" \" P \" \" P3H \\R \\N"
-
 //FormItem compiled_form[MAX_FORM_ITEMS];
 //int form_item_count = 0;
 
@@ -22,7 +20,7 @@
 //int active_precision = 0;
 
 /*
- * Name:         init_ptb330_sensor
+ * Name:         init_skyvue8_sensor
  * Purpose:      Allocates memory for a PTB330 sensor structure and initializes
  * 				 all members (serial, baud, modules, etc.) to default factory values.
  * Arguments:    ptr - A pointer to a pointer of type ptb330_sensor, used to
@@ -39,55 +37,46 @@
  *				 Must be freed by the caller.
  */
 int init_skyvue8_sensor(skyvue8_sensor **ptr) {
-    // *ptr = malloc(sizeof(skyvue8_sensor));
-    //if (!*ptr) return -1;
+    *ptr = malloc(sizeof(skyvue8_sensor));
+    if (!*ptr) return -1;
 
     skyvue8_sensor *s = *ptr;
 	// Identity
-	/* strncpy(s->serial_number, "G1234567", MAX_SN_LEN);
-    strncpy(s->software_version, "1.12", 5);
+	strncpy(s->serial_number, "SN1000", MAX_SN_LEN);
+    strncpy(s->software_version, "001", 4);
     s->address = 0;
-	strncpy(s->batch_num, "1234", MAX_BATCH_NUM);
+	//strncpy(s->batch_num, "1234", MAX_BATCH_NUM);
 	// Configuration
-    s->mode = SMODE_STOP;
-    s->units = UNIT_HPA;
-    s->intv_data.interval = 1;
-	s->intv_data.interval_units[0] = 's';
-	s->intv_data.interval_units[1] = '\0'; // Manually terminate string.
-	s->intv_data.multiplier = 1; // stored in seconds.
-    strncpy(s->format_string, OUTPUT_STRING, MAX_FORM_STR - 1); // Our default format P11A11.
-	s->format_string[MAX_FORM_STR - 1] = '\0'; // Manually terminate string.
-	parse_form_string(s->format_string);
-    s->pressure = 1013.25;
-    s->offset = 0.0;
-    s->echo_enabled = false;
+    s->mode = SMODE_POLL;
+    s->measurement_period = 0; // 0 means the skyvue8 is polled.
+    s->message_interval = 0; // 0 means the skyvue8 is polled.
+//    s->intv_data.interval = 1;
+//	s->intv_data.interval_units[0] = 's';
+//	s->intv_data.interval_units[1] = '\0'; // Manually terminate string.
+//	s->intv_data.multiplier = 1; // stored in seconds.
+    //strncpy(s->format_string, OUTPUT_STRING, MAX_FORM_STR - 1); // Our default format P11A11.
+	// s->format_string[MAX_FORM_STR - 1] = '\0'; // Manually terminate string.
+	//parse_form_string(s->format_string);
+    //s->pressure = 1013.25;
+    //s->offset = 0.0;
 	s->initialized = true;
-	s->baud = 6; // 4800 default.
+	s->baud = 10; // 115200 default.
 	s->data_f = 8;
 	s->parity = 'N';
 	s->stop_b = 1;
-	memset(&s->module_one, 0, sizeof(s->module_one));
-	memset(&s->module_two, 0, sizeof(s->module_two));
-	memset(&s->module_three, 0, sizeof(s->module_three));
-	memset(&s->module_four, 0, sizeof(s->module_four));
-	strncpy(s->module_one.serial_number, "M1234567", MAX_SN_LEN);
-	strncpy(s->module_two.serial_number, "M7654321", MAX_SN_LEN);
-	strncpy(s->module_three.serial_number, "M4713526", MAX_SN_LEN);
-	strncpy(s->module_one.batch_num, "550", MAX_BATCH_NUM);
-	strncpy(s->module_two.batch_num, "550", MAX_BATCH_NUM);
-	strncpy(s->module_three.batch_num, "550", MAX_BATCH_NUM);
-	s->initialized = true; */
+	s->initialized = true;
 	clock_gettime(CLOCK_MONOTONIC, &s->last_send_time);
 	time_t now = time(NULL);
-	strftime(s->date_string, sizeof(s->date_string), "%Y-%m-%d", gmtime(&now));
+	strftime(s->date_string, sizeof(s->date_string), "%Y/%m/%d", gmtime(&now));
+	strftime(s->time_string, sizeof(s->time_string), "%H:%M:%S", gmtime(&now));
     return 0;
 }
 
 /*
- * Name:         ptb330_is_ready_to_send
+ * Name:         skyvue8_is_ready_to_send
  * Purpose:      Determines if the required time interval has elapsed since the
  * 				 last data transmission based on the sensor's configuration.
- * Arguments:    sensor - Pointer to the ptb330_sensor structure containing
+ * Arguments:    sensor - Pointer to the skyvue8_sensor structure containing
  * 				 mode and timing data.
  *
  * Output:       None.
@@ -101,14 +90,14 @@ int init_skyvue8_sensor(skyvue8_sensor **ptr) {
  * 				 if the system real-time clock is adjusted.
  */
 bool skyvue8_is_ready_to_send(skyvue8_sensor *sensor) {
-    //if (!sensor || sensor->mode != SMODE_RUN) return false;
+    if (!sensor || sensor->mode != SMODE_RUN) return false;
     if (!sensor) return false;
 
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
 
     long seconds = now.tv_sec - sensor->last_send_time.tv_sec;
-    //if (seconds >= (long)sensor->intv_data.interval) return true;
+    if (seconds >= (long)sensor->message_interval) return true;
 
     return false;
 }

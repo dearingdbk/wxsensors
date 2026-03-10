@@ -854,7 +854,7 @@ void* sender_thread(void* arg) {
 
 		// Determine if we should wait for a specific time or indefinitely
         if (sensor_one != NULL && sensor_one->mode == SMODE_RUN) {
-			interval = sensor_one->intv_data.interval;
+			interval = (sensor_one->intv_data.interval * sensor_one->intv_data.multiplier);
             // Calculate absolute time: Last Send Time + Interval
             // Use current REALTIME + (Interval - Time Since Last Send)
             clock_gettime(CLOCK_MONOTONIC, &ts);

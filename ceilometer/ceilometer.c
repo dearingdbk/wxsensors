@@ -303,7 +303,7 @@
 #include "skyvue8_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
-#define BAUD_RATE   B4800	     // Adjust as needed, main has logic to take arguments for a new baud rate
+#define BAUD_RATE   B115200	     // Adjust as needed, main has logic to take arguments for a new baud rate
 #define MAX_LINE_LENGTH 1024
 #define MAX_CMD_LENGTH 256
 #define MAX_MSG_LENGTH 512
