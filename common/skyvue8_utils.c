@@ -65,6 +65,8 @@ int init_skyvue8_sensor(skyvue8_sensor **ptr) {
 	s->parity = 'N';
 	s->stop_b = 1;
 	s->initialized = true;
+	s->measurement_period = 0; 		// 2-600, or 0 equals polled.
+	s->message_interval = 0; 		// 2-600, or 0 equals polled.
 	clock_gettime(CLOCK_MONOTONIC, &s->last_send_time);
 	time_t now = time(NULL);
 	strftime(s->date_string, sizeof(s->date_string), "%Y/%m/%d", gmtime(&now));

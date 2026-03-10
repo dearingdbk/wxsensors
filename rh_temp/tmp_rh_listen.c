@@ -47,12 +47,7 @@
 #include <errno.h>
 #include <termios.h>
 #include <pthread.h>
-#include <sys/ioctl.h>
-#include <linux/serial.h>
-#include <regex.h>
 #include <signal.h>
-#include <stdatomic.h>
-#include <stdarg.h>
 #include <time.h>
 #include "serial_utils.h"
 #include "console_utils.h"

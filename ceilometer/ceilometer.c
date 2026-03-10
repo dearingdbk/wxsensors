@@ -288,11 +288,7 @@
 #include <errno.h>
 #include <termios.h>
 #include <pthread.h>
-#include <sys/ioctl.h>
-#include <regex.h>
 #include <signal.h>
-#include <stdatomic.h>
-#include <stdarg.h>
 #include <time.h>
 #include <ctype.h>
 #include <poll.h>

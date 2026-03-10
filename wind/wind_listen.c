@@ -45,10 +45,7 @@
 #include <errno.h>
 #include <termios.h>
 #include <pthread.h>
-#include <regex.h>
 #include <signal.h>
-#include <stdatomic.h>
-#include <stdarg.h>
 #include <time.h>
 #include "serial_utils.h"
 #include "sensor_utils.h"
