@@ -451,6 +451,7 @@ void parse_message(char *msg, ParsedMessage *p_message) {
 	if ((token = NEXT_T)) p_message->most_sig_alarm = (uint16_t)strtol(token, NULL, 16);  // Set Most Significant Alarm Word "8000" -> 0x8000.
 	if ((token = NEXT_T)) p_message->middle_sig_alarm = (uint16_t)strtol(token, NULL, 16);  // Set Middle Significant Alarm Word "0000" -> 0x0000.
 	if ((token = NEXT_T)) p_message->least_sig_alarm = (uint16_t)strtol(token, NULL, 16);  // Set Least Significant Alarm Word "0000" -> 0x0000.
+	// TODO: If we implement other message formats 002, or 004, we will need to injest the raw bin data ~10,000 chars.
 	#undef NEXT_T
 }
 
@@ -473,35 +474,84 @@ void process_and_send(ParsedMessage *msg) {
 	if (msg == NULL) return;
 		switch(msg->message_id) {
 			case MSG_001: {
-				int length = snprintf(msg_buffer, sizeof(msg_buffer), "\x01CS%c%s\x02\r\n%c%c %03d %s %s %s %s %04X%04X%04X\r\n\x03",
-    				(char)sensor_one->address,						// 1.  char - Sensor ID
-    				sensor_one->software_version,		   			// 2.  char* - Operating System
-    				(char)msg->detection_status,	       			// 3.  char - Detection Status
-    				(char)msg->alarm_status,		  				// 4.  char - Alarm Status
-    				(uint8_t)msg->win_trans_per,       				// 5.  uint8_t - Window Transmission Percent
-    				msg->first_height,								// 6.  char* - First Height
-		    		msg->second_height,      						// 7.  char* - Second Height
-    				msg->third_height,           					// 8.  char* - Third Height
-		    		msg->fourth_height,						  		// 9.  char* - Fourth Height
-    				msg->most_sig_alarm,							// 10. uint16_t - Most Significant Alarm
-		    		msg->middle_sig_alarm,							// 11. uint16_t - Middle Significant Alarm
-    				msg->least_sig_alarm 				  			// 12. uint16_t - Least Significant Alarm
+				// See wxsensors.xlsx for message breakdown.
+				int length = snprintf(msg_buffer, sizeof(msg_buffer), "%s%c%s%03d\x02\r\n%c%c %03d %s %s %s %s %04X%04X%04X\r\n\x03",
+    				"CS",											// 1.  char* - "CS" Always CS
+					(char)sensor_one->address,						// 2.  char - Sensor ID
+    				sensor_one->software_version,		   			// 3.  char* - Operating System
+    				msg->message_id,								// 4.  uint8_t - Message ID
+					(char)msg->detection_status,	       			// 5.  char - Detection Status
+    				(char)msg->alarm_status,		  				// 6.  char - Alarm Status
+    				(uint8_t)msg->win_trans_per,       				// 7.  uint8_t - Window Transmission Percent
+    				msg->first_height,								// 8.  char* - First Height
+		    		msg->second_height,      						// 9.  char* - Second Height
+    				msg->third_height,           					// 10.  char* - Third Height
+		    		msg->fourth_height,						  		// 11.  char* - Fourth Height
+    				msg->most_sig_alarm,							// 12. uint16_t - Most Significant Alarm
+		    		msg->middle_sig_alarm,							// 13. uint16_t - Middle Significant Alarm
+    				msg->least_sig_alarm 				  			// 14. uint16_t - Least Significant Alarm
 					);
 
 				if (length > 0 && length < (int)sizeof(msg_buffer)) {
 					uint16_t calculated_crc = crc16(msg_buffer, length);
-					safe_serial_write(serial_fd, "%s%04X\x04\r\n", msg_buffer, calculated_crc);
-					DEBUG_PRINT("Message Buffer after Dynamic Build holds %s%04X\n",msg_buffer, calculated_crc);
+					safe_serial_write(serial_fd, "\x01%s%04X\x04\r\n", msg_buffer, calculated_crc);
 				}
 				break;
 			}
+			case MSG_002:
+				// TODO
+				break;
+			case MSG_003:
+				// TODO
+				break;
+			case MSG_004:
+				// TODO
+				break;
+			case MSG_101:
+				// TODO
+				break;
+			case MSG_102:
+				// TODO
+				break;
+			case MSG_103:
+				// TODO
+				break;
+			case MSG_104:
+				// TODO
+				break;
+			case MSG_105:
+				// TODO
+				break;
+			case MSG_106:
+				// TODO
+				break;
+			case MSG_107:
+				// TODO
+				break;
+			case MSG_108:
+				// TODO
+				break;
+			case MSG_109:
+				// TODO
+				break;
+			case MSG_110:
+				// TODO
+				break;
+			case MSG_111:
+				// TODO
+				break;
+			case MSG_112:
+				// TODO
+				break;
+			case MSG_113:
+				// TODO
+				break;
+			case MSG_114:
+				// TODO
+				break;
 			default:
 				break;
 	}
-
-	//build_dynamic_output(msg, msg_buffer, sizeof(msg_buffer));
-	DEBUG_PRINT("Message Buffer after Dynamic Build holds %s\n",msg_buffer);
-	safe_serial_write(serial_fd, "%s\r\n", msg_buffer);
 }
 
 /*
@@ -540,7 +590,7 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 
 				size_t param_len = strcspn(ptr, "\n\r"); // Get the size of the string, up to the \n \r
 
-				if (param_len > sizeof(cmd->raw_params) - 1) {
+				if (param_len > sizeof(cmd->raw_params) - 1) { // Truncate if the remaining string is larger than our raw_params char*.
     				param_len = sizeof(cmd->raw_params) - 1;
 				}
 
@@ -579,15 +629,17 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 			char *token; // Where we temporarily store each token.
 			uint8_t sensor_id;
 			uint8_t message_id;
+
 			if ((token = strtok_r(p_cmd->raw_params, " \r\n", &saveptr))) sensor_id = atoi(token);  // Set sensor ID.
-			if ((token = strtok_r(p_cmd->raw_params, " \r\n", &saveptr))) message_id = atoi(token);  // Set message ID.
+			if ((token = strtok_r(NULL, " \r\n", &saveptr)))  message_id = atoi(token);  // Set message ID.
 
         	char *line = get_next_line_copy(file_ptr, &file_mutex);
+
         	if (line) {
 		        ParsedMessage local_msg;  // LOCAL
 				parse_message(line, &local_msg);
-				local_msg.sensor_id = sensor_id; // Add the sensor_id, and message_id before sending.
-				local_msg.message_id = message_id;
+				local_msg.sensor_id = sensor_id; // Add the sensor_id before sending. TODO: Validate address against sensor.
+				local_msg.message_id = message_id; // Add the message_id before sending.
 				process_and_send(&local_msg);
 				fflush(NULL);
             	free(line); // caller of get_next_line_copy() must free resource.
@@ -595,7 +647,7 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
         	}
 			break;
 		case CMD_ERROR:
-			    // TODO: Implement
+			    // TODO: Implement a generic error handler.
 			break;
 		case CMD_INVALID_CRC:
 			break;
@@ -691,7 +743,7 @@ void* sender_thread(void* arg) {
 
 		// Determine if we should wait for a specific time or indefinitely
         if (sensor_one != NULL && sensor_one->mode == SMODE_RUN) {
-			interval = sensor_one->message_interval;
+			interval = sensor_one->message_interval; // If we are in polled mode, message_interval is zero.
             // Calculate absolute time: Last Send Time + Interval
             // Use current REALTIME + (Interval - Time Since Last Send)
             clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -821,17 +873,6 @@ int main(int argc, char *argv[]) {
 		cleanup_and_exit(1);
     }
 
-    ParsedCommand local_cmd;
-
-//	handle_command(parse_command("ERRS\r\n", &p_cmd));
-//	handle_command(parse_command("HELP\r\n", &p_cmd));
-//	handle_command(parse_command("LOCK 2\r\n", &p_cmd));
-//	handle_command(parse_command("INTV 5 s\r\n", &local_cmd), &local_cmd);
-
-//	handle_command(parse_command("UNIT mmHG", &local_cmd), &local_cmd);
-//	handle_command(parse_command("FORM P \" \" U \" \" P1  \" \" U \" :\" A3H", &local_cmd), &local_cmd);
-	handle_command(parse_command("R\r\n", &local_cmd), &local_cmd);
-
     safe_console_print("Press 'q' + Enter to quit.\n");
     struct pollfd fds[1];
 	fds[0].fd = STDIN_FILENO;
@@ -855,7 +896,7 @@ int main(int argc, char *argv[]) {
         	}
 		}
     }
-    safe_console_print("Program terminated.\n");
+    safe_console_print("Program %s terminated.\n", program_name);
 	cleanup_and_exit(0);
 	return 0; // We won't get here, but it quiets verbose warnings on a no return value.
 }

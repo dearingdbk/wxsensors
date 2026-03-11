@@ -38,10 +38,25 @@ typedef enum {
 } Skyvue8_SMode;
 
 typedef enum {
-    MSG_001 = 1,  // No Profile / No Sky Condition
-    MSG_002 = 2,  // Profile / No Sky Condition
-    MSG_003 = 3,  // No Profile / Sky Condition
-    MSG_004 = 4   //
+	MSG_000 = 0,	// No Message
+    MSG_001 = 1,	// No Profile / No Sky Condition
+    MSG_002 = 2,  	// Profile / No Sky Condition
+    MSG_003 = 3,  	// No Profile / Sky Condition
+    MSG_004 = 4,   	// Deafault
+	MSG_101 = 101,	// CL31 MSG 1 - 770 range bins 10 m resolution
+	MSG_102 = 102,	// CL31 MSG 1 - 385 range bins 20 m resolution
+	MSG_103 = 103,	// CL31 MSG 1 - 1500 range bins 5 m resolution
+	MSG_104 = 104,	// CL31 MSG 1 - 770 range bins 5 m resolution
+	MSG_105 = 105,	// CL31 MSG 1 - No Profile
+	MSG_106 = 106,	// CL31 MSG 1 - 2048 range bins 5 m resolution
+	MSG_107 = 107,	// CL31 MSG 2 - 770 range bins 10 m resolution
+	MSG_108 = 108,	// CL31 MSG 2 - 385 range bins 20 m resolution
+	MSG_109 = 109,	// CL31 MSG 2 - 1500 range bins 5 m resolution
+	MSG_110 = 110,	// CL31 MSG 2 - 770 range bins 5 m resolution
+	MSG_111 = 111,	// CL31 MSG 2 - No Profile
+	MSG_112 = 112,	// CL31 MSG 2 - 2048 range bins 5 m resolution
+	MSG_113 = 113,	// CT25K MSG 1
+	MSG_114 = 114	// CT25K MSG 6
 } Skyvue8_MessageID;
 
 typedef enum {

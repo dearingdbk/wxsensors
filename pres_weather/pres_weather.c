@@ -228,8 +228,6 @@ volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
 
 int serial_fd = -1;
-char site_id = 'A';
-uint8_t address = 0;
 
 // This needs to be freed upon exit.
 av30_sensor *sensor_one = NULL; // Global pointer to struct for atmosvue30 sensor .
