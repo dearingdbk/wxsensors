@@ -205,7 +205,8 @@ wxsensors/
 │   ├── ptb330_utils.h
 │   ├── q131.h
 │   ├── sensor_utils.h
-│   └── serial_utils.h
+│   ├── serial_utils.h
+│   └── skyvue8_utils.h
 ├── common/               # Shared source files
 │   ├── atmosvue30_utils.c
 │   ├── console_utils.c
@@ -214,7 +215,8 @@ wxsensors/
 │   ├── file_utils.c
 │   ├── ptb330_utils.h
 │   ├── sensor_utils.c
-│   └── serial_utils.c
+│   ├── serial_utils.c
+│   └── skyvue8_utils.c
 ├── wind/                 # Gill WindObserver 75 emulator
 │   └── wind_listen.c
 ├── rh_temp/              # Rotronic HC2A-S3 emulator
@@ -225,11 +227,11 @@ wxsensors/
 │   └── dsp8100.c
 ├── ptb330/               # Vaisala PTB-330 barometric pressure emulator
 │   └── ptb330.c
-├── ceilometer/           # Ceilometer emulator
+├── ceilometer/           # Campbell Scientific SkyVue8 Ceilometer emulator
 │   └── ceilometer.c
 ├── ice/        	      # Ice Accumulation Detection emulator
 │   └── ice.c
-├── flash/                # Lightning sensor emulator
+├── flash/                # BTD-300 Lightning sensor emulator
 │   └── flash.c
 ├── rain/                 # Rain tipping bucket sensor emulator
 │   └── rain.c
