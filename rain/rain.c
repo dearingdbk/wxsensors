@@ -116,7 +116,7 @@ volatile sig_atomic_t kill_flag = 0;
 
 int serial_fd = -1;
 
-flash_sensor *fl_sensor;
+//flash_sensor *fl_sensor;
 
 /* Synchronization primitives */
 static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
@@ -234,7 +234,7 @@ void handle_command(CommandType cmd) {
             safe_serial_write(serial_fd, "%s\r\n", "DIST:");
 			break;
 		case CMD_GET_SER:
-            safe_serial_write(serial_fd, "%s\r\n", fl_sensor->serial_num);
+            //safe_serial_write(serial_fd, "%s\r\n", fl_sensor->serial_num);
 			break;
 		case CMD_DEF_DIST:
 			if (sampling == 1) {
@@ -347,15 +347,15 @@ void* sender_thread(void* arg) {
              if (line)
 			 {
                 char updated_line[MAX_LINE_LENGTH];
-                if (update_btd_timestamps(line, updated_line, sizeof(updated_line)) == 0)
-                {
+                //if (update_btd_timestamps(line, updated_line, sizeof(updated_line)) == 0)
+                //{
                     safe_serial_write(serial_fd, "%s\r\n", updated_line);
-                } else
-                {
-					safe_serial_write(serial_fd, "%s\r\n", line);
-				}
-                free(line); // caller of get_next_line_copy() must free resource.
-				line = NULL;
+                //} else
+                //{
+				//	safe_serial_write(serial_fd, "%s\r\n", line);
+				//}
+                //free(line); // caller of get_next_line_copy() must free resource.
+				//line = NULL;
              }
 
              clock_gettime(CLOCK_REALTIME, &requested_time);
