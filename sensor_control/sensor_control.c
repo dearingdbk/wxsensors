@@ -69,7 +69,7 @@ static SensorDef sensor_defs[] = {
     {"pres_weather","Campbell AtmosVue30",      "./data_files/pres_weather/pres_weather.txt /dev/ttyUSB2 38400 RS485"},
     {"dsp8100",  	"Barometric Sensor",        "./data_files/barometric/barometric_data.txt /dev/ttyUSB3 9600 RS485"},
     {"ceilometer",  "Ceilometer",               "./data_files/ceilometer/ceil_data.txt /dev/ttyUSB4 9600 RS422"},
-    {"flash",       "Biral BTD-300",            "./data_files/flash/flash_data.txt /dev/ttyUSB5 9600 RS422"},
+    {"btd300",      "Biral BTD-300",            "./data_files/flash/flash_data.txt /dev/ttyUSB5 9600 RS422"},
     {"ice",         "Goodrich 0872F1",          "./data_files/ice/ice_data.txt /dev/ttyUSB6 2400 RS232"},
     {"rain",        "Campbell CS700H",          "./data_files/rain/rain_data.txt /dev/ttyUSB7 1200 SDI-12"},
     {NULL, NULL, NULL}
