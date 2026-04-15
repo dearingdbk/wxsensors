@@ -371,39 +371,6 @@ void process_and_send(ParsedMessage *msg) {
 									msg->time_since_flash_four,		// # of 10 millisecond intervals since Flash 4
 									msg->distance_of_flash_four,	// Distance in decametres of Flash 4
 									msg->direction_of_flash_four);	// Direction in degrees of Flash 4
-	DEBUG_PRINT("%s,%02hhu,%s,%s,%hhu,%hhu,%02hhu,%s,"
-								 "%s,%s,%03hhu,%05hu,%03hu," 		// Flash 1
-								 "%s,%s,%03hhu,%05hu,%03hu," 		// Flash 2
-								 "%s,%s,%03hhu,%05hu,%03hu," 		// Flash 3
-								 "%s,%s,%03hhu,%05hu,%03hu\r\n", 	// Flash 4
-									msg->data_header, 				// DATA:
-									msg->site_id, 					// Site ID
-									current_date_string,			// Current Date
-									current_time_string,			// Current Time
-									msg->number_of_flashes,			// The number of flashes on this line 0-4.
-									msg->warning_indicator,			// 0, 1, 2 or 3.
-									msg->warning_flags,				// Warning Flags if any
-									msg->self_test_flags,			// Self Test flags
-									flash_date_array[0],		 	// Updated date of Flash 1
-									flash_time_array[0],			// Updated time of Flash 1
-									msg->time_since_flash_one,		// # of 10 millisecond intervals since Flash 1
-									msg->distance_of_flash_one,		// Distance in decametres of Flash 1
-									msg->direction_of_flash_one,	// Direction in degrees of Flash 1
-									flash_date_array[1], 			// Updated date of Flash 2
-									flash_time_array[1],			// Updated time of Flash 2
-									msg->time_since_flash_two,		// # of 10 millisecond intervals since Flash 2
-									msg->distance_of_flash_two,		// Distance in decametres of Flash 2
-									msg->direction_of_flash_two,	// Direction in degrees of Flash 2
-									flash_date_array[2],			// Updated date of Flash 3
-									flash_time_array[2],			// Updated time of Flash 3
-									msg->time_since_flash_three,	// # of 10 millisecond intervals since Flash 3
-									msg->distance_of_flash_three,	// Distance in decametres of Flash 3
-									msg->direction_of_flash_three,	// Direction in degrees of Flash 3
-									flash_date_array[3],			// Updated date of Flash 4
-									flash_time_array[3],			// Updated time of Flash 4
-									msg->time_since_flash_four,		// # of 10 millisecond intervals since Flash 4
-									msg->distance_of_flash_four,	// Distance in decametres of Flash 4
-									msg->direction_of_flash_four);	// Direction in degrees of Flash 4
 }
 
 /*
