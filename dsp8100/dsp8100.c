@@ -1,5 +1,5 @@
 /*
- * File:     barometric.c
+ * File:     dsp8100.c
  * Author:   Bruce Dearing
  * Date:     16/01/2026
  * Version:  1.1
