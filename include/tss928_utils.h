@@ -15,7 +15,7 @@
 
 #define MAX_FORM_STR 128
 #define MAX_SN_LEN 16
-#define MAX_UNIT_STR 32
+#define MAX_UNIT_STR 50
 #define DATE_STRING 7
 #define TIME_STRING 7
 #define MAX_HEADER_STR 7
@@ -24,6 +24,21 @@
 #define MAX_HISTORY_MINS 30
 #define RANGE_RINGS 2 // 0:NEAR, 1:DIST
 #define QUADRANTS 8 //0:N, 1:NE, 2:E, 3:SE, 4:S, 5:SW, 6:W, 7:NW
+#define NORTH 0
+#define NORTH_EAST 1
+#define EAST 2
+#define SOUTH_EAST 3
+#define SOUTH 4
+#define SOUTH_WEST 5
+#define WEST 6
+#define NORTH_WEST 7
+#define NEAR 0
+#define DIST 1
+
+#define SECONDS_IN_DAY 86400
+#define SECONDS_IN_HOUR 3600
+#define SECONDS_IN_MIN 60
+
 
 typedef enum {
     SMODE_STOP,  // No output
@@ -48,24 +63,28 @@ typedef struct {
 	uint8_t current_minute_index;
 	uint8_t aging_interval; // 15, 10, 5 or 30 minutes (arguments to J command are 1,2,3,4)
 
+	uint32_t total_strikes_since_reset;
+
 } StrikeBin;
 
 typedef struct {
     // Identity
 	uint8_t address;
 	char serial_number[MAX_SN_LEN];
-
+	char loader_version[MAX_UNIT_STR];
+	char software_version[MAX_UNIT_STR];
+	char copyright_information[MAX_UNIT_STR];
     // Configuration
     TSS928_SMode mode;
     uint16_t message_interval; 	// 0, or 2-600 seconds - 0 is polled.
 	StrikeBin strikes;
 	uint16_t overhead;
-	uint16_t vicinity;
-	uint16_t near_distant;
-    uint16_t far_distant;
-
+	uint16_t near;
+    uint16_t distant;
+	uint8_t rotation_angle;
     // Timing
     struct timespec last_send_time;
+    struct timespec sensor_start_time;
     bool initialized;
 
 } TSS928_sensor;
@@ -143,43 +162,20 @@ typedef struct {
 typedef struct {
 	char data_header[MAX_HEADER_STR];
 	uint8_t site_id;
-	time_t original_epoch; // This will hold our date and time in the format of epoch.
-	uint8_t number_of_flashes; // The number of flashes on this particular line.
-	uint8_t warning_indicator; // 0, 1, 2 or 3.
-	uint8_t warning_flags; //
-	char self_test_flags[MAX_SELF_TEST_FLAG];
-	time_t flash_epoch_array[MAX_FLASHES];
-	// FLASH INFO
-		// FLASH ONE
-	uint8_t time_since_flash_one; // # of 10 millisecond intervals since flash one.
-	uint16_t distance_of_flash_one; // Distance to Flash one.
-	uint16_t direction_of_flash_one; // Direction of flash one in degrees.
-		//FLASH TWO
-	uint8_t time_since_flash_two; // # of 10 millisecond intervals since flash two.
-	uint16_t distance_of_flash_two; // Distance to Flash two.
-	uint16_t direction_of_flash_two; // Direction of flash two in degrees.
-		//FLASH THREE
-	uint8_t time_since_flash_three; // # of 10 millisecond intervals since flash three.
-	uint16_t distance_of_flash_three; // Distance to Flash three.
-	uint16_t direction_of_flash_three; // Direction of flash three in degrees.
-		// FLASH FOUR
-	uint8_t time_since_flash_four; // # of 10 millisecond intervals since flash four.
-	uint16_t distance_of_flash_four; // Distance to Flash four.
-	uint16_t direction_of_flash_four; // Direction of flash four in degrees.
-
 } ParsedMessage;
 
 // Function Prototypes
 int init_TSS928_sensor(TSS928_sensor **ptr);
 bool TSS928_is_ready_to_send(TSS928_sensor *sensor);
 //int set_dist(TSS928_sensor **ptr, int distance_id, int distance);
-//int reset_flash(TSS928_sensor **ptr);
+void reset_sensor(TSS928_sensor *sensor);
 //time_t parse_to_epoch(const char *date_token, const char *time_token);
 //void epoch_to_date(time_t epoch, char *buf);
 //void epoch_to_time(time_t epoch, char *buf);
-void record_ground_strike(StrikeBin *bin, uint8_t ring_index, uint8_t quadrant_index);
-void record_overhead_strike(StrikeBin *bin);
-void record_cloud_strike(StrikeBin *bin);
+void record_ground_strike(StrikeBin *bin, uint8_t ring_index, uint8_t quadrant_index, uint8_t strike_count);
+void record_overhead_strike(StrikeBin *bin, uint8_t strike_count);
+void record_cloud_strike(StrikeBin *bin, uint8_t strike_count);
 void advance_one_minute(StrikeBin *bin);
+void conduct_self_test(TSS928_sensor *sensor);
 
 #endif

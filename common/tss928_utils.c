@@ -38,18 +38,23 @@ int init_TSS928_sensor(TSS928_sensor **ptr) {
     TSS928_sensor *s = *ptr;
 	// Identity
 	strncpy(s->serial_number, "000008675309", MAX_SN_LEN);
+	strncpy(s->loader_version, "TSS928 Loader Version 1.5", MAX_UNIT_STR);
+	strncpy(s->software_version, "TSS928 2.0 September 6, 2001", MAX_UNIT_STR);
+	strncpy(s->copyright_information, "Copyright (c) 2001, Global Atmospherics, Inc", MAX_UNIT_STR);
 
     s->address = 1;
 	// Configuration
     s->mode = SMODE_POLL;
     s->message_interval = 0; // 0 means the TSS928 is polled.
-    s->overhead = 926; // sets the overhead lightning limit to 5 NM or 926 decametres
-    s->vicinity = 1852; // sets the overhead lightning limit to 10 NM or 1852 decametres
-    s->near_distant = 3704; // sets the overhead lightning limit to 20 NM or 3704 decametres
-    s->far_distant = 5556; // sets the overhead lightning limit to 30 NM or 5556 decametres
+    s->overhead = 5; // sets the overhead lightning limit to 5 NM or 926 decametres
+    s->near = 10; // sets the overhead lightning limit to 20 NM or 3704 decametres
+    s->distant = 30; // sets the overhead lightning limit to 30 NM or 5556 decametres
+	s->rotation_angle = 120;
 	s->strikes.aging_interval = 15;
 	s->strikes.current_minute_index = 0;
+    s->strikes.total_strikes_since_reset = 0; // Stores the total strikes since the system has been running.
 	clock_gettime(CLOCK_MONOTONIC, &s->last_send_time);
+	clock_gettime(CLOCK_MONOTONIC, &s->sensor_start_time);
 	s->initialized = true;
     return 0;
 }
@@ -83,188 +88,91 @@ bool TSS928_is_ready_to_send(TSS928_sensor *sensor) {
     return false;
 }
 
-
 /*
- * Name:         reset_flash
- * Purpose:      resets a BTD-300 lightning sensor.
- * Arguments:    ptr - a pointer to a flash_sensor struct.
- *
- * Output:       Error message if unable to allocate memory for the struct.
- * Modifies:     Updates the default values of provided sensor.
- * Returns:      1 on failure, 0 on success.
- * Assumptions:
- *
- * Bugs:         None known.
- * Notes:        int snprintf(char *str, size_t size, const char *format, ...);
- *
-int reset_flash(TSS928_sensor **ptr) {
-    if (*ptr == NULL) {
-        perror("Unable to communicate with sensor\n");
-        return 1;
-    }
-	TSS928_sensor *s = *ptr;
-    s->overhead = 926; // sets the overhead lightning limit to 5 NM or 926 decametres
-    s->vicinity = 1852; // sets the overhead lightning limit to 10 NM or 1852 decametres
-    s->near_distant = 3704; // sets the overhead lightning limit to 20 NM or 3704 decametres
-    s->far_distant = 5556; // sets the overhead lightning limit to 30 NM or 5556 decametres
-
-    return 0;
-}*/
-
-/*
- * Name:         set_dist
- * Purpose:      sets a BTD-300 lightning sensor.
- * Arguments:    ptr - a pointer to a flash_sensor struct.
- *
- * Output:       Error message if unable to allocate memory for the struct.
- * Modifies:     Updates the default values of provided sensor.
- * Returns:      -1 on failure, 1 on success.
- * Assumptions:  "DISTx,yyyy" Set Distance Limits x == 0-OH, 1-V, 2-ND, 3-FD. yyyy == decametres
- *
- * Bugs:         None known.
- * Notes:        int snprintf(char *str, size_t size, const char *format, ...);
- *
-int set_dist(TSS928_sensor **ptr, int distance_id, int distance) {
-    if (*ptr == NULL) {
-        perror("Unable to communicate with sensor\n");
-        return -1;
-    }
-
-	switch(distance_id) {
-		case 0:
-    		(*ptr)->overhead = distance; // sets the overhead lightning limit to 'distance'
-			break;
-		case 1:
-		    (*ptr)->vicinity = distance; // sets the overhead lightning limit to 'distance'
-			break;
-		case 2:
-		    (*ptr)->near_distant = distance; // sets the overhead lightning limit to 'distance'
-			break;
-		case 3:
-		    (*ptr)->far_distant = distance; // sets the overhead lightning limit to 'distance'
-			break;
-		default:
-			// 99 or another bad number, do nothing.
-			break;
-	}
-
-    return 1;
-}*/
-
-
-/*
- * Name:         parse_to_epoch
- * Purpose:      Parse a DDMMYY string and HHMMSS string into a UTC epoch time_t.
- * 				 e.g. date="010124", time="235959" -> epoch for 2024-01-01 23:59:59 UTC.
- * Arguments:    date_token a date string to convert to epoch time.
- *				 time_token a time string to convert to epoch time.
+ * Name:         record_ground_strike()
+ * Purpose:      Record the number of strikes/flashes of Cloud-Ground lightning.
+ * Arguments:    bin - A StrikeBin struct containing a cicular bin of the strikes up to the aging interval.
+ *               ring_index - the uint8_t representing the ring range of the strike 0/NEAR or 1/DIST.
+ * 		         quadrant_index - the uint8_t representing the quadrant of the strike 0/N,1/NE,2/E,3/SE,4/S,5/SW,6/W,7/NW.
+ *				 strike_count - the number of strikes/flashes to record during this interval.
  * Output:       NIL.
- * Modifies:     Local copy of a tm struct.
- * Returns:      time_t - integer representing epoch time of the converted data and time strings.
- * Assumptions:  The provided date and time token strings are valid dates, and in the correct format.
- *
- * Bugs:         None known.
- * Notes:        Uses UTC time.
- *
- *
-time_t parse_to_epoch(const char *date_token, const char *time_token)
-{
-    struct tm t = {0}; // Use a local tm struct, zeroized.
-
-    // Parse DDMMYY
-    t.tm_mday  =  (date_token[0] - '0') * 10 + (date_token[1] - '0');
-    t.tm_mon   = ((date_token[2] - '0') * 10 + (date_token[3] - '0')) - 1; // tm_mon is 0 indexed, subtract 1, to get the right month (03 == April).
-    t.tm_year  =  (date_token[4] - '0') * 10 + (date_token[5] - '0') + 100; // years since 1900, add 100 to account for the century shift.
-
-    // Parse HHMMSS
-    t.tm_hour  = (time_token[0] - '0') * 10 + (time_token[1] - '0');
-    t.tm_min   = (time_token[2] - '0') * 10 + (time_token[3] - '0');
-    t.tm_sec   = (time_token[4] - '0') * 10 + (time_token[5] - '0');
-
-    t.tm_isdst = 0; // We are using UTC, Daylight Savings Time is not in effect (Standard Time).
-
-    return timegm(&t);
-}*/
-
-
-/*
- * Name:         epoch_to_date
- * Purpose:      Format an epoch time_t back to a DDMMYY string.
- * Arguments:    epoch - A time_t pointer used to get the current date.
- *               buf - A char* pointer used to hold the current date string DDMMYY, buf must be at least 7 bytes.
- * Output:       NIL.
- * Modifies:     buf - snprintf to the char* pointer the date string.
+ * Modifies:     ground_history[][][].
+ *				 ground_total[][].
  * Returns:      NIL.
- * Assumptions:  The provided buf is a valid address of a char * pointer, of size 7 bytes, and time_t epoch is not null.
+ * Assumptions:  The provided bin is a valid address of a StrikeBin * pointer, and the ring_index, and quadrant_index are within range.
  *
  * Bugs:         None known.
- * Notes:        Uses UTC time.
- *
- *
-void epoch_to_date(time_t epoch, char *buf)
-{
-    struct tm t;
-	gmtime_r(&epoch, &t);
-	strftime(buf, sizeof(buf), "%d%m%y", &t);
-}*/
-
-/*
- * Name:         epoch_to_time
- * Purpose:      Format an epoch time_t back to a HHMMSS string.
- * Arguments:    epoch - A time_t pointer used to get the current epoch time.
- *               buf - A char* pointer used to hold the current time string HHMMSS, buf must be at least 7 bytes.
- * Output:       NIL.
- * Modifies:     buf - snprintf to the char* pointer the time string.
- * Returns:      NIL.
- * Assumptions:  The provided buf is a valid address of a char * pointer, of size 7 bytes, and time_t epoch is not null.
- *
- * Bugs:         None known.
- * Notes:        Uses UTC time.
- *
- *
-void epoch_to_time(time_t epoch, char *buf)
-{
-    struct tm t;
-	gmtime_r(&epoch, &t);
-	strftime(buf, sizeof(buf), "%H%M%S", &t);
-}*/
-
-/*
- * Name:         epoch_to_time
- * Purpose:      Format an epoch time_t back to a HHMMSS string.
- * Arguments:    epoch - A time_t pointer used to get the current epoch time.
- *               buf - A char* pointer used to hold the current time string HHMMSS, buf must be at least 7 bytes.
- * Output:       NIL.
- * Modifies:     buf - snprintf to the char* pointer the time string.
- * Returns:      NIL.
- * Assumptions:  The provided buf is a valid address of a char * pointer, of size 7 bytes, and time_t epoch is not null.
- *
- * Bugs:         None known.
- * Notes:        Uses UTC time.
+ * Notes:
  *
  */
-void record_ground_strike(StrikeBin *bin, uint8_t ring_index, uint8_t quadrant_index){
-	bin->ground_history[ring_index][quadrant_index][bin->current_minute_index]++;
-	bin->ground_totals[ring_index][quadrant_index]++;
+void record_ground_strike(StrikeBin *bin, uint8_t ring_index, uint8_t quadrant_index, uint8_t strike_count){
+	bin->ground_history[ring_index][quadrant_index][bin->current_minute_index]+= strike_count;
+	bin->ground_totals[ring_index][quadrant_index]+= strike_count;
 }
 
-void record_overhead_strike(StrikeBin *bin){
-	bin->overhead_history[bin->current_minute_index]++;
-	bin->overhead_total++;
+/*
+ * Name:         record_overhead_strike()
+ * Purpose:      Record the number of strikes/flashes of Cloud-Ground lightning.
+ * Arguments:    bin - A StrikeBin struct containing a cicular bin of the strikes up to the aging interval.
+ *				 strike_count - the number of strikes/flashes to record during this interval.
+ * Output:       NIL.
+ * Returns:      NIL.
+ * Modifies:     overhead_history[]
+ *				 overhead_total
+ * Assumptions:  The provided bin is a valid address of a StrikeBin * pointer.
+ *
+ * Bugs:         None known.
+ * Notes:
+ *
+ */
+void record_overhead_strike(StrikeBin *bin, uint8_t strike_count){
+	bin->overhead_history[bin->current_minute_index]+= strike_count;
+	bin->overhead_total+= strike_count;
 }
 
-void record_cloud_strike(StrikeBin *bin){
-	bin->cloud_history[bin->current_minute_index]++;
-	bin->cloud_total++;
+
+/*
+ * Name:         record_cloud_strike()
+ * Purpose:      Record the number of strikes/flashes of Intracloud lightning.
+ * Arguments:    bin - A StrikeBin struct containing a cicular bin of the strikes up to the aging interval.
+ *				 strike_count - the number of strikes/flashes to record during this interval.
+ * Output:       NIL.
+ * Returns:      NIL.
+ * Modifies:     cloud_history[]
+ *				 cloud_total
+ * Assumptions:  The provided bin is a valid address of a StrikeBin * pointer.
+ *
+ * Bugs:         None known.
+ * Notes:
+ *
+ */
+void record_cloud_strike(StrikeBin *bin, uint8_t strike_count){
+	bin->cloud_history[bin->current_minute_index]+= strike_count;
+	bin->cloud_total+= strike_count;
 }
 
+
+/*
+ * Name:         advance_one_minute()
+ * Purpose:      Advance the circular bin array storing strike/flash counts.
+ * Arguments:    bin - A StrikeBin struct containing a cicular bin of the strikes up to the aging interval.
+ * Output:       NIL.
+ * Returns:      NIL.
+ * Modifies:     cloud_history[]
+ *				 cloud_total
+ * Assumptions:  The provided bin is a valid address of a StrikeBin * pointer.
+ *
+ * Bugs:         None known.
+ * Notes:
+ *
+ */
 void advance_one_minute(StrikeBin *bin){
-	uint8_t stale_index = (bin->current_minute_index - bin->aging_interval + MAX_HISTORY_MINS) % MAX_HISTORY_MINS;
+	uint8_t stale_index = bin->current_minute_index; // Set the stale index to the current minute index.
 
-	for (int r = 0; r < RANGE_RINGS; r++) {
-		for (int q = 0; q < QUADRANTS; q++) {
-			bin->ground_totals[r][q] -= bin->ground_history[r][q][stale_index];
-			bin->ground_history[r][q][stale_index] = 0;
+	for (int i = 0; i < RANGE_RINGS; i++) {
+		for (int j = 0; j < QUADRANTS; j++) {
+			bin->ground_totals[i][j] -= bin->ground_history[i][j][stale_index]; // loop through and subtract the stale bin from the totals
+			bin->ground_history[i][j][stale_index] = 0; // zero out the stale bin.
 		}
 	}
 
@@ -274,7 +182,42 @@ void advance_one_minute(StrikeBin *bin){
 	bin->cloud_total -= bin->cloud_history[stale_index];
 	bin->cloud_history[stale_index] = 0;
 
-	bin->current_minute_index = (bin->current_minute_index + 1) % MAX_HISTORY_MINS;
+	bin->current_minute_index = (bin->current_minute_index + 1) % bin->aging_interval;
 }
 
 
+/*
+ * Name:         conduct_self_test()
+ * Purpose:      Conducts a self test of the sensor, for this implementation it just means resetiing the total_strikes.
+ * Arguments:    sensor - A TSS-928 sensor struct.
+ * Output:       NIL.
+ * Returns:      NIL.
+ * Modifies:     sensor->strikes.total_strikes_since_reset.
+ * Assumptions:  The provided sensor is a valid address of a TSS928_sensor * pointer.
+ *
+ * Bugs:         None known.
+ * Notes:
+ *
+ */
+void conduct_self_test(TSS928_sensor *sensor) {
+	sensor->strikes.total_strikes_since_reset = 0; // reset the total strikes.
+}
+
+
+/*
+ * Name:         reset_sensor()
+ * Purpose:      Conducts a self test of the sensor, for this implementation it just means resetiing the total_strikes.
+ * Arguments:    sensor - A TSS-928 sensor struct.
+ * Output:       NIL.
+ * Returns:      NIL.
+ * Modifies:     sensor->strikes.total_strikes_since_reset.
+ * Assumptions:  The provided sensor is a valid address of a TSS928_sensor * pointer.
+ *
+ * Bugs:         None known.
+ * Notes:
+ *
+ */
+void reset_sensor(TSS928_sensor *sensor) {
+	memset(&sensor->strikes, 0, sizeof(sensor->strikes));
+	clock_gettime(CLOCK_MONOTONIC, &sensor->sensor_start_time);
+}

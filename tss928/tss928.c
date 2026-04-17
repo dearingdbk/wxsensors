@@ -178,6 +178,8 @@
 #define MAX_CMD_LENGTH 256
 #define MAX_MSG_LENGTH 512
 #define CPU_WAIT_USEC 10000
+#define MINUTE_INTERVAL 60
+#define THIRTY_MIN_INTERVAL 1800
 
 #define DEBUG_MODE // Comment this line out to disable all debug prints
 
@@ -202,12 +204,20 @@ const char *program_name = "unknown";
 TSS928_sensor *sensor_one = NULL; // Global pointer to struct for skyvue8 sensor .
 
 // Synchronization primitives
+/*	MUTEX		|	OWNS
+	send_mutex	|	sensor_one->mode, sensor_one->message_interval, sensor_one->last_send_time, send_cond
+	data_mutex	|	sensor_one->StrikeBin, advance_one_minute()
+	file_mutex	|	file_ptr
+*/
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t data_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t data_sleep_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  send_cond; // Moved initialization down to main, to change REALTIME Clock to MONOTONIC.
+static pthread_cond_t  data_sleep_cond; // Moved initialization down to main, to change REALTIME Clock to MONOTONIC.
 
 // Global pointers to receiver and sender threads.
-pthread_t recv_thread, send_thread;
+pthread_t recv_thread, send_thread, data_thread;
 
 /*
  * Name:         handle_signal
@@ -228,6 +238,7 @@ void handle_signal(int sig) {
     terminate = 1; // Sets the atmoic var terminate to true, prompting the R & T threads to join.
     kill_flag = 1; // Sets the atomic var kill_flag to true, prompting the main loop to end.
     pthread_cond_signal(&send_cond); // Wakes up the sender thread, in the event it is waiting.
+	pthread_cond_signal(&data_sleep_cond); // Wakes up the data thread, in the event it is waiting.
 }
 
 
@@ -245,10 +256,11 @@ void handle_signal(int sig) {
  * Notes:
  */
 void cleanup_and_exit(int exit_code) {
-	pthread_mutex_lock(&send_mutex);
+	pthread_mutex_lock(&send_mutex); // Lock before changing terminate to 1.
     terminate = 1;
-    pthread_cond_signal(&send_cond);
     pthread_mutex_unlock(&send_mutex);
+    pthread_cond_signal(&send_cond);
+	pthread_cond_signal(&data_sleep_cond);
 
 	if (recv_thread != 0) {
         pthread_join(recv_thread, NULL);
@@ -258,12 +270,19 @@ void cleanup_and_exit(int exit_code) {
         pthread_join(send_thread, NULL);
         send_thread = 0;
     }
+	if (data_thread != 0) {
+		pthread_join(data_thread, NULL);
+		data_thread = 0;
+	}
 
 	pthread_mutex_destroy(&send_mutex);
     pthread_mutex_destroy(&file_mutex);
-    pthread_cond_destroy(&send_cond);
+	pthread_mutex_destroy(&data_mutex);
+	pthread_mutex_destroy(&data_sleep_mutex);
+	pthread_cond_destroy(&send_cond);
+	pthread_cond_destroy(&data_sleep_cond);
 
-    if (sensor_one) free(sensor_one);
+	if (sensor_one) free(sensor_one);
     // Close resources
     if (serial_fd >= 0) close(serial_fd);
     if (file_ptr) fclose(file_ptr);
@@ -294,99 +313,34 @@ void cleanup_and_exit(int exit_code) {
  * Notes:        Uses a local macro NEXT_T to sequence through 32 expected fields.
  *               Ensures string fields (METAR, BLM) are safely null-terminated.
  */
-void parse_message(char *msg, ParsedMessage *p_message) {
-	memset(p_message, 0, sizeof(ParsedMessage)); // zero out the ParsedMessage struct.
+void parse_message(char *msg) {
+	//memset(p_message, 0, sizeof(ParsedMessage)); // zero out the ParsedMessage struct.
+	// RANGE_RINGS 2 // 0:NEAR, 1:DIST
+	// QUADRANTS 8 //0:N, 1:NE, 2:E, 3:SE, 4:S, 5:SW, 6:W, 7:NW
 	char *saveptr; // Our place keeper in the msg string.
 	char *token; // Where we temporarily store each token.
-	char temp_date_holder[DATE_STRING];
-	char temp_time_holder[TIME_STRING];
 	// These are pulled from a text file in this format:
-	// DATA:,01,131125,142809,0,0,00,OOOOO,000000,000000,000,00000,000,000000,000000,000,00000,000,000000,000000,000,00000,000,000000,000000,000,00000,000
-	if ((token = strtok_r(msg, ",", &saveptr))) {
-        strncpy(p_message->data_header, token, MAX_HEADER_STR - 1); // Capture the message header 'DATA:' ** We could discard this.
-        p_message->data_header[MAX_HEADER_STR - 1] = '\0';
-    }
+	//	NEAR N,NEAR NE, NEAR E,NEAR SE,NEAR S,NEAR SW,NEAR W,NEAR NW,DIST N,DIST NE,DIST E,DIST SE,DIST S,DIST SW,DIST W,DIST NW, OVHD, CLOUD
+	//	  0		 0		  0		 0		 0		0		0		0	   0	  0		  0		 0		 0		0		0	   0		0	   0
+	if ((token = strtok_r(msg, ",", &saveptr))) record_ground_strike(&sensor_one->strikes, NEAR, NORTH, (uint16_t)atoi(token)); // Range Ring 0 (NEAR), Quadrant 0 (N)
    	#define NEXT_T strtok_r(NULL, ",", &saveptr) // Small macro to keep the code below cleaner.
-   	if ((token = NEXT_T)) p_message->site_id = (uint8_t)atoi(token); // Set site ID.
-   	if ((token = NEXT_T)) {
-		strncpy(temp_date_holder, token, DATE_STRING - 1);
-		temp_date_holder[DATE_STRING - 1] = '\0';
-	}
-	if ((token = NEXT_T)) {
-		strncpy(temp_time_holder, token, TIME_STRING - 1);
-		temp_time_holder[TIME_STRING - 1] = '\0';
-   	}
-	// HANDLE EPOCH CONVERSION
-	//p_message->original_epoch = parse_to_epoch(temp_date_holder, temp_time_holder);
-	if ((token = NEXT_T)) p_message->number_of_flashes = (uint8_t)atoi(token); // Number of Flashes in the message string.
-   	if ((token = NEXT_T)) p_message->warning_indicator = (uint8_t)atoi(token); // Warning Indicator.
-   	if ((token = NEXT_T)) p_message->warning_flags = (uint8_t)atoi(token); // Warning Indicator.
-	if ((token = NEXT_T)) {
-		strncpy(p_message->self_test_flags, token, MAX_SELF_TEST_FLAG - 1); // Set the Self Test Flags.
-		p_message->self_test_flags[MAX_SELF_TEST_FLAG - 1] = '\0';
-	}
-
-	if (p_message->number_of_flashes != 0) { // The rest of the string is all zeros, if the number of flashes is zero.
-		// FLASH ONE
-	   	if ((token = NEXT_T)) {
-			strncpy(temp_date_holder, token, DATE_STRING - 1);
-			temp_date_holder[DATE_STRING - 1] = '\0';
-		}
-		if ((token = NEXT_T)) {
-			strncpy(temp_time_holder, token, TIME_STRING - 1);
-			temp_date_holder[TIME_STRING - 1] = '\0';
-	   	}
-		//p_message->flash_epoch_array[0] = parse_to_epoch(temp_date_holder, temp_time_holder);
-		if ((token = NEXT_T)) p_message->time_since_flash_one = (uint8_t)atoi(token); // # of 10 millisecond intervals since Flash one.
-	   	if ((token = NEXT_T)) p_message->distance_of_flash_one = (uint16_t)atoi(token); // Distance of Flash one.
-	   	if ((token = NEXT_T)) p_message->direction_of_flash_one = (uint16_t)atoi(token); // Direction of Flash one.
-
-		if (p_message->number_of_flashes < 2) goto end_flashes; // Jump to the end if the rest of the string is zeros.
-		// FLASH TWO
-	   	if ((token = NEXT_T)) {
-			strncpy(temp_date_holder, token, DATE_STRING - 1);
-			temp_date_holder[DATE_STRING - 1] = '\0';
-		}
-		if ((token = NEXT_T)) {
-			strncpy(temp_time_holder, token, TIME_STRING - 1);
-			temp_date_holder[TIME_STRING - 1] = '\0';
-		}
-		//p_message->flash_epoch_array[1] = parse_to_epoch(temp_date_holder, temp_time_holder);
-	   	if ((token = NEXT_T)) p_message->time_since_flash_two = (uint8_t)atoi(token); // # of 10 millisecond intervals since Flash two.
-	   	if ((token = NEXT_T)) p_message->distance_of_flash_two = (uint16_t)atoi(token); // Distance of Flash two.
-	   	if ((token = NEXT_T)) p_message->direction_of_flash_two = (uint16_t)atoi(token); // Direction of Flash two.
-
-		if (p_message->number_of_flashes < 3) goto end_flashes; // Jump to the end if the rest of the string is zeros.
-		// FLASH THREE
-   		if ((token = NEXT_T)) {
-			strncpy(temp_date_holder, token, DATE_STRING - 1);
-			temp_date_holder[DATE_STRING - 1] = '\0';
-		}
-		if ((token = NEXT_T)) {
-			strncpy(temp_time_holder, token, TIME_STRING - 1);
-			temp_date_holder[TIME_STRING - 1] = '\0';
-		}
-		//p_message->flash_epoch_array[2] = parse_to_epoch(temp_date_holder, temp_time_holder);
-   		if ((token = NEXT_T)) p_message->time_since_flash_three = (uint8_t)atoi(token); // # of 10 millisecond intervals since Flash three.
-   		if ((token = NEXT_T)) p_message->distance_of_flash_three = (uint16_t)atoi(token); // Distance of Flash three.
-   		if ((token = NEXT_T)) p_message->direction_of_flash_three = (uint16_t)atoi(token); // Direction of Flash three.
-
-		if (p_message->number_of_flashes < 4) goto end_flashes; // Jump to the end if the rest of the string is zeros.
-		// FLASH FOUR
-	   	if ((token = NEXT_T)) {
-			strncpy(temp_time_holder, token, TIME_STRING - 1);
-			temp_date_holder[TIME_STRING - 1] = '\0';
-		}
-		if ((token = NEXT_T)) {
-			strncpy(temp_time_holder, token, TIME_STRING - 1);
-			temp_date_holder[TIME_STRING - 1] = '\0';
-		}
-		//p_message->flash_epoch_array[3] = parse_to_epoch(temp_date_holder, temp_time_holder);
-		if ((token = NEXT_T)) p_message->time_since_flash_four = (uint8_t)atoi(token); // # of 10 millisecond intervals since Flash four.
-	   	if ((token = NEXT_T)) p_message->distance_of_flash_four = (uint16_t)atoi(token); // Distance of Flash four.
-	   	if ((token = NEXT_T)) p_message->direction_of_flash_four = (uint16_t)atoi(token); // Direction of Flash four.
-	}
-	end_flashes:
+   	if ((token = NEXT_T)) record_ground_strike(&sensor_one->strikes, NEAR, NORTH_EAST, (uint16_t)atoi(token)); 	// Range Ring 0 (NEAR), Quadrant 1 (NE)
+   	if ((token = NEXT_T)) record_ground_strike(&sensor_one->strikes, NEAR, EAST, (uint16_t)atoi(token)); 		// Range Ring 0 (NEAR), Quadrant 2 (E)
+	if ((token = NEXT_T)) record_ground_strike(&sensor_one->strikes, NEAR, SOUTH_EAST, (uint16_t)atoi(token)); 	// Range Ring 0 (NEAR), Quadrant 3 (SE)
+	if ((token = NEXT_T)) record_ground_strike(&sensor_one->strikes, NEAR, SOUTH, (uint16_t)atoi(token)); 		// Range Ring 0 (NEAR), Quadrant 4 (S)
+	if ((token = NEXT_T)) record_ground_strike(&sensor_one->strikes, NEAR, SOUTH_WEST, (uint16_t)atoi(token)); 	// Range Ring 0 (NEAR), Quadrant 5 (SW)
+	if ((token = NEXT_T)) record_ground_strike(&sensor_one->strikes, NEAR, WEST, (uint16_t)atoi(token)); 		// Range Ring 0 (NEAR), Quadrant 6 (W)
+	if ((token = NEXT_T)) record_ground_strike(&sensor_one->strikes, NEAR, NORTH_WEST, (uint16_t)atoi(token)); 	// Range Ring 0 (NEAR), Quadrant 7 (NW)
+	if ((token = NEXT_T)) record_ground_strike(&sensor_one->strikes, DIST, NORTH, (uint16_t)atoi(token)); 		// Range Ring 1 (DIST), Quadrant 0 (N)
+	if ((token = NEXT_T)) record_ground_strike(&sensor_one->strikes, DIST, NORTH_EAST, (uint16_t)atoi(token));	// Range Ring 1 (DIST), Quadrant 1 (NE)
+	if ((token = NEXT_T)) record_ground_strike(&sensor_one->strikes, DIST, EAST, (uint16_t)atoi(token));		// Range Ring 1 (DIST), Quadrant 2 (E)
+	if ((token = NEXT_T)) record_ground_strike(&sensor_one->strikes, DIST, SOUTH_EAST, (uint16_t)atoi(token));	// Range Ring 1 (DIST), Quadrant 3 (SE)
+	if ((token = NEXT_T)) record_ground_strike(&sensor_one->strikes, DIST, SOUTH, (uint16_t)atoi(token));		// Range Ring 1 (DIST), Quadrant 4 (S)
+	if ((token = NEXT_T)) record_ground_strike(&sensor_one->strikes, DIST, SOUTH_WEST, (uint16_t)atoi(token));	// Range Ring 1 (DIST), Quadrant 5 (SW)
+	if ((token = NEXT_T)) record_ground_strike(&sensor_one->strikes, DIST, WEST, (uint16_t)atoi(token));		// Range Ring 1 (DIST), Quadrant 6 (W)
+	if ((token = NEXT_T)) record_ground_strike(&sensor_one->strikes, DIST, NORTH_WEST, (uint16_t)atoi(token));	// Range Ring 1 (DIST), Quadrant 7 (NW)
+	if ((token = NEXT_T)) record_overhead_strike(&sensor_one->strikes, (uint16_t)atoi(token));					// Overhead Strikes
+	if ((token = NEXT_T)) record_cloud_strike(&sensor_one->strikes, (uint16_t)atoi(token));						// Cloud Lightning
 	#undef NEXT_T
 }
 
@@ -403,58 +357,51 @@ void parse_message(char *msg, ParsedMessage *p_message) {
  * Bugs:         None known.
  * Notes:
  */
-void process_and_send(ParsedMessage *msg) {
-	if (msg == NULL) return;
-	char current_date_string[DATE_STRING] = {0};
-	char current_time_string[TIME_STRING] = {0};
-	char flash_time_array[MAX_FLASHES][TIME_STRING] = {"000000","000000","000000","000000"};
-	char flash_date_array[MAX_FLASHES][DATE_STRING] = {"000000","000000","000000","000000"};
+void process_and_send(void) {
+	//if (msg == NULL) return;
 
-	time_t now;
-	time(&now);
-	//epoch_to_date(now, current_date_string); // Set our current date string DDMMYY.
-	//epoch_to_time(now, current_time_string); // Set our current time string HHMMSS.
+	//	NEAR: N [0-65535] NE [0-65535] E [0-65535] SE [0-65535] S [0-65535] SW [0-65535] W [0-65535] NW [0-65535]<CR><LF>
+ 	//	DIST: N [0-65535] NE [0-65535] E [0-65535] SE [0-65535] S [0-65535] SW [0-65535] W [0-65535] NW [0-65535]<CR><LF>
+ 	//	OVHD [0-65535] CLOUD [0-65535] TOTAL [0-65535] [P|F] [00-FF]H [0-99] C [0-65535] [0-65535] [0-65535] [0-65535] [0-65535] [0.000-9.999]<CR><LF>
 
-	// Update the date and time from the data file, to match current date and time, while maintaining the delta between flash times, and the orignal time.
-	for (int i = 0; i < msg->number_of_flashes; i++) {
-	//	epoch_to_date((now - (msg->original_epoch - msg->flash_epoch_array[i])), flash_date_array[i]);  // Updates the date to current UTC date
-	//	epoch_to_time((now - (msg->original_epoch - msg->flash_epoch_array[i])), flash_time_array[i]);  // Updates the time to current UTC time
+	int temp_total = 0;
+
+	for (int i = 0; i < RANGE_RINGS; i++) {
+		for (int j = 0; j < QUADRANTS; j++) {
+			temp_total += sensor_one->strikes.ground_totals[i][j];
+		}
 	}
-
-	// DATA:,01,131125,142809,0,0,00,OOOOO,000000,000000,000,00000,000,000000,000000,000,00000,000,000000,000000,000,00000,000,000000,000000,000,00000,000
-	safe_serial_write(serial_fd, "%s,%02hhu,%s,%s,%hhu,%hhu,%02hhu,%s,"
-								 "%s,%s,%03hhu,%05hu,%03hu," 		// Flash 1
-								 "%s,%s,%03hhu,%05hu,%03hu," 		// Flash 2
-								 "%s,%s,%03hhu,%05hu,%03hu," 		// Flash 3
-								 "%s,%s,%03hhu,%05hu,%03hu\r\n", 	// Flash 4
-									msg->data_header, 				// DATA:
-									msg->site_id, 					// Site ID
-									current_date_string,			// Current Date
-									current_time_string,			// Current Time
-									msg->number_of_flashes,			// The number of flashes on this line 0-4.
-									msg->warning_indicator,			// 0, 1, 2 or 3.
-									msg->warning_flags,				// Warning Flags if any
-									msg->self_test_flags,			// Self Test flags
-									flash_date_array[0],		 	// Updated date of Flash 1
-									flash_time_array[0],			// Updated time of Flash 1
-									msg->time_since_flash_one,		// # of 10 millisecond intervals since Flash 1
-									msg->distance_of_flash_one,		// Distance in decametres of Flash 1
-									msg->direction_of_flash_one,	// Direction in degrees of Flash 1
-									flash_date_array[1],		 	// Updated date of Flash 2
-									flash_time_array[1],			// Updated time of Flash 2
-									msg->time_since_flash_two,		// # of 10 millisecond intervals since Flash 2
-									msg->distance_of_flash_two,		// Distance in decametres of Flash 2
-									msg->direction_of_flash_two,	// Direction in degrees of Flash 2
-									flash_date_array[2],			// Updated date of Flash 3
-									flash_time_array[2],			// Updated time of Flash 3
-									msg->time_since_flash_three,	// # of 10 millisecond intervals since Flash 3
-									msg->distance_of_flash_three,	// Distance in decametres of Flash 3
-									msg->direction_of_flash_three,	// Direction in degrees of Flash 3
-									flash_date_array[3],			// Updated date of Flash 4
-									flash_time_array[3],			// Updated time of Flash 4
-									msg->time_since_flash_four,		// # of 10 millisecond intervals since Flash 4
-									msg->distance_of_flash_four,	// Distance in decametres of Flash 4
-									msg->direction_of_flash_four);	// Direction in degrees of Flash 4
+	safe_serial_write(serial_fd, "NEAR: N %u NE %u E %u SE %u S %u SW %u W %u NW %u\r\n"
+								 "DIST: N %u NE %u E %u SE %u S %u SW %u W %u NW %u\r\n"
+								 "OVHD %u CLOUD %u TOTAL %u %c %02xH %d C %u %u %u %u %u %f\r\n",
+									sensor_one->strikes.ground_totals[NEAR][NORTH], 		// NEAR N
+									sensor_one->strikes.ground_totals[NEAR][NORTH_EAST],	// NEAR NE
+									sensor_one->strikes.ground_totals[NEAR][EAST],			// NEAR E
+									sensor_one->strikes.ground_totals[NEAR][SOUTH_EAST],	// NEAR SE
+									sensor_one->strikes.ground_totals[NEAR][SOUTH],			// NEAR S
+									sensor_one->strikes.ground_totals[NEAR][SOUTH_WEST],	// NEAR SW
+									sensor_one->strikes.ground_totals[NEAR][WEST],			// NEAR W
+									sensor_one->strikes.ground_totals[NEAR][NORTH_WEST],	// NEAR NW
+									sensor_one->strikes.ground_totals[DIST][NORTH],			// DIST N
+									sensor_one->strikes.ground_totals[DIST][NORTH_EAST],	// DIST NE
+									sensor_one->strikes.ground_totals[DIST][EAST],			// DIST E
+									sensor_one->strikes.ground_totals[DIST][SOUTH_EAST],	// DIST SE
+									sensor_one->strikes.ground_totals[DIST][SOUTH],			// DIST S
+									sensor_one->strikes.ground_totals[DIST][SOUTH_WEST],	// DIST SW
+									sensor_one->strikes.ground_totals[DIST][WEST],			// DIST W
+									sensor_one->strikes.ground_totals[DIST][NORTH_WEST],	// DIST NW
+									sensor_one->strikes.overhead_total,						// OVHD
+									sensor_one->strikes.cloud_total,						// CLOUD
+									temp_total,												// TOTALS
+									'P',													// char P | F Pass or Fail
+									0,														// Status Code 00-FF
+									27,														// Temperatur TODO: build a function to get current temperature.
+									sensor_one->strikes.total_strikes_since_reset,			// Total Strikes since Self Test
+									0,													 	// Total rejected strokes
+									0,														// Total rejected by minimum EB ratio since last selftest
+									0,														// Total rejected by maximum EB ratio since last selftest
+									0,														// Total rejected by minimum B amplitude since last selftest
+									0.0);													// Average E/B Ration since last selftest
 }
 
 /*
@@ -529,7 +476,6 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
     CMD_RUNTIME,    // "F" recieved from the terminal, send a system run time message.
     CMD_VERSION,    // "G" or "*VERSION" recieved from the terminal, send a version message.
     CMD_FORMAT,     // "H" or "*FORMAT" recieved from the terminal, set the data output message. Arguments [0-2] 0 == Poll.
-    CMD_DISTANCE,   // "I" recieved from the terminal, set the distance unit. Arguments [1-3] 1 == miles.
     CMD_AGING,      // "J" recieved from the terminal, set the aging interval. Arguments [1-4] 1 == 15 minutes.
     CMD_DIAGNOSTIC, // "K" recieved from the terminal, set diagnostic mode, and run a test. Arguments [1-3].
     CMD_ANGLE,      // "L" recieved from the terminal, set the angle of rotation. Arguments [0-359] 0 default.
@@ -539,39 +485,113 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
     CMD_COMMANDS,   // "?" or "*?" recieved from the terminal, list available commands.
     CMD_RESTORE     // "" or *DEF recieved from the terminal, restore default settings.*/
 
-void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
-	 switch (cmd) {
+void handle_command(CommandType cmd, ParsedCommand *p_cmd) {	 switch (cmd) {
 		case CMD_SEND:
+			process_and_send();
 			break;
 		case CMD_STATUS:
+			// NOT Implemented fully, STATUS message sends flashes and strokes.
+			process_and_send();
 			break;
 		case CMD_RESET:
+			reset_sensor(sensor_one);
+			safe_serial_write(serial_fd, "%s\n%s\n%s\n%c %02xH %d C %u %u %u %u %u %f\r\n",
+							   sensor_one->loader_version,
+							   sensor_one->software_version,
+							   sensor_one->copyright_information,
+							   'P', 0, 27, sensor_one->strikes.total_strikes_since_reset, 0, 0, 0, 0, 0.000);
 			break;
 		case CMD_SELFTEST:
+			conduct_self_test(sensor_one);
+			safe_serial_write(serial_fd, "%c %02xH %d C %u %u %u %u %u %f\r\n",'P', 0, 27, sensor_one->strikes.total_strikes_since_reset, 0, 0, 0, 0, 0.000);
 			break;
 		case CMD_TYPETEST:
+			safe_serial_write(serial_fd, "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789\r\n");
 			break;
 		case CMD_RUNTIME:
+			struct timespec current_time;
+			clock_gettime(CLOCK_MONOTONIC, &current_time);
+			long total_seconds = current_time.tv_sec - sensor_one->sensor_start_time.tv_sec;
+			safe_serial_write(serial_fd, "D %ld H %ld M %ld S %ld\r\n",
+												(total_seconds / SECONDS_IN_DAY),
+												((total_seconds % SECONDS_IN_DAY) / SECONDS_IN_HOUR),
+												((total_seconds % SECONDS_IN_HOUR) / SECONDS_IN_MIN),
+												(total_seconds % 60));
 			break;
 		case CMD_VERSION:
+			safe_serial_write(serial_fd,"%s\n%s\r\n", sensor_one->software_version, sensor_one->copyright_information);
 			break;
 		case CMD_FORMAT:
+			//TODO: Implement a handler for changing the format, currently Aero software only handles polled.
 			break;
 		case CMD_DIAGNOSTIC:
+			//TODO: Implement a handler for handling diagnostice.
 			break;
 		case CMD_AGING:
+			DEBUG_PRINT("%s\n",p_cmd->raw_params);
+			uint8_t new_interval = (uint8_t)atoi(p_cmd->raw_params);
+			switch (new_interval) {
+				case 1:
+					sensor_one->strikes.aging_interval = 15;
+					break;
+				case 2:
+					sensor_one->strikes.aging_interval = 10;
+					break;
+				case 3:
+					sensor_one->strikes.aging_interval = 5;
+					break;
+				case 4:
+					sensor_one->strikes.aging_interval = 30;
+					break;
+				default:
+					break;
+			}
+			safe_serial_write(serial_fd,"A%u\r\n", sensor_one->strikes.aging_interval);
 			break;
 		case CMD_ANGLE:
+			uint8_t new_rotation_angle = (uint8_t)atoi(p_cmd->raw_params);
+			sensor_one->rotation_angle = new_rotation_angle % 359; // modulus by max degrees to ensure new angle is within limits.
+			safe_serial_write(serial_fd,"A%u\r\n", sensor_one->rotation_angle);
 			break;
 		case CMD_TIME:
+			// TODO: Implement a local time clock, that can be updated, start with UTC.
 			break;
 		case CMD_NOISE:
+			// TODO: Likely not required.
 			break;
 		case CMD_EBRATIO:
+			// TODO: Likely not required.
 			break;
 		case CMD_COMMANDS:
+			safe_serial_write(serial_fd,"*DEF\n"
+										"*EBRATIO\n"
+										"*FORMAT\n"
+										"*NOISE\n"
+										"*RESET\n"
+										"*SELFTEST\n"
+										"*STATUS\n"
+										"*TIME\n"
+										"*VERSION\n"
+										"*?\n"
+										"A\n"
+										"B\n"
+										"C\n"
+										"D\n"
+										"E\n"
+										"F\n"
+										"G\n"
+										"H\n"
+										"I\n"
+										"J\n"
+										"K\n"
+										"L\n"
+										"N\n"
+										"P\n"
+										"R\n"
+										"?\n");
 			break;
 		case CMD_RESTORE:
+			//TODO:
 			break;
 		case CMD_UNKNOWN:
 			safe_console_error("%s: Unknown or Bad Command:\n", program_name);
@@ -684,15 +704,15 @@ void* sender_thread(void* arg) {
 
         // Do I/O operations WITHOUT holding the mutex
         if (should_send) {
-            char *line = get_next_line_copy(file_ptr, &file_mutex);
-            if (line) {
-                ParsedMessage local_msg;  // LOCAL, not global
-                parse_message(line, &local_msg);
-                process_and_send(&local_msg);
+            //char *line = get_next_line_copy(file_ptr, &file_mutex);
+            //if (line) {
+                //ParsedMessage local_msg;  // LOCAL, not global
+                //parse_message(line, &local_msg);
+                process_and_send();
                 fflush(NULL);  // Flush all output streams
-                free(line);
-                line = NULL;
-            }
+                //free(line);
+              //  line = NULL;
+            //}
 
             // Update timestamp with lock
             pthread_mutex_lock(&send_mutex);
@@ -704,6 +724,88 @@ void* sender_thread(void* arg) {
     }
     return NULL;
 }
+
+
+/*
+ * Name:         data_collection_thread
+ * Purpose:      Every 10s reads one line from the data file, parses it into shared_msg.
+ *               Every 60s calls update_circular_buffer().
+ *               Never sends data — that is sender_thread's sole responsibility.
+ * Arguments:    arg: unused.
+ * Returns:      NULL.
+ */
+void* data_collection_thread(void* arg) {
+    (void)arg;
+    struct timespec ts;
+    time_t last_buffer_update;
+	time_t last_thirty_minute_update;
+
+    // Snapshot the start time so the 60s window begins from thread start
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    last_buffer_update = ts.tv_sec;
+	last_thirty_minute_update = ts.tv_sec;
+
+    while (!terminate) {
+		// 10s sleep — only woken early by terminate
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        ts.tv_sec += 10;
+
+        pthread_mutex_lock(&data_sleep_mutex);
+        while (!terminate) {
+            int rc = pthread_cond_timedwait(&data_sleep_cond, &data_sleep_mutex, &ts);
+            if (rc == ETIMEDOUT) break;
+        }
+        pthread_mutex_unlock(&data_sleep_mutex);
+
+        /* --- Sleep 10s, but wake immediately if terminate is set ---
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        ts.tv_sec += 10;
+
+        pthread_mutex_lock(&send_mutex);
+        while (!terminate) {
+            int rc = pthread_cond_timedwait(&send_cond, &send_mutex, &ts);
+            if (rc == ETIMEDOUT) break; // Time to work
+            // Spurious wakeup — re-evaluate terminate and deadline
+        }
+        pthread_mutex_unlock(&send_mutex);
+		*/
+        if (terminate) break;
+
+        // --- Read one line and parse into shared_msg ---
+        char *line = get_next_line_copy(file_ptr, &file_mutex);
+        if (line) {
+            // ParsedMessage temp_msg;
+            parse_message(line); // parse outside the lock — no shared state touched
+            free(line);
+            line = NULL;
+
+            pthread_mutex_lock(&data_mutex);
+            //shared_msg = temp_msg;          // struct copy — single atomic update
+            //shared_msg_ready = true;
+            pthread_mutex_unlock(&data_mutex);
+        }
+
+        // Every 60s: update circular buffer
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        if ((ts.tv_sec - last_buffer_update) >= MINUTE_INTERVAL) {
+            pthread_mutex_lock(&data_mutex);
+            advance_one_minute(&sensor_one->strikes); // Advance the circular buffer
+            pthread_mutex_unlock(&data_mutex);
+            last_buffer_update = ts.tv_sec;
+        }
+
+        // Every 30 minutes: update the self-test values.
+		if ((ts.tv_sec - last_thirty_minute_update) >= THIRTY_MIN_INTERVAL) {
+    		pthread_mutex_lock(&data_mutex);
+			// TODO: Implement self-test update.
+			conduct_self_test(sensor_one);  // Conducts the resets of the sensor every 30 minutes.
+		    pthread_mutex_unlock(&data_mutex);
+   			last_thirty_minute_update = ts.tv_sec;
+		}
+    }
+    return NULL;
+}
+
 
 /*
  * Name:         Main
@@ -787,6 +889,15 @@ int main(int argc, char *argv[]) {
         pthread_join(recv_thread, NULL);
 		cleanup_and_exit(1);
     }
+
+	if (pthread_create(&data_thread, NULL, data_collection_thread, NULL) != 0) {
+        safe_console_error("Failed to create data collection thread: %s\n", strerror(errno));
+        terminate = 1;
+        pthread_join(recv_thread, NULL);
+        pthread_join(send_thread, NULL);
+        cleanup_and_exit(1);
+    }
+
 
     safe_console_print("Press 'q' + Enter to quit.\n");
     struct pollfd fds[1];
