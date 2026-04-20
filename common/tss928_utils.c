@@ -223,7 +223,7 @@ void conduct_self_test(TSS928_sensor *sensor) {
  *
  */
 void reset_sensor(TSS928_sensor *sensor) {
-	memset(&sensor->strikes, 0, sizeof(sensor->strikes));
+	memset(&sensor->strikes, 0, sizeof(sensor->strikes)); // zero out the strike struct
 	clock_gettime(CLOCK_MONOTONIC, &sensor->sensor_start_time); // Reset the runtime of the sensor.
 }
 

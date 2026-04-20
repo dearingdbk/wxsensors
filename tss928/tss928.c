@@ -724,8 +724,9 @@ void* sender_thread(void* arg) {
 
 /*
  * Name:         data_collection_thread
- * Purpose:      Every 10s reads one line from the data file, parses it into shared_msg.
+ * Purpose:      Every 10s reads one line from the data file, parses it into the strikes struct in sensor_one.
  *               Every 60s calls update_circular_buffer().
+ *				 Every 30m calls conduct_self_test().
  *               Never sends data — that is sender_thread's sole responsibility.
  * Arguments:    arg: unused.
  * Returns:      NULL.

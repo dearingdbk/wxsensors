@@ -76,7 +76,7 @@ typedef struct {
 	char copyright_information[MAX_UNIT_STR];
     // Configuration
     TSS928_SMode mode;
-    uint16_t message_interval; 	// 0, or 2-600 seconds - 0 is polled.
+    uint16_t message_interval; 	// 0 is polled.
 	StrikeBin strikes;
 	uint16_t overhead;
 	uint16_t near;
