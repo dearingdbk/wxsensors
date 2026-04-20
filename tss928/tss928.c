@@ -431,7 +431,7 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
         if (strncasecmp(ptr, cmd_table[i].name, cmd_table[i].len) == 0) {
             // Ensure exact match (don't match "R" if the command is "RESET")
             char next = ptr[cmd_table[i].len];
-            if (next == '\0' || isalnum((unsigned char)next) || next == '?') { // If the command is terminated, or has additional text. !! Excludes \t \n \r
+            if (next == '\0' || isalnum((unsigned char)next)) { // If the command is terminated, or has additional text. !! Excludes \t \n \r
 				cmd->type = cmd_table[i].type;
                 ptr += cmd_table[i].len; // Jump past command
                 // Skip any spaces to point at arguments
@@ -509,7 +509,7 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 		case CMD_TYPETEST:
 			safe_serial_write(serial_fd, "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789\r\n");
 			break;
-		case CMD_RUNTIME:
+		case CMD_RUNTIME: {
 			struct timespec current_time;
 			clock_gettime(CLOCK_MONOTONIC, &current_time);
 			long total_seconds = current_time.tv_sec - sensor_one->sensor_start_time.tv_sec;
@@ -519,6 +519,7 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 												((total_seconds % SECONDS_IN_HOUR) / SECONDS_IN_MIN),
 												(total_seconds % 60));
 			break;
+		}
 		case CMD_VERSION:
 			safe_serial_write(serial_fd,"%s\n%s\r\n", sensor_one->software_version, sensor_one->copyright_information);
 			break;
@@ -528,8 +529,7 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 		case CMD_DIAGNOSTIC:
 			//TODO: Implement a handler for handling diagnostics.
 			break;
-		case CMD_AGING:
-			DEBUG_PRINT("%s\n",p_cmd->raw_params);
+		case CMD_AGING:{
 			uint8_t new_interval = (uint8_t)atoi(p_cmd->raw_params);
 			switch (new_interval) {
 				case 1:
@@ -549,13 +549,14 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 			}
 			safe_serial_write(serial_fd,"A%u\r\n", sensor_one->strikes.aging_interval);
 			break;
-		case CMD_ANGLE:
+		}
+		case CMD_ANGLE:{
 			uint8_t new_rotation_angle = (uint8_t)atoi(p_cmd->raw_params);
 			sensor_one->rotation_angle = (new_rotation_angle % 359); // modulus by max degrees to ensure new angle is within limits.
 			safe_serial_write(serial_fd,"A%u\r\n", sensor_one->rotation_angle);
 			break;
+		}
 		case CMD_TIME:
-			// TODO: Implement a local time clock, that can be updated, start with UTC.
 			if (p_cmd->raw_params[0] == '\0') {
 				safe_serial_write(serial_fd, "N %02d:%02d:%02d\r\n", sensor_one->sensor_time.tm_hour, sensor_one->sensor_time.tm_min, sensor_one->sensor_time.tm_min);
 			} else {
@@ -598,10 +599,10 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 										"?\n");
 			break;
 		case CMD_RESTORE:
-			//TODO:
+			restore_sensor(sensor_one); // Resets the sensor to default settings.
 			break;
 		case CMD_UNKNOWN:
-			safe_console_error("%s: Unknown or Bad Command:\n", program_name);
+			safe_serial_write(serial_fd, "Unrecognized command\r\n");
 			break;
         default:
 			safe_console_error("%s: Unknown or Bad Command:\n", program_name);

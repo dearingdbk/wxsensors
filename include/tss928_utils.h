@@ -170,6 +170,8 @@ int init_TSS928_sensor(TSS928_sensor **ptr);
 bool TSS928_is_ready_to_send(TSS928_sensor *sensor);
 
 void reset_sensor(TSS928_sensor *sensor);
+void restore_sensor(TSS928_sensor *sensor);
+
 void record_ground_strike(StrikeBin *bin, uint8_t ring_index, uint8_t quadrant_index, uint8_t strike_count);
 void record_overhead_strike(StrikeBin *bin, uint8_t strike_count);
 void record_cloud_strike(StrikeBin *bin, uint8_t strike_count);
