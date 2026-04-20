@@ -9,7 +9,7 @@
  * 				- Sender thread: periodically transmits data strings in broadcast mode
  *
  * 				Supported commands (per Vaisala TSS928 ASCII protocol):
- * 					A - send a present weather message.
+ * 					A - send a present weather message. (default)
  *					B - send a status message.
  *					C - send a selftest message.
  *					D - reset the sensor.
@@ -395,7 +395,7 @@ void process_and_send(void) {
 									temp_total,												// TOTALS
 									'P',													// char P | F Pass or Fail
 									0,														// Status Code 00-FF
-									27,														// Temperatur TODO: build a function to get current temperature.
+									27,														// Temperature TODO: build a function to get current temperature.
 									sensor_one->strikes.total_strikes_since_reset,			// Total Strikes since Self Test
 									0,													 	// Total rejected strokes
 									0,														// Total rejected by minimum EB ratio since last selftest
@@ -485,7 +485,8 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
     CMD_COMMANDS,   // "?" or "*?" recieved from the terminal, list available commands.
     CMD_RESTORE     // "" or *DEF recieved from the terminal, restore default settings.*/
 
-void handle_command(CommandType cmd, ParsedCommand *p_cmd) {	 switch (cmd) {
+void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
+	switch (cmd) {
 		case CMD_SEND:
 			process_and_send();
 			break;
@@ -525,7 +526,7 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {	 switch (cmd) {
 			//TODO: Implement a handler for changing the format, currently Aero software only handles polled.
 			break;
 		case CMD_DIAGNOSTIC:
-			//TODO: Implement a handler for handling diagnostice.
+			//TODO: Implement a handler for handling diagnostics.
 			break;
 		case CMD_AGING:
 			DEBUG_PRINT("%s\n",p_cmd->raw_params);
@@ -550,11 +551,17 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {	 switch (cmd) {
 			break;
 		case CMD_ANGLE:
 			uint8_t new_rotation_angle = (uint8_t)atoi(p_cmd->raw_params);
-			sensor_one->rotation_angle = new_rotation_angle % 359; // modulus by max degrees to ensure new angle is within limits.
+			sensor_one->rotation_angle = (new_rotation_angle % 359); // modulus by max degrees to ensure new angle is within limits.
 			safe_serial_write(serial_fd,"A%u\r\n", sensor_one->rotation_angle);
 			break;
 		case CMD_TIME:
 			// TODO: Implement a local time clock, that can be updated, start with UTC.
+			if (p_cmd->raw_params[0] == '\0') {
+				safe_serial_write(serial_fd, "N %02d:%02d:%02d\r\n", sensor_one->sensor_time.tm_hour, sensor_one->sensor_time.tm_min, sensor_one->sensor_time.tm_min);
+			} else {
+				update_sensor_time(p_cmd->raw_params, &sensor_one->sensor_time);
+				safe_serial_write(serial_fd, "N %02d:%02d:%02d\r\n", sensor_one->sensor_time.tm_hour, sensor_one->sensor_time.tm_min, sensor_one->sensor_time.tm_min);
+			}
 			break;
 		case CMD_NOISE:
 			// TODO: Likely not required.
