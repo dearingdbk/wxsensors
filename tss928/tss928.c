@@ -210,7 +210,6 @@ TSS928_sensor *sensor_one = NULL; // Global pointer to struct for skyvue8 sensor
 	file_mutex	|	file_ptr
 */
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
-static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t data_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t data_sleep_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  send_cond; // Moved initialization down to main, to change REALTIME Clock to MONOTONIC.
@@ -256,9 +255,9 @@ void handle_signal(int sig) {
  * Notes:
  */
 void cleanup_and_exit(int exit_code) {
-	pthread_mutex_lock(&send_mutex); // Lock before changing terminate to 1.
+	pthread_mutex_lock(&data_mutex); // Lock before changing terminate to 1.
     terminate = 1;
-    pthread_mutex_unlock(&send_mutex);
+    pthread_mutex_unlock(&data_mutex);
     pthread_cond_signal(&send_cond);
 	pthread_cond_signal(&data_sleep_cond);
 
@@ -275,7 +274,6 @@ void cleanup_and_exit(int exit_code) {
 		data_thread = 0;
 	}
 
-	pthread_mutex_destroy(&send_mutex);
     pthread_mutex_destroy(&file_mutex);
 	pthread_mutex_destroy(&data_mutex);
 	pthread_mutex_destroy(&data_sleep_mutex);
@@ -314,11 +312,11 @@ void cleanup_and_exit(int exit_code) {
  *               Ensures string fields (METAR, BLM) are safely null-terminated.
  */
 void parse_message(char *msg) {
-	//memset(p_message, 0, sizeof(ParsedMessage)); // zero out the ParsedMessage struct.
 	// RANGE_RINGS 2 // 0:NEAR, 1:DIST
 	// QUADRANTS 8 //0:N, 1:NE, 2:E, 3:SE, 4:S, 5:SW, 6:W, 7:NW
 	char *saveptr; // Our place keeper in the msg string.
 	char *token; // Where we temporarily store each token.
+    pthread_mutex_lock(&data_mutex); // Lock before IO on sensor_one.
 	// These are pulled from a text file in this format:
 	//	NEAR N,NEAR NE, NEAR E,NEAR SE,NEAR S,NEAR SW,NEAR W,NEAR NW,DIST N,DIST NE,DIST E,DIST SE,DIST S,DIST SW,DIST W,DIST NW, OVHD, CLOUD
 	//	  0		 0		  0		 0		 0		0		0		0	   0	  0		  0		 0		 0		0		0	   0		0	   0
@@ -342,6 +340,7 @@ void parse_message(char *msg) {
 	if ((token = NEXT_T)) record_overhead_strike(&sensor_one->strikes, (uint16_t)atoi(token));					// Overhead Strikes
 	if ((token = NEXT_T)) record_cloud_strike(&sensor_one->strikes, (uint16_t)atoi(token));						// Cloud Lightning
 	#undef NEXT_T
+    pthread_mutex_unlock(&data_mutex); // Unlock after IO on sensor_one.
 }
 
 /*
@@ -358,14 +357,13 @@ void parse_message(char *msg) {
  * Notes:
  */
 void process_and_send(void) {
-	//if (msg == NULL) return;
-
 	//	NEAR: N [0-65535] NE [0-65535] E [0-65535] SE [0-65535] S [0-65535] SW [0-65535] W [0-65535] NW [0-65535]<CR><LF>
  	//	DIST: N [0-65535] NE [0-65535] E [0-65535] SE [0-65535] S [0-65535] SW [0-65535] W [0-65535] NW [0-65535]<CR><LF>
  	//	OVHD [0-65535] CLOUD [0-65535] TOTAL [0-65535] [P|F] [00-FF]H [0-99] C [0-65535] [0-65535] [0-65535] [0-65535] [0-65535] [0.000-9.999]<CR><LF>
 
 	int temp_total = 0;
 
+    pthread_mutex_lock(&data_mutex); // Lock before IO on sensor_one.
 	for (int i = 0; i < RANGE_RINGS; i++) {
 		for (int j = 0; j < QUADRANTS; j++) {
 			temp_total += sensor_one->strikes.ground_totals[i][j];
@@ -402,6 +400,8 @@ void process_and_send(void) {
 									0,														// Total rejected by maximum EB ratio since last selftest
 									0,														// Total rejected by minimum B amplitude since last selftest
 									0.0);													// Average E/B Ration since last selftest
+
+    pthread_mutex_unlock(&data_mutex); // Unlock after IO on sensor_one.
 }
 
 /*
@@ -467,44 +467,30 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
  * Bugs:         None known.
  * Notes:
  */
-    /*CMD_UNKNOWN,    // Unrecognized Command
-    CMD_SEND,       // "A" received from the terminal, send a present weather message.
-    CMD_STATUS,     // "B" or "*STATUS" received from the terminal, send a status message.
-    CMD_SELFTEST,   // "C" or "*SELFTEST" recieved from the terminal, send a selftest message.
-    CMD_RESET,      // "D" or "*RESET" received from the terminal, reset the sensor.
-    CMD_TYPETEST,   // "E" recieved from the terminal, perform a type test.
-    CMD_RUNTIME,    // "F" recieved from the terminal, send a system run time message.
-    CMD_VERSION,    // "G" or "*VERSION" recieved from the terminal, send a version message.
-    CMD_FORMAT,     // "H" or "*FORMAT" recieved from the terminal, set the data output message. Arguments [0-2] 0 == Poll.
-    CMD_AGING,      // "J" recieved from the terminal, set the aging interval. Arguments [1-4] 1 == 15 minutes.
-    CMD_DIAGNOSTIC, // "K" recieved from the terminal, set diagnostic mode, and run a test. Arguments [1-3].
-    CMD_ANGLE,      // "L" recieved from the terminal, set the angle of rotation. Arguments [0-359] 0 default.
-    CMD_TIME,       // "N" or "*TIME" recieved from the terminal, set the current time. Arguments [0-23]:[0-59]:[0-59] 00:00:00 default.
-    CMD_NOISE,      // "P" or "*NOISE" recieved from the terminal, return the # of optical and enable crossings. Arguments [0] 0 resets the count.
-    CMD_EBRATIO,    // "R" or "*EBRATIO" recieved from the terminal, return the average and standard deviation of the last 20 E/B rations.
-    CMD_COMMANDS,   // "?" or "*?" recieved from the terminal, list available commands.
-    CMD_RESTORE     // "" or *DEF recieved from the terminal, restore default settings.*/
-
 void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 	switch (cmd) {
 		case CMD_SEND:
 			process_and_send();
 			break;
 		case CMD_STATUS:
-			// NOT Implemented fully, STATUS message sends flashes and strokes.
+			// TODO: NOT Implemented fully, STATUS message sends flashes and strokes.
 			process_and_send();
 			break;
 		case CMD_RESET:
+			pthread_mutex_lock(&data_mutex);
 			reset_sensor(sensor_one);
 			safe_serial_write(serial_fd, "%s\n%s\n%s\n%c %02xH %d C %u %u %u %u %u %f\r\n",
 							   sensor_one->loader_version,
 							   sensor_one->software_version,
 							   sensor_one->copyright_information,
 							   'P', 0, 27, sensor_one->strikes.total_strikes_since_reset, 0, 0, 0, 0, 0.000);
+			pthread_mutex_unlock(&data_mutex);
 			break;
 		case CMD_SELFTEST:
+			pthread_mutex_lock(&data_mutex);
 			conduct_self_test(sensor_one);
 			safe_serial_write(serial_fd, "%c %02xH %d C %u %u %u %u %u %f\r\n",'P', 0, 27, sensor_one->strikes.total_strikes_since_reset, 0, 0, 0, 0, 0.000);
+			pthread_mutex_unlock(&data_mutex);
 			break;
 		case CMD_TYPETEST:
 			safe_serial_write(serial_fd, "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789\r\n");
@@ -512,16 +498,20 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 		case CMD_RUNTIME: {
 			struct timespec current_time;
 			clock_gettime(CLOCK_MONOTONIC, &current_time);
+			pthread_mutex_lock(&data_mutex);
 			long total_seconds = current_time.tv_sec - sensor_one->sensor_start_time.tv_sec;
 			safe_serial_write(serial_fd, "D %ld H %ld M %ld S %ld\r\n",
 												(total_seconds / SECONDS_IN_DAY),
 												((total_seconds % SECONDS_IN_DAY) / SECONDS_IN_HOUR),
 												((total_seconds % SECONDS_IN_HOUR) / SECONDS_IN_MIN),
 												(total_seconds % 60));
+			pthread_mutex_unlock(&data_mutex);
 			break;
 		}
 		case CMD_VERSION:
+			pthread_mutex_lock(&data_mutex);
 			safe_serial_write(serial_fd,"%s\n%s\r\n", sensor_one->software_version, sensor_one->copyright_information);
+			pthread_mutex_unlock(&data_mutex);
 			break;
 		case CMD_FORMAT:
 			//TODO: Implement a handler for changing the format, currently Aero software only handles polled.
@@ -531,6 +521,7 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 			break;
 		case CMD_AGING:{
 			uint8_t new_interval = (uint8_t)atoi(p_cmd->raw_params);
+			pthread_mutex_lock(&data_mutex);
 			switch (new_interval) {
 				case 1:
 					sensor_one->strikes.aging_interval = 15;
@@ -548,21 +539,26 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 					break;
 			}
 			safe_serial_write(serial_fd,"A%u\r\n", sensor_one->strikes.aging_interval);
+			pthread_mutex_unlock(&data_mutex);
 			break;
 		}
 		case CMD_ANGLE:{
 			uint8_t new_rotation_angle = (uint8_t)atoi(p_cmd->raw_params);
+			pthread_mutex_lock(&data_mutex);
 			sensor_one->rotation_angle = (new_rotation_angle % 359); // modulus by max degrees to ensure new angle is within limits.
 			safe_serial_write(serial_fd,"A%u\r\n", sensor_one->rotation_angle);
+			pthread_mutex_unlock(&data_mutex);
 			break;
 		}
 		case CMD_TIME:
+			pthread_mutex_lock(&data_mutex);
 			if (p_cmd->raw_params[0] == '\0') {
-				safe_serial_write(serial_fd, "N %02d:%02d:%02d\r\n", sensor_one->sensor_time.tm_hour, sensor_one->sensor_time.tm_min, sensor_one->sensor_time.tm_min);
+				safe_serial_write(serial_fd, "N %02d:%02d:%02d\r\n", sensor_one->sensor_time.tm_hour, sensor_one->sensor_time.tm_min, sensor_one->sensor_time.tm_sec);
 			} else {
 				update_sensor_time(p_cmd->raw_params, &sensor_one->sensor_time);
-				safe_serial_write(serial_fd, "N %02d:%02d:%02d\r\n", sensor_one->sensor_time.tm_hour, sensor_one->sensor_time.tm_min, sensor_one->sensor_time.tm_min);
+				safe_serial_write(serial_fd, "N %02d:%02d:%02d\r\n", sensor_one->sensor_time.tm_hour, sensor_one->sensor_time.tm_min, sensor_one->sensor_time.tm_sec);
 			}
+			pthread_mutex_unlock(&data_mutex);
 			break;
 		case CMD_NOISE:
 			// TODO: Likely not required.
@@ -599,7 +595,9 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 										"?\n");
 			break;
 		case CMD_RESTORE:
+			pthread_mutex_lock(&data_mutex);
 			restore_sensor(sensor_one); // Resets the sensor to default settings.
+			pthread_mutex_unlock(&data_mutex);
 			break;
 		case CMD_UNKNOWN:
 			safe_serial_write(serial_fd, "Unrecognized command\r\n");
@@ -638,10 +636,7 @@ void* receiver_thread(void* arg) {
 
                     ParsedCommand local_cmd;
                     CommandType cmd_type = parse_command(line, &local_cmd);
-
-					pthread_mutex_lock(&send_mutex);   // <--- LOCK HERE
 		    		handle_command(cmd_type, &local_cmd); // handle received command here.
-                    pthread_mutex_unlock(&send_mutex); // <--- UNLOCK HERE
                     len = 0;
                 } else { // empty line ignore
                 }
@@ -683,8 +678,8 @@ void* sender_thread(void* arg) {
 	int interval = 0;
 
     while (!terminate) {
-        pthread_mutex_lock(&send_mutex);
 
+        pthread_mutex_lock(&data_mutex);
 		// Determine if we should wait for a specific time or indefinitely
         if (sensor_one != NULL && sensor_one->mode == SMODE_RUN) {
 			interval = sensor_one->message_interval; // If we are in polled mode, message_interval is zero.
@@ -694,40 +689,33 @@ void* sender_thread(void* arg) {
             // Add the continuous interval (in seconds) to the current time
             ts.tv_sec += interval;
             // Wait until that specific second arrives OR a signal interrupts us
-            pthread_cond_timedwait(&send_cond, &send_mutex, &ts);
+            pthread_cond_timedwait(&send_cond, &data_mutex, &ts);
         } else {
             // If in Polling/Stop Mode, wait indefinitely for a signal from the receiver
-            pthread_cond_wait(&send_cond, &send_mutex);
+            pthread_cond_wait(&send_cond, &data_mutex); // pthread_cond_wait atomically releases the mutex while it sleeps, so receiver_thread can actually acquire data_mutex.
         }
 
         if (terminate) {
-            pthread_mutex_unlock(&send_mutex);
+            pthread_mutex_unlock(&data_mutex);
             break;
         }
 
-        // is_ready_to_send() handles the interval and timing logic internally, and checks if the sensor is Pollling or Continuous.
+        // is_ready_to_send() handles the interval and timing logic internally, and checks if the sensor is Polling or Continuous.
         should_send = (sensor_one != NULL && TSS928_is_ready_to_send(sensor_one));
 
-		pthread_mutex_unlock(&send_mutex);  // <-- UNLOCK BEFORE I/O
+		pthread_mutex_unlock(&data_mutex);  // <-- UNLOCK BEFORE I/O
 
         // Do I/O operations WITHOUT holding the mutex
         if (should_send) {
-            //char *line = get_next_line_copy(file_ptr, &file_mutex);
-            //if (line) {
-                //ParsedMessage local_msg;  // LOCAL, not global
-                //parse_message(line, &local_msg);
                 process_and_send();
                 fflush(NULL);  // Flush all output streams
-                //free(line);
-              //  line = NULL;
-            //}
 
-            // Update timestamp with lock
-            pthread_mutex_lock(&send_mutex);
+			// Update timestamp with lock
+            pthread_mutex_lock(&data_mutex);
             if (sensor_one != NULL) {
                 clock_gettime(CLOCK_MONOTONIC, &sensor_one->last_send_time);
             }
-            pthread_mutex_unlock(&send_mutex);
+            pthread_mutex_unlock(&data_mutex);
         }
     }
     return NULL;
@@ -765,32 +753,14 @@ void* data_collection_thread(void* arg) {
         }
         pthread_mutex_unlock(&data_sleep_mutex);
 
-        /* --- Sleep 10s, but wake immediately if terminate is set ---
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        ts.tv_sec += 10;
-
-        pthread_mutex_lock(&send_mutex);
-        while (!terminate) {
-            int rc = pthread_cond_timedwait(&send_cond, &send_mutex, &ts);
-            if (rc == ETIMEDOUT) break; // Time to work
-            // Spurious wakeup — re-evaluate terminate and deadline
-        }
-        pthread_mutex_unlock(&send_mutex);
-		*/
         if (terminate) break;
 
         // --- Read one line and parse into shared_msg ---
         char *line = get_next_line_copy(file_ptr, &file_mutex);
         if (line) {
-            // ParsedMessage temp_msg;
-            parse_message(line); // parse outside the lock — no shared state touched
+            parse_message(line);
             free(line);
             line = NULL;
-
-            pthread_mutex_lock(&data_mutex);
-            //shared_msg = temp_msg;          // struct copy — single atomic update
-            //shared_msg_ready = true;
-            pthread_mutex_unlock(&data_mutex);
         }
 
         // Every 60s: update circular buffer
@@ -805,7 +775,6 @@ void* data_collection_thread(void* arg) {
         // Every 30 minutes: update the self-test values.
 		if ((ts.tv_sec - last_thirty_minute_update) >= THIRTY_MIN_INTERVAL) {
     		pthread_mutex_lock(&data_mutex);
-			// TODO: Implement self-test update.
 			conduct_self_test(sensor_one);  // Conducts the resets of the sensor every 30 minutes.
 		    pthread_mutex_unlock(&data_mutex);
    			last_thirty_minute_update = ts.tv_sec;
@@ -883,6 +852,7 @@ int main(int argc, char *argv[]) {
     pthread_condattr_init(&attr);
     pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
     pthread_cond_init(&send_cond, &attr); // Initialize the global variable here
+    pthread_cond_init(&data_sleep_cond, &attr); // Initialize the global variable here
     pthread_condattr_destroy(&attr);
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
@@ -905,7 +875,6 @@ int main(int argc, char *argv[]) {
         pthread_join(send_thread, NULL);
         cleanup_and_exit(1);
     }
-
 
     safe_console_print("Press 'q' + Enter to quit.\n");
     struct pollfd fds[1];

@@ -34,8 +34,8 @@
 int init_TSS928_sensor(TSS928_sensor **ptr) {
     *ptr = malloc(sizeof(TSS928_sensor));
     if (!*ptr) return -1;
-
     TSS928_sensor *s = *ptr;
+	memset(&s->strikes, 0, sizeof(s->strikes));
 	// Identity
 	strncpy(s->serial_number, "000008675309", MAX_SN_LEN);
 	strncpy(s->loader_version, "TSS928 Loader Version 1.5", MAX_UNIT_STR);
