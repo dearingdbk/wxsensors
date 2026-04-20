@@ -75,6 +75,48 @@ TO BE POPULATED WITH COMMAND SETS PER SENSOR
 
 <details>
 
+<summary><h3> Sensor TSS-928</h3></summary>
+
+### Sensor [TSS-928]()
+| Command | Description |
+|---------|-------------|
+| `RUN` | Enable continuous data output mode |
+| `STOP` | Disable continuous mode  |
+| `SITE?` | Request site characterisation values |
+| `R?` | Request self-test/status message |
+| `DIST?` | Request distance limits |
+| `DISTDEF?` | Reset the flash distance limits to FAA Defaults 5,10,20,30 | 
+| `DISTx,yyyy` | Set Distance Limits x == 0-OH, 1-V, 2-ND, 3-FD. yyyy == decametres | 
+| `A`	| send a present weather message. (default)
+| `B` 	| send a status message.
+| `C` 	| send a selftest message.
+| `D` 	| reset the sensor.
+| `E` 	| perform a type test.
+| `F` 	| send a system run time message.
+| `G` 	| send a version message.
+| `H` 	| set the data output message. Arguments [0-2] 0 == Poll.
+| `I` 	| set the distance unit. Arguments [1-3] 1 == miles. (NOT IMPLEMENTED, only for the TSS924)
+| `J` 	| set the aging interval. Arguments [1-4] 1 == 15 minutes.
+| `K` 	| set diagnostic mode, and run a test. Arguments [1-3].
+| `L` 	| set the angle of rotation. Arguments [0-359] 0 default.
+| `N` 	| set the current time. Arguments [0-23]:[0-59]:[0-59] 00:00:00 default.
+| `P` 	| return the # of optical and enable crossings. Arguments [0] 0 resets the count.
+| `R` 	| return the average and standard deviation of the last 20 E/B rations.
+| `? or *?` | list available commands.
+| `*DEF` | restore default settings.
+| `*STATUS` | send a status message.
+| `*SELFTEST` | send a selftest message.
+| `*RESET` | reset the sensor.
+| `*VERSION` | send a version message.
+| `*FORMAT` | set the data output message. Arguments [0-2] 0 == Poll.
+| `*TIME` | set the current time. Arguments [0-23]:[0-59]:[0-59] 00:00:00 default.
+| `*NOISE` | return the # of optical and enable crossings. Arguments [0] 0 resets the count.
+| `*EBRATIO` | return the average and standard deviation of the last 20 E/B rations.
+
+</details>
+
+<details>
+
 <summary><h3> Sensor PTB-330 </h3></summary>
 
 ### Sensor [PTB-330](https://docs.vaisala.com/viewer/book-attachment/kZW4tXhynko07HLEqbcq3Q/xy6s8h~KZ_iCT2U9pW5CMw-kZW4tXhynko07HLEqbcq3Q)
@@ -204,6 +246,7 @@ wxsensors/
 │   ├── dsp8100_utils.h
 │   ├── file_utils.h
 │   ├── ptb330_utils.h
+│   ├── tss928_utils.h
 │   ├── q131.h
 │   ├── sensor_utils.h
 │   ├── serial_utils.h
@@ -214,7 +257,8 @@ wxsensors/
 │   ├── crc_utils.c
 │   ├── dsp8100_utils.c
 │   ├── file_utils.c
-│   ├── ptb330_utils.h
+│   ├── ptb330_utils.c
+│   ├── tss928_utils.c
 │   ├── sensor_utils.c
 │   ├── serial_utils.c
 │   └── skyvue8_utils.c
@@ -228,12 +272,14 @@ wxsensors/
 │   └── dsp8100.c
 ├── ptb330/               # Vaisala PTB-330 barometric pressure emulator
 │   └── ptb330.c
+├── tss928/               # Vaisala TSS-928 lightning sensor emulator
+│   └── tss928.c
 ├── ceilometer/           # Campbell Scientific SkyVue8 Ceilometer emulator
 │   └── ceilometer.c
 ├── ice/        	      # Ice Accumulation Detection emulator
 │   └── ice.c
-├── flash/                # BTD-300 Lightning sensor emulator
-│   └── flash.c
+├── btd300/               # Biral BTD-300 Lightning sensor emulator
+│   └── btd300.c
 ├── rain/                 # Rain tipping bucket sensor emulator
 │   └── rain.c
 ├── sensor_control/       # Graphical User Interface Program
