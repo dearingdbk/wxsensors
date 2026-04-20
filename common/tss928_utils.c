@@ -53,8 +53,13 @@ int init_TSS928_sensor(TSS928_sensor **ptr) {
 	s->strikes.aging_interval = 15;
 	s->strikes.current_minute_index = 0;
     s->strikes.total_strikes_since_reset = 0; // Stores the total strikes since the system has been running.
-	clock_gettime(CLOCK_MONOTONIC, &s->last_send_time);
-	clock_gettime(CLOCK_MONOTONIC, &s->sensor_start_time);
+
+	// Timing
+	time_t now;
+	time(&now); // Get our current epoch time.
+	gmtime_r(&now, &s->sensor_time); // Store current epoch time in our tm struct.
+	clock_gettime(CLOCK_MONOTONIC, &s->last_send_time); // timespec time, for when the sensor sent last message.
+	clock_gettime(CLOCK_MONOTONIC, &s->sensor_start_time); // timespec time for when the sensor initialized.
 	s->initialized = true;
     return 0;
 }
@@ -219,5 +224,42 @@ void conduct_self_test(TSS928_sensor *sensor) {
  */
 void reset_sensor(TSS928_sensor *sensor) {
 	memset(&sensor->strikes, 0, sizeof(sensor->strikes));
-	clock_gettime(CLOCK_MONOTONIC, &sensor->sensor_start_time);
+	clock_gettime(CLOCK_MONOTONIC, &sensor->sensor_start_time); // Reset the runtime of the sensor.
+}
+
+
+/*
+ * Name:         update_sensor_time()
+ * Purpose:      Updates the human readable UTP time of the sensor.
+ * Arguments:    time_str - The char * string representing the new time for the sensor.
+ *				 sensor_time a tm struct within a TSS-928 sensor.
+ * Output:       NIL.
+ * Returns:      -1 on invalid format fo the time_str string.
+ *               -2 if the times are out of range.
+ *				 0 if the update of the new time is successful.
+ * Modifies:     TSS928 sensor->sensor_time->tm_hour.
+ * 			     TSS928 sensor->sensor_time->tm_min.
+ * 			     TSS928 sensor->sensor_time->tm_sec.
+ * Assumptions:  The provided sensor is a valid address of a TSS928_sensor tm struct * pointer.
+ *
+ * Bugs:         None known.
+ * Notes:
+ *
+ */
+int update_sensor_time(const char *time_str, struct tm *sensor_time) {
+    int h, m, s;
+
+    if (sscanf(time_str, "%d:%d:%d", &h, &m, &s) != 3) {
+        return -1; // Invalid format
+    }
+
+    if (h < 0 || h > 23 || m < 0 || m > 59 || s < 0 || s > 59) {
+        return -2; // Out of range
+    }
+
+    sensor_time->tm_hour = h;
+    sensor_time->tm_min = m;
+    sensor_time->tm_sec = s;
+
+    return 0;
 }
