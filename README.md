@@ -80,13 +80,6 @@ TO BE POPULATED WITH COMMAND SETS PER SENSOR
 ### Sensor [TSS-928]()
 | Command | Description |
 |---------|-------------|
-| `RUN` | Enable continuous data output mode |
-| `STOP` | Disable continuous mode  |
-| `SITE?` | Request site characterisation values |
-| `R?` | Request self-test/status message |
-| `DIST?` | Request distance limits |
-| `DISTDEF?` | Reset the flash distance limits to FAA Defaults 5,10,20,30 | 
-| `DISTx,yyyy` | Set Distance Limits x == 0-OH, 1-V, 2-ND, 3-FD. yyyy == decametres | 
 | `A`	| send a present weather message. (default)
 | `B` 	| send a status message.
 | `C` 	| send a selftest message.
