@@ -85,6 +85,7 @@ typedef struct {
     // Timing
     struct timespec last_send_time;
     struct timespec sensor_start_time;
+	struct tm sensor_time;
     bool initialized;
 
 } TSS928_sensor;
@@ -167,15 +168,14 @@ typedef struct {
 // Function Prototypes
 int init_TSS928_sensor(TSS928_sensor **ptr);
 bool TSS928_is_ready_to_send(TSS928_sensor *sensor);
-//int set_dist(TSS928_sensor **ptr, int distance_id, int distance);
+
 void reset_sensor(TSS928_sensor *sensor);
-//time_t parse_to_epoch(const char *date_token, const char *time_token);
-//void epoch_to_date(time_t epoch, char *buf);
-//void epoch_to_time(time_t epoch, char *buf);
 void record_ground_strike(StrikeBin *bin, uint8_t ring_index, uint8_t quadrant_index, uint8_t strike_count);
 void record_overhead_strike(StrikeBin *bin, uint8_t strike_count);
 void record_cloud_strike(StrikeBin *bin, uint8_t strike_count);
 void advance_one_minute(StrikeBin *bin);
 void conduct_self_test(TSS928_sensor *sensor);
+
+int update_sensor_time(const char *time_str, struct tm *sensor_time);
 
 #endif
