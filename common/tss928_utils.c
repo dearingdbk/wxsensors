@@ -263,3 +263,22 @@ int update_sensor_time(const char *time_str, struct tm *sensor_time) {
 
     return 0;
 }
+
+/*
+ * Name:         restore_sensor()
+ * Purpose:      Restores the sensor to default settings.
+ * Arguments:    sensor a TSS-928 sensor pointer.
+ * Output:       NIL.
+ * Returns:      NIL.
+ * Modifies:     TSS928 sensor->rotation_angle.
+ * 			     TSS928 sensor->strikes.aging_interval.
+ * Assumptions:  The provided sensor is a valid address of a TSS928_sensor tm struct * pointer.
+ *
+ * Bugs:         None known.
+ * Notes:
+ *
+*/
+void restore_sensor(TSS928_sensor *sensor) {
+	sensor->rotation_angle = 0;
+	sensor->strikes.aging_interval = 15;
+}
