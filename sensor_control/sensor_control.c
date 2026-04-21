@@ -64,11 +64,11 @@ typedef struct {
 // Global sensor definitions *** Make all changes and additions here, the code will handle the rest.
 // {<NAME_OF_EXECUTABLE>, <GUI_SENSOR_LABEL>, <FLAGS_PROVIDED_TO_SENSOR>}
 static SensorDef sensor_defs[] = {
-    {"wind",        "Gill WindObserver 75",     "./data_files/wind/wind_data_P.txt /dev/ttyUSB0 9600 RS422"},
+    {"wind",        "Gill WindObserver 75",     "./data_files/wind/wind_data_P.txt /dev/ttyUSB0 9600 RS485"},
     {"rh_temp",     "Rotronic HC2A-S3",         "./data_files/rh_temp/rh_temp_data.txt /dev/ttyUSB1 9600 RS485"},
-    {"pres_weather","Campbell AtmosVue30",      "./data_files/pres_weather/pres_weather.txt /dev/ttyUSB2 38400 RS485"},
+    {"pres_weather","Campbell AtmosVue30",      "./data_files/pres_weather/pres_weather.txt /dev/ttyUSB2 38400 RS232"},
     {"dsp8100",  	"Barometric Sensor",        "./data_files/barometric/barometric_data.txt /dev/ttyUSB3 9600 RS485"},
-    {"ceilometer",  "Ceilometer",               "./data_files/ceilometer/ceil_data.txt /dev/ttyUSB4 9600 RS422"},
+    {"ceilometer",  "Ceilometer",               "./data_files/ceilometer/ceil_data.txt /dev/ttyUSB4 115200 RS232"},
     {"btd300",      "Biral BTD-300",            "./data_files/flash/flash_data.txt /dev/ttyUSB5 9600 RS422"},
     {"ice",         "Goodrich 0872F1",          "./data_files/ice/ice_data.txt /dev/ttyUSB6 2400 RS232"},
     {"rain",        "Campbell CS700H",          "./data_files/rain/rain_data.txt /dev/ttyUSB7 1200 SDI-12"},
