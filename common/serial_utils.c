@@ -216,7 +216,7 @@ SerialMode get_mode(const char *mode) {
     } else if (strcmp(mode, "RS485") == 0) {
         return SERIAL_RS485;
     } else if (strcmp(mode, "RS232") == 0) {
-		return SERIAL_RS422;
+		return SERIAL_RS422; // both RS422 and RS232 are electrically the same, both are full duplex and need no RTS toggling.
     } else if (strcmp(mode, "SDI12") == 0) {
 		return SERIAL_SDI12;
     } else {
