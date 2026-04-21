@@ -3,7 +3,7 @@
 # ============================================================================
 
 # List of required packages
-REQUIRED_PKGS = gtk+-3.0
+REQUIRED_PKGS = gtk+-3.0 libgpiod
 
 # Check if packages exist
 PKG_CHECK := $(shell pkg-config --exists $(REQUIRED_PKGS) || echo "missing")
@@ -56,6 +56,10 @@ OBJ_DIR = obj
 # GTK flags
 GTK_CFLAGS = $(shell pkg-config --cflags gtk+-3.0)
 GTK_LIBS = $(shell pkg-config --libs gtk+-3.0)
+
+# GPIO Flags
+GPIOD_CFLAGS := $(shell pkg-config --cflags libgpiod 2>/dev/null)
+GPIOD_LIBS := $(shell pkg-config --libs libgpiod 2>/dev/null)
 
 # ============================================================================
 # SOURCE FILES
@@ -115,6 +119,13 @@ $(BIN_DIR)/%/%: $(COMMON_OBJ)
 	if [ -z "$$srcs" ]; then \
 		echo "Skipping $$folder_name, no C files"; \
 	else \
+		CURRENT_LDFLAGS="$(LDFLAGS)"; \
+		CURRENT_CFLAGS="$(CFLAGS)"; \
+		if [ "$$folder_name" = "rain" ]; then \
+				echo "Adding libgpiod flags for $$folder_name..."; \
+				CURRENT_CFLAGS="$$CURRENT_CFLAGS $(GPIOD_CFLAGS)"; \
+				CURRENT_LDFLAGS="$$CURRENT_LDFLAGS $(GPIOD_LIBS)"; \
+		fi; \
 		echo "Building $$folder_name ..."; \
 		mkdir -p $(BIN_DIR)/$$folder_name; \
 		$(CC) $(CFLAGS) $$srcs $(COMMON_OBJ) $(LDFLAGS) -o $(BIN_DIR)/$$folder_name/$$folder_name; \
