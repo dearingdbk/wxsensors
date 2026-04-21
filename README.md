@@ -162,6 +162,9 @@ sudo apt install libgtk-3-dev
 # C build essentials package. 
 sudo apt install build-essential
 
+# GPIO Line Supprt for Raspberry Pi.
+sudo apt install libgpiod-dev gpiod
+
 # add the user to the dialout group, enabling access to serial devices.
 sudo usermod -aG dialout $USER && logout 
 ```
