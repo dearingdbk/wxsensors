@@ -335,27 +335,6 @@ static pthread_cond_t  send_cond; // Moved initialization down to main, to chang
 // Global pointers to receiver and sender threads.
 pthread_t recv_thread, send_thread;
 
-/*
- * Name:         handle_signal
- * Purpose:      Captures any kill signals, and sets volitile bool 'terminate' and 'kill_flag' to true,
-				 allowing the while loop to break, and threads to join.
- * Arguments:    None
- *
- * Output:       None.
- * Modifies:     Changes terminate to true.
- * Returns:      None.
- * Assumptions:  Terminate is set to false.
- *
- * Bugs:         None known.
- * Notes:        Signal handler: must do async-safe ops only (set sig_atomic_t flags)
- */
-void handle_signal(int sig) {
-    (void)sig;
-    terminate = 1; // Sets the atmoic var terminate to true, prompting the R & T threads to join.
-    kill_flag = 1; // Sets the atomic var kill_flag to true, prompting the main loop to end.
-    pthread_cond_signal(&send_cond); // Wakes up the sender thread, in the event it is waiting.
-}*/
-
 
 /*
  * Name:         cleanup_and_exit
