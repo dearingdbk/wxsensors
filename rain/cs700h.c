@@ -60,7 +60,7 @@
 #define MAX_MSG_LENGTH 512
 #define CPU_WAIT_USEC 10000
 
-#define GPIO_CHIP		"/dev/gpiochip4"  // Pi 4 and earlier, Pi 5 gpiochip4
+#define GPIO_CHIP		"/dev/gpiochip4"  // Pi 4 and earlier gpiochip0, Pi 5 gpiochip4
 #define GPIO_PIN    	17                // BCM pin 17, physical pin 11
 #define MM_PER_TIP      0.254             // CS700: 0.01 inch = 0.254mm per tip
 #define PULSE_WIDTH_NS  50000000LL        // Reed switch closure duration in nanoseconds
