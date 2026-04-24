@@ -81,12 +81,12 @@ static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file
  *
  * Bugs:         None known.
  * Notes:
- */
+ *
 void handle_signal(int sig) {
     (void)sig;
     terminate = 1;
     kill_flag = 1;
-}
+}*/
 
 
 // ---------------- Command handling ----------------
@@ -112,7 +112,7 @@ typedef enum {
  */
 
 CommandType parse_command(const char* buf) {
-    if (strcmp(buf, "{F00RDD}") == 0)   	return CMD_RDD; // Expected poll request from AWI and CS systems.
+    if (strncmp(buf, "{F00RDD}", 6) == 0)   	return CMD_RDD; // Expected poll request from AWI and CS systems.
     if (strncmp(buf, "{F00RDD", 7) == 0)    return CMD_RDD; // Optional command request with a checksum instead of '{' as the end.
     return CMD_UNKNOWN;
 }
@@ -152,6 +152,39 @@ void handle_command(CommandType cmd) {
 
 
 // ---------------- Threads ----------------
+
+// Dedicated signal handling thread — replaces handle_signal
+/*
+ * Name:         handle_signal
+ * Purpose:      Captures any kill signals, and sets volitile atomic 'terminate' & 'kill_flag' to 1, allowing the while loop to break, and threads to join.
+ * Arguments:    None
+ *
+ * Output:       None.
+ * Modifies:     Changes terminate to 1, and kill_flag to 1.
+ * Returns:      None.
+ * Assumptions:  Terminate is set to 0.
+ *
+ * Bugs:         None known.
+ * Notes:
+ */
+void* signal_thread(void* arg) {
+    (void)arg;
+    int sig;
+    sigset_t wait_set;
+    sigemptyset(&wait_set);
+    sigaddset(&wait_set, SIGINT);
+    sigaddset(&wait_set, SIGTERM);
+    sigaddset(&wait_set, SIGQUIT); // Ctrl+backslash
+
+    sigwait(&wait_set, &sig);     // Blocks until a signal arrives
+
+    terminate = 1;
+    kill_flag = 1;
+
+    return NULL;
+}
+
+
 /*
  * Name:         receiver_thread
  * Purpose:      thread which reads from a serial port, checks if there is data, if there is data read,
@@ -217,7 +250,6 @@ void* receiver_thread(void* arg) {
  * Bugs:         None known.
  * Notes:
  */
-
 int main(int argc, char *argv[]) {
 
     if (argc < 2) {
@@ -249,11 +281,24 @@ int main(int argc, char *argv[]) {
     }
     /* define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
        allowing our c program, to close its loop, join threads, and close our serial device. */
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = handle_signal;
-    sigaction(SIGINT, &sa, NULL);   // Ctrl-C
-    sigaction(SIGTERM, &sa, NULL);  // kill, systemd, etc.
+    //struct sigaction sa;
+    //memset(&sa, 0, sizeof(sa));
+    //sa.sa_handler = handle_signal;
+    //sigaction(SIGINT, &sa, NULL);   // Ctrl-C
+    //sigaction(SIGTERM, &sa, NULL);  // kill, systemd, etc.
+	// Block signals in main (inherited by all threads)
+	sigset_t block_set;
+	sigemptyset(&block_set);
+	sigaddset(&block_set, SIGINT);
+	sigaddset(&block_set, SIGTERM);
+	sigaddset(&block_set, SIGQUIT);
+	pthread_sigmask(SIG_BLOCK, &block_set, NULL);
+
+	// Then create signal thread
+	pthread_t sig_thread;
+	pthread_create(&sig_thread, NULL, signal_thread, NULL);
+
+	// Then create reader/sender threads as normal
 
     pthread_t recv_thread;
 
