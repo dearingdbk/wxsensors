@@ -75,27 +75,6 @@ static pthread_cond_t  send_cond  = PTHREAD_COND_INITIALIZER;
 wind_sensor *wnd_sensor;
 
 /*
- * Name:         handle_signal
- * Purpose:      Captures any kill signals, and sets volitile bool 'terminate' and 'kill_flag' to true, allowing thw while loop to break, and threads to join.
- * Arguments:    None
- *
- * Output:       None.
- * Modifies:     Changes terminate to true.
- * Returns:      None.
- * Assumptions:  Terminate is set to false.
- *
- * Bugs:         None known.
- * Notes:        Signal handler: must do async-safe ops only (set sig_atomic_t flags)
- */
-void handle_signal(int sig) {
-    (void)sig;
-    terminate = 1; // Sets the atmoic var terminate to true, prompting the R & T threads to join.
-    kill_flag = 1; // Sets the atomic var kill_flag to true, prompting the main loop to end.
-    pthread_cond_signal(&send_cond);
-}
-
-
-/*
  * Name:         check_sum
  * Purpose:      Takes a '\0' delimited string, and returns a checksum of the characters XOR.
  * Arguments:    str_to_chk the string that checksum will be calculated for
@@ -213,6 +192,43 @@ void handle_command(CommandType cmd) {
 
 
 // ---------------- Threads ----------------
+
+/*
+ * Name:         signal_thread
+ * Purpose:      Captures any kill signals, and sets volitile bool 'terminate' and 'kill_flag' to true,
+				 allowing the while loop to break, and threads to join.
+ * Arguments:    None
+ *
+ * Output:       None.
+ * Modifies:     Changes terminate to true.
+ * Returns:      None.
+ * Assumptions:  Terminate is set to false.
+ *
+ * Bugs:         None known.
+ * Notes:        Signal handler: must do async-safe ops only (set sig_atomic_t flags)
+ */
+void* signal_thread(void* arg) {
+    (void)arg;
+    int sig;
+    sigset_t wait_set;
+    sigemptyset(&wait_set);
+    sigaddset(&wait_set, SIGINT);
+    sigaddset(&wait_set, SIGTERM);
+    sigaddset(&wait_set, SIGQUIT); // Ctrl+backslash
+
+    sigwait(&wait_set, &sig);     // Blocks until a signal arrives
+
+    terminate = 1;
+    kill_flag = 1;
+
+    // Now safely wake any threads
+    pthread_mutex_lock(&send_mutex);
+    pthread_cond_broadcast(&send_cond);
+    pthread_mutex_unlock(&send_mutex);
+
+    return NULL;
+}
+
 /*
  * Name:         receiver_thread
  * Purpose:      thread which reads from a serial port, checks if there is data, if there is data read,
@@ -367,13 +383,19 @@ int main(int argc, char *argv[]) {
         fclose(file_ptr);
         return 1;
     }
-    /* define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
-       allowing our c program, to close its loop, join threads, and close our serial device. */
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = handle_signal;
-    sigaction(SIGINT, &sa, NULL);   // Ctrl-C
-    sigaction(SIGTERM, &sa, NULL);  // kill, systemd, etc.
+
+    // define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
+    // allowing our c program, to close its loop, join threads, and close our serial device.
+	sigset_t block_set;
+	sigemptyset(&block_set);
+	sigaddset(&block_set, SIGINT);
+	sigaddset(&block_set, SIGTERM);
+	sigaddset(&block_set, SIGQUIT);
+	pthread_sigmask(SIG_BLOCK, &block_set, NULL);
+
+	// create the signal thread
+	pthread_t sig_thread;
+	pthread_create(&sig_thread, NULL, signal_thread, NULL);
 
     pthread_t recv_thread, send_thread;
 
