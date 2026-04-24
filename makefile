@@ -128,7 +128,8 @@ $(BIN_DIR)/%/%: $(COMMON_OBJ)
 		fi; \
 		echo "Building $$folder_name ..."; \
 		mkdir -p $(BIN_DIR)/$$folder_name; \
-		$(CC) $(CFLAGS) $$srcs $(COMMON_OBJ) $(LDFLAGS) -o $(BIN_DIR)/$$folder_name/$$folder_name; \
+		#$(CC) $(CFLAGS) $$srcs $(COMMON_OBJ) $(LDFLAGS) -o $(BIN_DIR)/$$folder_name/$$folder_name; \
+		$(CC) $$CURRENT_CFLAGS $$srcs $(COMMON_OBJ) $$CURRENT_LDFLAGS -o $(BIN_DIR)/$$folder_name/$$folder_name; \
 		echo "OK: built $(BIN_DIR)/$$folder_name/$$folder_name"; \
 	fi
 
