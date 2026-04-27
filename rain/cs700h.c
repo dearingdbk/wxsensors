@@ -1,4 +1,4 @@
-/*
+;/*
  * File:        cs700h.c
  * Author:      Bruce Dearing
  * Date:        22/04/2026
@@ -77,6 +77,18 @@
 #endif
 
 
+// Global GPIO handles
+struct gpiod_chip *chip = NULL;
+#ifdef GPIOD_V2
+    struct gpiod_line_settings *settings = NULL;
+    struct gpiod_line_config   *line_cfg = NULL;
+    struct gpiod_line_request  *request  = NULL;
+#else
+    struct gpiod_line *line = NULL;  // v1 uses a single line handle
+#endif
+unsigned int offset = GPIO_PIN;
+int req_ret;
+
 FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
 
@@ -84,12 +96,13 @@ char *file_path = NULL; // path to file
 volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
 
-struct gpiod_chip *chip;
-struct gpiod_line_settings *settings;
-struct gpiod_line_config *line_cfg;
-struct gpiod_line_request *request;
-unsigned int offset = GPIO_PIN;
-int req_ret;
+//OLD CONFIG DOES NOT WORK ON PI.
+//struct gpiod_chip *chip;
+//struct gpiod_line_settings *settings;
+//struct gpiod_line_config *line_cfg;
+//struct gpiod_line_request *request;
+//unsigned int offset = GPIO_PIN;
+//int req_ret;
 
 const char *program_name = "unknown";
 
@@ -186,6 +199,16 @@ void cleanup_and_exit(int exit_code) {
     // Close resources
     if (file_ptr) fclose(file_ptr);
 
+#ifdef GPIOD_V2
+    if (request) { gpiod_line_request_release(request); request = NULL; }
+    if (line_cfg) { gpiod_line_config_free(line_cfg);   line_cfg = NULL; }
+    if (settings) { gpiod_line_settings_free(settings); settings = NULL; }
+#else
+    if (line) { gpiod_line_release(line); line = NULL; }
+#endif
+	if (chip) { gpiod_chip_close(chip); chip = NULL; }
+
+	/*
 	if (request != NULL) {
     	gpiod_line_request_release(request);
     	request = NULL;
@@ -203,7 +226,7 @@ void cleanup_and_exit(int exit_code) {
 	if (chip != NULL) {
 	    gpiod_chip_close(chip);
 		chip = NULL;
-	}
+	}*/
 	// Cleanup utilities
     console_cleanup();
     exit(exit_code);
@@ -229,9 +252,15 @@ static void sleep_ns(long long ns) {
  * Arguments:   line: the open gpiod line to drive.
  */
 static void simulate_tip() {
+#ifdef GPIOD_V2
     gpiod_line_request_set_value(request, offset, GPIOD_LINE_VALUE_ACTIVE);
-	sleep_ns(PULSE_WIDTH_NS);
+    sleep_ns(PULSE_WIDTH_NS);
     gpiod_line_request_set_value(request, offset, GPIOD_LINE_VALUE_INACTIVE);
+#else
+    gpiod_line_set_value(line, 1);
+    sleep_ns(PULSE_WIDTH_NS);
+    gpiod_line_set_value(line, 0);
+#endif
 }
 
 
@@ -442,7 +471,30 @@ int main(int argc, char *argv[]) {
 		cleanup_and_exit(1);
     }
 
-	// Create a settings object (Output, Initial Value Low)
+#ifdef GPIOD_V2
+    settings = gpiod_line_settings_new();
+    if (!settings) { perror("settings"); cleanup_and_exit(1); }
+    gpiod_line_settings_set_direction(settings, GPIOD_LINE_DIRECTION_OUTPUT);
+    gpiod_line_settings_set_output_value(settings, GPIOD_LINE_VALUE_INACTIVE);
+
+    line_cfg = gpiod_line_config_new();
+    if (!line_cfg) { perror("line_cfg"); cleanup_and_exit(1); }
+
+    req_ret = gpiod_line_config_add_line_settings(line_cfg, &offset, 1, settings);
+    if (req_ret) { perror("add line settings"); cleanup_and_exit(1); }
+
+    request = gpiod_chip_request_lines(chip, NULL, line_cfg);
+    if (!request) { perror("request lines"); cleanup_and_exit(1); }
+#else
+    line = gpiod_chip_get_line(chip, offset);
+    if (!line) { perror("get line"); cleanup_and_exit(1); }
+
+    req_ret = gpiod_line_request_output(line, "cs700h", 0); // 0 = initial low
+    if (req_ret) { perror("request output"); cleanup_and_exit(1); }
+#endif
+
+				
+	/* Create a settings object (Output, Initial Value Low)
     settings = gpiod_line_settings_new();
     if (!settings) {
         perror("New settings failed");
@@ -471,8 +523,8 @@ int main(int argc, char *argv[]) {
     if (!request) {
         perror("Request lines failed");
 		cleanup_and_exit(1);
-    }
-
+    }*/
+					
 	printf("GPIO %u opened successfully using libgpiod v2\n", offset);
 
     // define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
