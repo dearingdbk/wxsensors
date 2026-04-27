@@ -84,7 +84,7 @@ struct gpiod_chip *chip = NULL;
     struct gpiod_line_config   *line_cfg = NULL;
     struct gpiod_line_request  *request  = NULL;
 #else
-    struct gpiod_line *line = NULL;  // v1 uses a single line handle
+    struct gpiod_line *gpio_line = NULL;  // v1 uses a single gpio_line handle
 #endif
 unsigned int offset = GPIO_PIN;
 int req_ret;
@@ -95,14 +95,6 @@ char *file_path = NULL; // path to file
 // Shared state
 volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
-
-//OLD CONFIG DOES NOT WORK ON PI.
-//struct gpiod_chip *chip;
-//struct gpiod_line_settings *settings;
-//struct gpiod_line_config *line_cfg;
-//struct gpiod_line_request *request;
-//unsigned int offset = GPIO_PIN;
-//int req_ret;
 
 const char *program_name = "unknown";
 
@@ -119,26 +111,6 @@ pthread_cond_t  reader_sleep_cond; // Moved initialization down to main, to chan
 // Global pointers to receiver and sender threads.
 pthread_t read_thread, send_thread;
 
-/*
- * Name:         handle_signal
- * Purpose:      Captures any kill signals, and sets volitile bool 'terminate' and 'kill_flag' to true,
-				 allowing the while loop to break, and threads to join.
- * Arguments:    None
- *
- * Output:       None.
- * Modifies:     Changes terminate to true.
- * Returns:      None.
- * Assumptions:  Terminate is set to false.
- *
- * Bugs:         None known.
- * Notes:        Signal handler: must do async-safe ops only (set sig_atomic_t flags)
- */
-//void handle_signal(int sig) {
-  //  (void)sig;
-    //terminate = 1; // Sets the atmoic var terminate to true, prompting the R & T threads to join.
-    //kill_flag = 1; // Sets the atomic var kill_flag to true, prompting the main loop to end.
-//    pthread_cond_signal(&send_cond); // Wakes up the sender thread, in the event it is waiting.
-//}
 
 /*
  * Name:         cleanup_and_exit
@@ -175,58 +147,31 @@ void cleanup_and_exit(int exit_code) {
     pthread_mutex_destroy(&data_mutex);
     pthread_cond_destroy(&pulse_sleep_cond);
     pthread_cond_destroy(&reader_sleep_cond);
-    // ... rest of cleanup
 
-/*	pthread_mutex_lock(&send_mutex);
-  //  terminate = 1;
-    //pthread_cond_signal(&send_cond);
-    //pthread_mutex_unlock(&send_mutex);
-
-	if (read_thread != 0) {
-        pthread_join(read_thread, NULL);
-        read_thread = 0;
-    }
-    if (send_thread != 0) {
-        pthread_join(send_thread, NULL);
-        send_thread = 0;
-    }
-
-	pthread_mutex_destroy(&send_mutex);
-    pthread_mutex_destroy(&file_mutex);
-	pthread_mutex_destroy(&data_mutex);
-    pthread_cond_destroy(&send_cond);
-*/
     // Close resources
     if (file_ptr) fclose(file_ptr);
 
 #ifdef GPIOD_V2
-    if (request) { gpiod_line_request_release(request); request = NULL; }
-    if (line_cfg) { gpiod_line_config_free(line_cfg);   line_cfg = NULL; }
-    if (settings) { gpiod_line_settings_free(settings); settings = NULL; }
-#else
-    if (line) { gpiod_line_release(line); line = NULL; }
-#endif
-	if (chip) { gpiod_chip_close(chip); chip = NULL; }
-
-	/*
-	if (request != NULL) {
-    	gpiod_line_request_release(request);
-    	request = NULL;
+    if (request != NULL) {
+		gpiod_line_request_release(request);
+		request = NULL;
 	}
-
-	if (line_cfg != NULL) {
+    if (line_cfg != NULL) {
 		gpiod_line_config_free(line_cfg);
 		line_cfg = NULL;
 	}
-
-	if (settings != NULL) {
-   		gpiod_line_settings_free(settings);
+    if (settings) {
+		gpiod_line_settings_free(settings);
 		settings = NULL;
 	}
-	if (chip != NULL) {
-	    gpiod_chip_close(chip);
-		chip = NULL;
-	}*/
+#else
+    if (gpio_line) {
+		gpiod_line_release(gpio_line);
+		gpio_line = NULL;
+	}
+#endif
+	if (chip) { gpiod_chip_close(chip); chip = NULL; }
+
 	// Cleanup utilities
     console_cleanup();
     exit(exit_code);
@@ -257,9 +202,9 @@ static void simulate_tip() {
     sleep_ns(PULSE_WIDTH_NS);
     gpiod_line_request_set_value(request, offset, GPIOD_LINE_VALUE_INACTIVE);
 #else
-    gpiod_line_set_value(line, 1);
+    gpiod_line_set_value(gpio_line, 1);
     sleep_ns(PULSE_WIDTH_NS);
-    gpiod_line_set_value(line, 0);
+    gpiod_line_set_value(gpio_line, 0);
 #endif
 }
 
@@ -486,54 +431,12 @@ int main(int argc, char *argv[]) {
     request = gpiod_chip_request_lines(chip, NULL, line_cfg);
     if (!request) { perror("request lines"); cleanup_and_exit(1); }
 #else
-    line = gpiod_chip_get_line(chip, offset);
-    if (!line) { perror("get line"); cleanup_and_exit(1); }
+    gpio_line = gpiod_chip_get_line(chip, offset);
+    if (!gpio_line) { perror("get line"); cleanup_and_exit(1); }
 
-    req_ret = gpiod_line_request_output(line, "cs700h", 0); // 0 = initial low
+    req_ret = gpiod_line_request_output(gpio_line, "cs700h", 0); // 0 = initial low
     if (req_ret) { perror("request output"); cleanup_and_exit(1); }
 #endif
-
-				
-	/* Create a settings object (Output, Initial Value Low)
-    settings = gpiod_line_settings_new();
-    if (!settings) {
-        perror("New settings failed");
-		cleanup_and_exit(1);
-    }
-
-	gpiod_line_settings_set_direction(settings, GPIOD_LINE_DIRECTION_OUTPUT);
-    gpiod_line_settings_set_output_value(settings, GPIOD_LINE_VALUE_INACTIVE); // 0
-
-    // Create a line config and add the settings for our specific pin
-    line_cfg = gpiod_line_config_new();
-    if (!line_cfg) {
-        perror("New line config failed");
-		cleanup_and_exit(1);
-    }
-
-	req_ret = gpiod_line_config_add_line_settings(line_cfg, &offset, 1, settings);
-    if (req_ret) {
-        perror("Add line settings failed");
-		cleanup_and_exit(1);
-    }
-
-	// Request the line from the chip
-    // The "consumer" string helps identify who owns the pin in 'gpioinfo'
-    request = gpiod_chip_request_lines(chip, NULL, line_cfg);
-    if (!request) {
-        perror("Request lines failed");
-		cleanup_and_exit(1);
-    }*/
-					
-	printf("GPIO %u opened successfully using libgpiod v2\n", offset);
-
-    // define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
-    // allowing our c program, to close its loop, join threads, and close our serial device.
-//    struct sigaction sa;
-//    memset(&sa, 0, sizeof(sa));
-//    sa.sa_handler = handle_signal;
-//    sigaction(SIGINT, &sa, NULL);   // Ctrl-C
-//    sigaction(SIGTERM, &sa, NULL);  // kill, systemd, etc.
 
 	// Block signals in main (inherited by all threads)
 	sigset_t block_set;
