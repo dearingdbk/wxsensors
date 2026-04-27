@@ -60,7 +60,12 @@ GTK_LIBS = $(shell pkg-config --libs gtk+-3.0)
 # GPIO Flags
 GPIOD_CFLAGS := $(shell pkg-config --cflags libgpiod 2>/dev/null)
 GPIOD_LIBS := $(shell pkg-config --libs libgpiod 2>/dev/null)
-
+GPIOD_VERSION := $(shell pkg-config --modversion libgpiod 2>/dev/null | cut -d. -f1)
+ifeq ($(GPIOD_VERSION), 2)
+    GPIOD_CFLAGS += -DGPIOD_V2
+else
+    GPIOD_CFLAGS += -DGPIOD_V1
+endif
 # ============================================================================
 # SOURCE FILES
 # ============================================================================
