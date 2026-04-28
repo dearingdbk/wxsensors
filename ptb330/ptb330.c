@@ -116,12 +116,11 @@ ptb330_sensor *sensor_one = NULL; // Global pointer to struct for atmosvue30 sen
 
 /* Synchronization primitives */
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
-static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t  send_cond; // Moved initialization down to main, to change REALTIME Clock to MONOTONIC.
+static pthread_mutex_t sensor_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  sensor_cond; // Moved initialization down to main, to change REALTIME Clock to MONOTONIC.
 
 // Global pointers to receiver and sender threads.
-pthread_t recv_thread, send_thread;
-
+pthread_t recv_thread, send_thread, sig_thread;
 
 /*
  * Name:         cleanup_and_exit
@@ -137,10 +136,12 @@ pthread_t recv_thread, send_thread;
  * Notes:
  */
 void cleanup_and_exit(int exit_code) {
-	pthread_mutex_lock(&send_mutex);
+	pthread_mutex_lock(&sensor_mutex);
     terminate = 1;
-    pthread_cond_signal(&send_cond);
-    pthread_mutex_unlock(&send_mutex);
+	pthread_cond_broadcast(&sensor_cond);
+    pthread_mutex_unlock(&sensor_mutex);
+
+   	raise(SIGTERM);
 
 	if (recv_thread != 0) {
         pthread_join(recv_thread, NULL);
@@ -151,9 +152,14 @@ void cleanup_and_exit(int exit_code) {
         send_thread = 0;
     }
 
-	pthread_mutex_destroy(&send_mutex);
+    if (sig_thread != 0) {
+        pthread_join(sig_thread, NULL);
+        sig_thread = 0;
+    }
+
+	pthread_mutex_destroy(&sensor_mutex);
     pthread_mutex_destroy(&file_mutex);
-    pthread_cond_destroy(&send_cond);
+    pthread_cond_destroy(&sensor_cond);
 
     if (sensor_one) free(sensor_one);
     // Close resources
@@ -164,7 +170,6 @@ void cleanup_and_exit(int exit_code) {
     serial_utils_cleanup();
     exit(exit_code);
 }
-
 
 // ---------------- Command handling ----------------
 
@@ -444,7 +449,7 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 			break;
 		case CMD_R:
 			sensor_one->mode = SMODE_RUN;
-			pthread_cond_signal(&send_cond); // Wake our sender thread, to check if our mode has changed.
+			pthread_cond_signal(&sensor_cond); // Wake our sender thread, to check if our mode has changed.
 			break;
 		case CMD_INTV: {
     		int val = 0;
@@ -504,7 +509,7 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 				sensor_one->intv_data.multiplier = multiplier;
 				safe_serial_write(serial_fd, "Output interval %d %s\r\n", sensor_one->intv_data.interval, sensor_one->intv_data.interval_units);
     		}
-			pthread_cond_signal(&send_cond); // Wake our sender thread, to check if our mode has changed.
+			pthread_cond_signal(&sensor_cond); // Wake our sender thread, to check if our mode has changed.
     		break;
 		}
 		case CMD_SEND:
@@ -534,7 +539,7 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 				} else {
 				}
 			}
-			pthread_cond_signal(&send_cond); // Wake our sender thread, to check if our mode has changed.
+			pthread_cond_signal(&sensor_cond); // Wake our sender thread, to check if our mode has changed.
 			break;
 		case CMD_SDELAY:
 		case CMD_ADDR:
@@ -552,7 +557,7 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 				if (sensor_one->mode == SMODE_POLL && sensor_one->address == req_address) {
 					sensor_one->mode = SMODE_STOP;
 					safe_serial_write(serial_fd, "PTB330: %hhu line opened for operator commands\r\n", sensor_one->address);
-					pthread_cond_signal(&send_cond); // Wake our sender thread, to check if our mode has changed.
+					pthread_cond_signal(&sensor_cond); // Wake our sender thread, to check if our mode has changed.
 				}
 			} else {
 				safe_console_error("%s: %s\n", program_name, "Open command received without an address");
@@ -562,7 +567,7 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 			if (sensor_one->mode == SMODE_STOP) {
 				sensor_one->mode = SMODE_POLL;
 				safe_serial_write(serial_fd, "line closed\r\n");
-				pthread_cond_signal(&send_cond); // Wake our sender thread, to check if our mode has changed.
+				pthread_cond_signal(&sensor_cond); // Wake our sender thread, to check if our mode has changed.
 			}
 			break;
 		case CMD_SCOM:
@@ -734,9 +739,9 @@ void* signal_thread(void* arg) {
     kill_flag = 1;
 
     // Now safely wake any threads
-    pthread_mutex_lock(&send_mutex);
-    pthread_cond_broadcast(&send_cond);
-    pthread_mutex_unlock(&send_mutex);
+    pthread_mutex_lock(&sensor_mutex);
+    pthread_cond_broadcast(&sensor_cond);
+    pthread_mutex_unlock(&sensor_mutex);
 
     return NULL;
 }
@@ -768,9 +773,9 @@ void* receiver_thread(void* arg) {
                     ParsedCommand local_cmd;
                     CommandType cmd_type = parse_command(line, &local_cmd);
 
-					pthread_mutex_lock(&send_mutex);   // <--- LOCK HERE
+					pthread_mutex_lock(&sensor_mutex);   // <--- LOCK HERE
 		    		handle_command(cmd_type, &local_cmd); // handle received command here.
-                    pthread_mutex_unlock(&send_mutex); // <--- UNLOCK HERE
+                    pthread_mutex_unlock(&sensor_mutex); // <--- UNLOCK HERE
                     len = 0;
                 } else { // empty line ignore
                 }
@@ -812,7 +817,7 @@ void* sender_thread(void* arg) {
 	int interval = 0;
 
     while (!terminate) {
-        pthread_mutex_lock(&send_mutex);
+        pthread_mutex_lock(&sensor_mutex);
 
 		// Determine if we should wait for a specific time or indefinitely
         if (sensor_one != NULL && sensor_one->mode == SMODE_RUN) {
@@ -823,21 +828,21 @@ void* sender_thread(void* arg) {
             // Add the continuous interval (in seconds) to the current time
             ts.tv_sec += interval;
             // Wait until that specific second arrives OR a signal interrupts us
-            pthread_cond_timedwait(&send_cond, &send_mutex, &ts);
+            pthread_cond_timedwait(&sensor_cond, &sensor_mutex, &ts);
         } else {
             // If in Polling/Stop Mode, wait indefinitely for a signal from the receiver
-            pthread_cond_wait(&send_cond, &send_mutex);
+            pthread_cond_wait(&sensor_cond, &sensor_mutex);
         }
 
         if (terminate) {
-            pthread_mutex_unlock(&send_mutex);
+            pthread_mutex_unlock(&sensor_mutex);
             break;
         }
 
         // is_ready_to_send() handles the interval and timing logic internally, and checks if the sensor is Pollling or Continuous.
         should_send = (sensor_one != NULL && ptb330_is_ready_to_send(sensor_one));
 
-		pthread_mutex_unlock(&send_mutex);  // <-- UNLOCK BEFORE I/O
+		pthread_mutex_unlock(&sensor_mutex);  // <-- UNLOCK BEFORE I/O
 
         // Do I/O operations WITHOUT holding the mutex
         if (should_send) {
@@ -853,11 +858,11 @@ void* sender_thread(void* arg) {
             }
 
             // Update timestamp with lock
-            pthread_mutex_lock(&send_mutex);
+            pthread_mutex_lock(&sensor_mutex);
             if (sensor_one != NULL) {
                 clock_gettime(CLOCK_MONOTONIC, &sensor_one->last_send_time);
             }
-            pthread_mutex_unlock(&send_mutex);
+            pthread_mutex_unlock(&sensor_mutex);
         }
     }
     return NULL;
@@ -890,7 +895,7 @@ int main(int argc, char *argv[]) {
 
     if (argc < 2) {
         safe_console_error("Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
-        return 1;
+        cleanup_and_exit(1);
     }
 	program_name = argv[0]; // Global variable to hold the program name for console errors.
     file_path = argv[1];
@@ -927,20 +932,24 @@ int main(int argc, char *argv[]) {
 	sigaddset(&block_set, SIGQUIT);
 	pthread_sigmask(SIG_BLOCK, &block_set, NULL);
 
-	// create the signal thread
-	pthread_t sig_thread;
-	pthread_create(&sig_thread, NULL, signal_thread, NULL);
 
 	// Initialize the send condition to use CLOCK_MONOTONIC
 	pthread_condattr_t attr;
     pthread_condattr_init(&attr);
     pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
-    pthread_cond_init(&send_cond, &attr); // Initialize the global variable here
+    pthread_cond_init(&sensor_cond, &attr); // Initialize the global variable here
     pthread_condattr_destroy(&attr);
+
+	// create the signal thread
+	if (pthread_create(&sig_thread, NULL, signal_thread, NULL) != 0) {
+        safe_console_error("Failed to create signal thread: %s\n", strerror(errno));
+        terminate = 1;          // <- symmetrical, but not required
+		cleanup_and_exit(1);
+	}
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
         safe_console_error("Failed to create receiver thread: %s\n", strerror(errno));
-        terminate = 1;          // <- symmetrical, but not required
+        terminate = 1;          // <- needed becuase sig_thread is running.
 		cleanup_and_exit(1);
     }
 
