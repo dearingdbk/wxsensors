@@ -216,7 +216,7 @@ static pthread_cond_t  send_cond; // Moved initialization down to main, to chang
 static pthread_cond_t  data_sleep_cond; // Moved initialization down to main, to change REALTIME Clock to MONOTONIC.
 
 // Global pointers to receiver and sender threads.
-pthread_t recv_thread, send_thread, data_thread;
+pthread_t recv_thread, send_thread, data_thread, sig_thread;
 
 /*
  * Name:         cleanup_and_exit
@@ -235,8 +235,10 @@ void cleanup_and_exit(int exit_code) {
 	pthread_mutex_lock(&data_mutex); // Lock before changing terminate to 1.
     terminate = 1;
     pthread_mutex_unlock(&data_mutex);
-    pthread_cond_signal(&send_cond);
-	pthread_cond_signal(&data_sleep_cond);
+    pthread_cond_broadcast(&send_cond);
+	pthread_cond_broadcast(&data_sleep_cond);
+
+	raise(SIGTERM);
 
 	if (recv_thread != 0) {
         pthread_join(recv_thread, NULL);
@@ -248,6 +250,10 @@ void cleanup_and_exit(int exit_code) {
     }
 	if (data_thread != 0) {
 		pthread_join(data_thread, NULL);
+		data_thread = 0;
+	}
+	if (sig_thread != 0) {
+		pthread_join(sig_thread, NULL);
 		data_thread = 0;
 	}
 
@@ -266,6 +272,7 @@ void cleanup_and_exit(int exit_code) {
     serial_utils_cleanup();
     exit(exit_code);
 }
+
 
 
 // ---------------- Command handling ----------------
@@ -833,7 +840,7 @@ int main(int argc, char *argv[]) {
 
     if (argc < 2) {
         safe_console_error("Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
-        return 1;
+        cleanup_and_exit(1);
     }
 	program_name = argv[0]; // Global variable to hold the program name for console errors.
     file_path = argv[1];
@@ -870,9 +877,6 @@ int main(int argc, char *argv[]) {
 	sigaddset(&block_set, SIGQUIT);
 	pthread_sigmask(SIG_BLOCK, &block_set, NULL);
 
-	// create the signal thread
-	pthread_t sig_thread;
-	pthread_create(&sig_thread, NULL, signal_thread, NULL);
 
 	// Initialize the send condition to use CLOCK_MONOTONIC
 	pthread_condattr_t attr;
@@ -882,24 +886,27 @@ int main(int argc, char *argv[]) {
     pthread_cond_init(&data_sleep_cond, &attr); // Initialize the global variable here
     pthread_condattr_destroy(&attr);
 
+	if (pthread_create(&sig_thread, NULL, signal_thread, NULL) != 0) {
+        safe_console_error("Failed to create signal thread: %s\n", strerror(errno));
+        terminate = 1;          // <- symmetrical, but not required
+		cleanup_and_exit(1);
+	}
+
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
         safe_console_error("Failed to create receiver thread: %s\n", strerror(errno));
-        terminate = 1;          // <- symmetrical, but not required
+        terminate = 1;          // <- needed because sig_thread is running
 		cleanup_and_exit(1);
     }
 
     if (pthread_create(&send_thread, NULL, sender_thread, NULL) != 0) {
         safe_console_error("Failed to create sender thread: %s\n", strerror(errno));
         terminate = 1;          // <- needed because recv_thread is running
-        pthread_join(recv_thread, NULL);
 		cleanup_and_exit(1);
     }
 
 	if (pthread_create(&data_thread, NULL, data_collection_thread, NULL) != 0) {
         safe_console_error("Failed to create data collection thread: %s\n", strerror(errno));
         terminate = 1;
-        pthread_join(recv_thread, NULL);
-        pthread_join(send_thread, NULL);
         cleanup_and_exit(1);
     }
 
