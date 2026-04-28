@@ -69,10 +69,63 @@ int serial_fd = -1;
 
 /* Synchronization primitives */
 static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
-static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t  send_cond  = PTHREAD_COND_INITIALIZER;
+static pthread_mutex_t sensor_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  sensor_cond  = PTHREAD_COND_INITIALIZER;
+
+pthread_t sig_thread, recv_thread, send_thread;
 
 wind_sensor *wnd_sensor;
+
+
+/*
+ * Name:         cleanup_and_exit
+ * Purpose:      helper function to cleanup sensors, and arrays.
+ * Arguments:    exit_code, the exit code to send on close.
+ *
+ * Output:       None.
+ * Modifies:     Frees, sensors, sensor_map, closes file descriptors, and serial devices.
+ * Returns:      None.
+ * Assumptions:
+ *
+ * Bugs:         None known.
+ * Notes:
+ */
+void cleanup_and_exit(int exit_code) {
+	pthread_mutex_lock(&sensor_mutex);
+    terminate = 1;
+	pthread_cond_broadcast(&sensor_cond);
+    pthread_mutex_unlock(&sensor_mutex);
+
+   	raise(SIGTERM);
+
+	if (recv_thread != 0) {
+        pthread_join(recv_thread, NULL);
+        recv_thread = 0;
+    }
+    if (send_thread != 0) {
+        pthread_join(send_thread, NULL);
+        send_thread = 0;
+    }
+
+    if (sig_thread != 0) {
+        pthread_join(sig_thread, NULL);
+        sig_thread = 0;
+    }
+
+	pthread_mutex_destroy(&sensor_mutex);
+    pthread_mutex_destroy(&file_mutex);
+    pthread_cond_destroy(&sensor_cond);
+
+    if (wnd_sensor) free(wnd_sensor);
+    // Close resources
+    if (serial_fd >= 0) close(serial_fd);
+    if (file_ptr) fclose(file_ptr);
+    // Cleanup utilities
+    console_cleanup();
+    serial_utils_cleanup();
+    exit(exit_code);
+}
+
 
 /*
  * Name:         check_sum
@@ -153,17 +206,17 @@ void handle_command(CommandType cmd) {
     char *resp_copy = NULL;
     switch (cmd) {
         case CMD_START:
-		    pthread_mutex_lock(&send_mutex);
+		    pthread_mutex_lock(&sensor_mutex);
             continuous = 1; // enable continuous sending
-            pthread_cond_signal(&send_cond);  // Wake sender_thread immediately
-            pthread_mutex_unlock(&send_mutex);
+            pthread_cond_signal(&sensor_cond);  // Wake sender_thread immediately
+            pthread_mutex_unlock(&sensor_mutex);
             break;
 
         case CMD_STOP:
-            pthread_mutex_lock(&send_mutex);
+            pthread_mutex_lock(&sensor_mutex);
 		    continuous = 0; // disables continuous sending.
-            pthread_cond_signal(&send_cond);   // Wake sender_thread to exit loop
-            pthread_mutex_unlock(&send_mutex);
+            pthread_cond_signal(&sensor_cond);   // Wake sender_thread to exit loop
+            pthread_mutex_unlock(&sensor_mutex);
             break;
 
         case CMD_SITE:
@@ -222,9 +275,9 @@ void* signal_thread(void* arg) {
     kill_flag = 1;
 
     // Now safely wake any threads
-    pthread_mutex_lock(&send_mutex);
-    pthread_cond_broadcast(&send_cond);
-    pthread_mutex_unlock(&send_mutex);
+    pthread_mutex_lock(&sensor_mutex);
+    pthread_cond_broadcast(&sensor_cond);
+    pthread_mutex_unlock(&sensor_mutex);
 
     return NULL;
 }
@@ -295,14 +348,14 @@ void* sender_thread(void* arg) {
     struct timespec requested_time;
 
     while (!terminate) {
-        pthread_mutex_lock(&send_mutex);
+        pthread_mutex_lock(&sensor_mutex);
         // wait until either terminate is set or continuous becomes 1
         while (!terminate && !continuous) {
-            pthread_cond_wait(&send_cond, &send_mutex); // we need to add a handler for this in the sig handler.
+            pthread_cond_wait(&sensor_cond, &sensor_mutex); // we need to add a handler for this in the sig handler.
         }
 
         if (terminate) {
-            pthread_mutex_unlock(&send_mutex);
+            pthread_mutex_unlock(&sensor_mutex);
             break;
         }
 
@@ -321,10 +374,10 @@ void* sender_thread(void* arg) {
 			 if (terminate) break; // check before waiting 2 seconds.
              clock_gettime(CLOCK_REALTIME, &requested_time);
              requested_time.tv_sec += 2;
-             pthread_cond_timedwait(&send_cond, &send_mutex, &requested_time);
+             pthread_cond_timedwait(&sensor_cond, &sensor_mutex, &requested_time);
         }
 
-        pthread_mutex_unlock(&send_mutex);
+        pthread_mutex_unlock(&sensor_mutex);
 
     }
     return NULL;
@@ -358,8 +411,7 @@ int main(int argc, char *argv[]) {
 
     if (argc < 2) {
 		safe_console_error("Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
-        //fprintf(stderr, "Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
-        return 1;
+        cleanup_and_exit(1);
     }
 
     file_path = argv[1];
@@ -367,7 +419,7 @@ int main(int argc, char *argv[]) {
     file_ptr = fopen(file_path, "r");
     if (!file_ptr) {
         perror("Failed to open file");
-        return 1;
+        cleanup_and_exit(1);
     }
     //ternary statement to set SERIAL_PORT if supplied in args or the default
     const char *device = (argc >= 3 && is_valid_tty(argv[2]) == 0) ? argv[2] : SERIAL_PORT;
@@ -381,6 +433,7 @@ int main(int argc, char *argv[]) {
 
     if (serial_fd < 0) {
         fclose(file_ptr);
+        cleanup_and_exit(1);
         return 1;
     }
 
@@ -394,36 +447,29 @@ int main(int argc, char *argv[]) {
 	pthread_sigmask(SIG_BLOCK, &block_set, NULL);
 
 	// create the signal thread
-	pthread_t sig_thread;
-	pthread_create(&sig_thread, NULL, signal_thread, NULL);
 
-    pthread_t recv_thread, send_thread;
+    if (pthread_create(&sig_thread, NULL, signal_thread, NULL) != 0) {
+        perror("Failed to create receiver thread");
+        terminate = 1;          // <- symmetrical, but not required
+        cleanup_and_exit(1);
+	}
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
         perror("Failed to create receiver thread");
         terminate = 1;          // <- symmetrical, but not required
-        close(serial_fd);
-        fclose(file_ptr);
-        return 1;
+        cleanup_and_exit(1);
     }
 
     if (pthread_create(&send_thread, NULL, sender_thread, NULL) != 0) {
         perror("Failed to create sender thread");
         terminate = 1;          // <- needed because recv_thread is running
-        pthread_join(recv_thread, NULL);
-        close(serial_fd);
-        fclose(file_ptr);
-        return 1;
+        cleanup_and_exit(1);
     }
 
 	if (init_wind(&wnd_sensor) != 1) {
         perror("Failed to initialize sensor");
         terminate = 1;
-        pthread_join(recv_thread, NULL);
-        close(serial_fd);
-        fclose(file_ptr);
-		free(wnd_sensor);
-        return 1;
+        cleanup_and_exit(1);
 	}
 
 	safe_console_print("Press 'q' + Enter to quit.\n");
@@ -431,37 +477,26 @@ int main(int argc, char *argv[]) {
         char input[8];
         if (fgets(input, sizeof(input), stdin)) {
             if (input[0] == 'q' || input[0] == 'Q' || kill_flag == 1) {
-                pthread_mutex_lock(&send_mutex);
+                pthread_mutex_lock(&sensor_mutex);
                 terminate = 1;
                 kill_flag = 1;
-                pthread_cond_signal(&send_cond);  // wake sender_thread
-                pthread_mutex_unlock(&send_mutex);
+                pthread_cond_signal(&sensor_cond);  // wake sender_thread
+                pthread_mutex_unlock(&sensor_mutex);
 		break;
             }
         } else if (feof(stdin)) {  // keep an eye on the behaviour of this check.
-            pthread_mutex_lock(&send_mutex);
+            pthread_mutex_lock(&sensor_mutex);
             terminate = 1;
             kill_flag = 1;
-            pthread_cond_signal(&send_cond);      // wake sender_thread
-            pthread_mutex_unlock(&send_mutex);
+            pthread_cond_signal(&sensor_cond);      // wake sender_thread
+            pthread_mutex_unlock(&sensor_mutex);
             break; // stdin closed
         } else {
             continue; // temp read error
         }
     }
 
-    pthread_join(recv_thread, NULL);
-    pthread_join(send_thread, NULL);
-
-	pthread_mutex_destroy(&file_mutex);
-	pthread_mutex_destroy(&send_mutex);
-	pthread_cond_destroy(&send_cond);
-
-    close(serial_fd);
-    fclose(file_ptr);
-	free(wnd_sensor);
     safe_console_print("Program terminated.\n");
-	console_cleanup();
-	serial_utils_cleanup();
+	cleanup_and_exit(0);
     return 0;
 }
