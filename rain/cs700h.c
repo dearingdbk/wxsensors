@@ -1,4 +1,4 @@
-;/*
+/*
  * File:        cs700h.c
  * Author:      Bruce Dearing
  * Date:        22/04/2026
