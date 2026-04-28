@@ -141,8 +141,10 @@ ParsedCommand p_cmd;
 
 // Synchronization primitives
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
-static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t  send_cond  = PTHREAD_COND_INITIALIZER;
+static pthread_mutex_t sensor_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  sensor_cond  = PTHREAD_COND_INITIALIZER;
+
+pthread_t recv_thread, send_thread, sig_thread;
 
 // These need to be freed upon exit.
 bp_sensor *sensor_one = NULL; // Global pointer to struct for Barometric sensor 1.
@@ -152,6 +154,54 @@ bp_sensor *sensor_three = NULL; // Global pointer to struct for Barometric senso
 // Array of 99 pointers (0-98), initialized to NULL to use as a bp_sensor address map.
 bp_sensor *sensor_map[MAX_SENSOR_ADDRESS] = {NULL};
 
+/*
+ * Name:         cleanup_and_exit
+ * Purpose:      helper function to cleanup sensors, and arrays.
+ * Arguments:    exit_code, the exit code to send on close.
+ *
+ * Output:       None.
+ * Modifies:     Frees, sensors, sensor_map, closes file descriptors, and serial devices.
+ * Returns:      None.
+ * Assumptions:
+ *
+ * Bugs:         None known.
+ * Notes:
+ */
+void cleanup_and_exit(int exit_code) {
+	pthread_mutex_lock(&sensor_mutex);
+    terminate = 1;
+	pthread_cond_broadcast(&sensor_cond);
+    pthread_mutex_unlock(&sensor_mutex);
+
+   	raise(SIGTERM);
+
+	if (recv_thread != 0) {
+        pthread_join(recv_thread, NULL);
+        recv_thread = 0;
+    }
+    if (send_thread != 0) {
+        pthread_join(send_thread, NULL);
+        send_thread = 0;
+    }
+
+    if (sig_thread != 0) {
+        pthread_join(sig_thread, NULL);
+        sig_thread = 0;
+    }
+
+	pthread_mutex_destroy(&sensor_mutex);
+    pthread_mutex_destroy(&file_mutex);
+    pthread_cond_destroy(&sensor_cond);
+
+    if (sensor_one) free(sensor_one);
+    // Close resources
+    if (serial_fd >= 0) close(serial_fd);
+    if (file_ptr) fclose(file_ptr);
+    // Cleanup utilities
+    console_cleanup();
+    serial_utils_cleanup();
+    exit(exit_code);
+}
 
 // ---------------- Command handling ----------------
 
@@ -290,36 +340,6 @@ void information_print(bp_sensor *s) {
 									 s->serial_number,
 									 14);
 	} else return;
-}
-
-/*
- * Name:         cleanup_and_exit
- * Purpose:      helper function to cleanup sensors, and arrays.
- * Arguments:    exit_code, the exit code to send on close.
- *
- * Output:       None.
- * Modifies:     Frees, sensors, sensor_map, closes file descriptors, and serial devices.
- * Returns:      None.
- * Assumptions:
- *
- * Bugs:         None known.
- * Notes:
- */
-void cleanup_and_exit(int exit_code) {
-    // Clear map first
-    memset(sensor_map, 0, sizeof(sensor_map));
-    // Free sensors if allocated
-    if (sensor_three) free(sensor_three);
-    if (sensor_two) free(sensor_two);
-    if (sensor_one) free(sensor_one);
-
-    // Close resources
-    if (serial_fd >= 0) close(serial_fd);
-    if (file_ptr) fclose(file_ptr);
-    // Cleanup utilities
-    console_cleanup();
-    serial_utils_cleanup();
-    exit(exit_code);
 }
 
 /*
@@ -766,9 +786,9 @@ void* signal_thread(void* arg) {
     kill_flag = 1;
 
     // Now safely wake any threads
-    pthread_mutex_lock(&send_mutex);
-    pthread_cond_broadcast(&send_cond);
-    pthread_mutex_unlock(&send_mutex);
+    pthread_mutex_lock(&sensor_mutex);
+    pthread_cond_broadcast(&sensor_cond);
+    pthread_mutex_unlock(&sensor_mutex);
 
     return NULL;
 }
@@ -799,9 +819,9 @@ void* receiver_thread(void* arg) {
 	    if (c == '\r' || c == '\n') {
                 if (len > 0) {
                     line[len] = '\0';
-					pthread_mutex_lock(&send_mutex);   // <--- LOCK HERE
+					pthread_mutex_lock(&sensor_mutex);   // <--- LOCK HERE
 		    		handle_command(parse_command(line, &p_cmd)); // handle received command here.
-                    pthread_mutex_unlock(&send_mutex); // <--- UNLOCK HERE
+                    pthread_mutex_unlock(&sensor_mutex); // <--- UNLOCK HERE
 					len = 0;
                 } else { // empty line ignore
                   }
@@ -840,7 +860,7 @@ void* sender_thread(void* arg) {
     (void)arg;
 	struct timespec ts;
 	while (!terminate) {
-        pthread_mutex_lock(&send_mutex);
+        pthread_mutex_lock(&sensor_mutex);
 
 		// Calculate the next wakeup time (Current time + 10ms)
         clock_gettime(CLOCK_REALTIME, &ts);
@@ -851,11 +871,11 @@ void* sender_thread(void* arg) {
         }
 
         // Wait until signaled OR timeout reached.
-        // This automatically unlocks send_mutex while waiting.
-        pthread_cond_timedwait(&send_cond, &send_mutex, &ts);
+        // This automatically unlocks sensor_mutex while waiting.
+        pthread_cond_timedwait(&sensor_cond, &sensor_mutex, &ts);
 
         if (terminate) {
-            pthread_mutex_unlock(&send_mutex);
+            pthread_mutex_unlock(&sensor_mutex);
             break;
         }
 
@@ -888,7 +908,7 @@ void* sender_thread(void* arg) {
             }
         }
 
-        pthread_mutex_unlock(&send_mutex);
+        pthread_mutex_unlock(&sensor_mutex);
 
         // Sleep for a short duration (10ms) to prevent CPU spiking.
         // while maintaining 0.01s timing resolution.
@@ -985,11 +1005,12 @@ int main(int argc, char *argv[]) {
 	sigaddset(&block_set, SIGQUIT);
 	pthread_sigmask(SIG_BLOCK, &block_set, NULL);
 
-	// create the signal thread
-	pthread_t sig_thread;
-	pthread_create(&sig_thread, NULL, signal_thread, NULL);
 
-    pthread_t recv_thread, send_thread;
+	if (pthread_create(&sig_thread, NULL, signal_thread, NULL) != 0) {
+	    perror("Failed to create signal thread");
+        terminate = 1;          // <- symmetrical, but not required
+	    cleanup_and_exit(1);
+	}
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
         perror("Failed to create receiver thread");
@@ -1009,19 +1030,19 @@ int main(int argc, char *argv[]) {
         char input[8];
         if (fgets(input, sizeof(input), stdin)) {
             if (input[0] == 'q' || input[0] == 'Q' || kill_flag == 1) {
-                pthread_mutex_lock(&send_mutex);
+                pthread_mutex_lock(&sensor_mutex);
                 terminate = 1;
                 kill_flag = 1;
-                pthread_cond_signal(&send_cond);  // wake sender_thread
-                pthread_mutex_unlock(&send_mutex);
+                pthread_cond_signal(&sensor_cond);  // wake sender_thread
+                pthread_mutex_unlock(&sensor_mutex);
 				break;
             }
         } else if (feof(stdin)) {  // keep an eye on the behaviour of this check.
-            pthread_mutex_lock(&send_mutex);
+            pthread_mutex_lock(&sensor_mutex);
             terminate = 1;
             kill_flag = 1;
-            pthread_cond_signal(&send_cond);      // wake sender_thread
-            pthread_mutex_unlock(&send_mutex);
+            pthread_cond_signal(&sensor_cond);      // wake sender_thread
+            pthread_mutex_unlock(&sensor_mutex);
             break; // stdin closed
         } else {
             continue; // temp read error
@@ -1029,14 +1050,15 @@ int main(int argc, char *argv[]) {
     }
 
 	// Join threads
-    pthread_join(recv_thread, NULL);
-    pthread_join(send_thread, NULL);
+    //pthread_join(recv_thread, NULL);
+    //pthread_join(send_thread, NULL);
 
 	// destroy mutexes, and conditions
-	pthread_mutex_destroy(&file_mutex);
-	pthread_mutex_destroy(&send_mutex);
-	pthread_cond_destroy(&send_cond);
+	//pthread_mutex_destroy(&file_mutex);
+	//pthread_mutex_destroy(&sensor_mutex);
+	//pthread_cond_destroy(&sensor_cond);
 
 	safe_console_print("Program terminated.\n");
 	cleanup_and_exit(0);
+	return 0;
 }
