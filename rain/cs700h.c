@@ -127,7 +127,7 @@ pthread_t read_thread, send_thread;
  */
 void cleanup_and_exit(int exit_code) {
     terminate = 1;
-
+	raise(SIGTERM);
     // Wake sender
     pthread_mutex_lock(&pulse_sleep_mutex);
     pthread_cond_broadcast(&pulse_sleep_cond);
@@ -138,8 +138,14 @@ void cleanup_and_exit(int exit_code) {
     pthread_cond_signal(&reader_sleep_cond);
     pthread_mutex_unlock(&reader_sleep_mutex);
 
-    if (read_thread != 0) { pthread_join(read_thread, NULL); read_thread = 0; }
-    if (send_thread != 0) { pthread_join(send_thread, NULL); send_thread = 0; }
+    if (read_thread != 0) {
+		pthread_join(read_thread, NULL);
+		read_thread = 0;
+	}
+    if (send_thread != 0) {
+		pthread_join(send_thread, NULL);
+		send_thread = 0;
+	}
 
     pthread_mutex_destroy(&pulse_sleep_mutex);
     pthread_mutex_destroy(&reader_sleep_mutex);
