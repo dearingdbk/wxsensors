@@ -8,7 +8,7 @@ REQUIRED_PKGS = gtk+-3.0 libgpiod
 # Check if packages exist
 PKG_CHECK := $(shell pkg-config --exists $(REQUIRED_PKGS) || echo "missing")
 ifeq ($(PKG_CHECK), missing)
-$(error "Error: Required libraries not found. Please install: $(REQUIRED_PKGS)")
+	$(error "Error: Required libraries not found. Please install: $(REQUIRED_PKGS)")
 endif
 
 # ============================================================================
