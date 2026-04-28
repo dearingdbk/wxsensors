@@ -69,25 +69,47 @@ int serial_fd = -1;
 /* Synchronization primitives */
 static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 
+pthread_t sig_thread, recv_thread;
+
+
 /*
- * Name:         handle_signal
- * Purpose:      Captures any kill signals, and sets volitile atomic 'terminate' & 'kill_flag' to 1, allowing the while loop to break, and threads to join.
- * Arguments:    None
+ * Name:         cleanup_and_exit
+ * Purpose:      helper function to cleanup sensors, and arrays.
+ * Arguments:    exit_code, the exit code to send on close.
  *
  * Output:       None.
- * Modifies:     Changes terminate to 1, and kill_flag to 1.
+ * Modifies:     Frees, sensors, sensor_map, closes file descriptors, and serial devices.
  * Returns:      None.
- * Assumptions:  Terminate is set to 0.
+ * Assumptions:
  *
  * Bugs:         None known.
  * Notes:
- *
-void handle_signal(int sig) {
-    (void)sig;
+ */
+void cleanup_and_exit(int exit_code) {
     terminate = 1;
-    kill_flag = 1;
-}*/
 
+   	raise(SIGTERM);
+
+	if (recv_thread != 0) {
+        pthread_join(recv_thread, NULL);
+        recv_thread = 0;
+    }
+
+    if (sig_thread != 0) {
+        pthread_join(sig_thread, NULL);
+        sig_thread = 0;
+    }
+
+    pthread_mutex_destroy(&file_mutex);
+
+    // Close resources
+    if (serial_fd >= 0) close(serial_fd);
+    if (file_ptr) fclose(file_ptr);
+    // Cleanup utilities
+    console_cleanup();
+    serial_utils_cleanup();
+    exit(exit_code);
+}
 
 // ---------------- Command handling ----------------
 
@@ -254,7 +276,7 @@ int main(int argc, char *argv[]) {
 
     if (argc < 2) {
         safe_console_error("Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
-        return 1;
+        cleanup_and_exit(1);
     }
 
     file_path = argv[1]; // gets the supplied file path
@@ -262,7 +284,7 @@ int main(int argc, char *argv[]) {
     file_ptr = fopen(file_path, "r");
     if (!file_ptr) {
         safe_console_error("Failed to open file: %s\n", strerror(errno));
-        return 1;
+        cleanup_and_exit(1);
     }
     //ternary statement to set SERIAL_PORT if supplied in args or the default
     const char *device = (argc >= 3 && is_valid_tty(argv[2]) == 0) ? argv[2] : SERIAL_PORT;
@@ -276,16 +298,9 @@ int main(int argc, char *argv[]) {
     serial_fd = open_serial_port(device, baud, mode);
 
     if (serial_fd < 0) {
-        fclose(file_ptr);
-        return 1;
+		cleanup_and_exit(1);
     }
-    /* define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
-       allowing our c program, to close its loop, join threads, and close our serial device. */
-    //struct sigaction sa;
-    //memset(&sa, 0, sizeof(sa));
-    //sa.sa_handler = handle_signal;
-    //sigaction(SIGINT, &sa, NULL);   // Ctrl-C
-    //sigaction(SIGTERM, &sa, NULL);  // kill, systemd, etc.
+
 	// Block signals in main (inherited by all threads)
 	sigset_t block_set;
 	sigemptyset(&block_set);
@@ -295,19 +310,16 @@ int main(int argc, char *argv[]) {
 	pthread_sigmask(SIG_BLOCK, &block_set, NULL);
 
 	// Then create signal thread
-	pthread_t sig_thread;
-	pthread_create(&sig_thread, NULL, signal_thread, NULL);
-
-	// Then create reader/sender threads as normal
-
-    pthread_t recv_thread;
+	if (pthread_create(&sig_thread, NULL, signal_thread, NULL) != 0) {
+        safe_console_error("Failed to create signal thread: %s\n", strerror(errno));
+        terminate = 1;          // <- symmetrical, but not required
+		cleanup_and_exit(1);
+	}
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
         safe_console_error("Failed to create receiver thread: %s\n", strerror(errno));
         terminate = 1;          // <- symmetrical, but not required
-        close(serial_fd);
-        fclose(file_ptr);
-        return 1;
+		cleanup_and_exit(1);
     }
 
     safe_console_print("Press 'q' + Enter to quit.\n");
@@ -325,14 +337,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    pthread_join(recv_thread, NULL);
-
-	pthread_mutex_destroy(&file_mutex);
-
-    close(serial_fd);
-    fclose(file_ptr);
 	safe_console_print("Program terminated.\n");
-	console_cleanup();
-	serial_utils_cleanup();
+	cleanup_and_exit(0);
     return 0;
 }
