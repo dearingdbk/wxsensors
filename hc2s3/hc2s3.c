@@ -1,40 +1,41 @@
 /*
- * File:        cs700h.c
+ * File:        hc2s3.c
  * Author:      Bruce Dearing
- * Date:        22/04/2026
+ * Date:        29/04/2026
  * Version:     1.0
- * Purpose:     Simulates a CS700H Tipping Bucket Rain Gauge using a Raspberry Pi 5.
- * 				The program emulates the reed switch behavior of a physical gauge
- * 				by generating momentary active-low pulses on a GPIO pin.
+ * Purpose:  	Emulates a Rotronic HC2A-S3 Temperature/Relative Humidity probe over RS-485/RS-422.
+ *           	The probe is housed in an Apogee TS-100 aspirated radiation shield.
+ *           	This program sets up a serial connection with one thread:
+ *            	- Receiver thread: parses and responds to incoming commands
  *
- * Logic:       Uses a dual-thread architecture:
- * 				- Reader Thread: Parses stochastic weather data from a CSV/text file
- * 				(mm/hr, duration) and calculates high-precision pulse intervals.
- * 				- Sender Thread: Executes GPIO toggling using libgpiod v2, utilizing
- * 				nanosecond-base absolute timing to prevent clock drift.
+ *           	Supported commands (per Rotronic HygroClip2 protocol):
+ *		     	Command Format { ID Adr RDD <Checksum || }> CR
+ *		     	Answer Format { ID Adr RDD <Checksum || }> CR
+ *           	Command: {F00RDD}
+ * 	    	 	Response: {F00rdd 001; 4.45;%RH;000;=;20.07;°C;000;=;nc;---.-;°C;000; ;001;V1.7-1;0060568338;HC2-S3 ;000;4
+ *           	All replies (ACKs, responses, errors) are sent out on the serial port.
  *
- * Hardware:    Raspberry Pi 5 (using /dev/gpiochip4)
- * 				Default BCM Pin: 17 (Physical Pin 11)
+ *	            Data output includes: relative humidity (%), temperature (°C), status, and checksum
  *
- * Wiring:      GPIO_OUT_PIN (BCM 17) ───┐
- * 										 │ [Optoisolator / NPN MOSFET]
- * 										GND ─────────────────────┘
- * 				This setup simulates the closure of the CS700.
+ * Usage:	    use case ' tmp_rh_listen <file_path> // The serial port and baud rate will be set to  defaults /dev/ttyUSB0, and B9600
+ *           	use case ' tmp_rh_listen <file_path> <serial_port_location> <baud_rate> <RS422|RS485> The serial port currently must match /dev/tty(S|USB)[0-9]+
  *
- * Sensor Specs:
- * 				- Resolution: 0.254 mm (0.01 inch) per tip.
- * 				- Pulse Width: 50 ms (emulating reed switch closure).
- * 				- Timing: Nanosecond precision via CLOCK_MONOTONIC.
+ * Sensor:   	Rotronic HC2A-S3 HygroClip2 Probe
+ *           	- Digital temperature and relative humidity probe
+ *           	- Temperature range: -40°C to +60°C (accuracy ±0.1°C)
+ *           	- Humidity range: 0-100% RH (accuracy ±0.8% RH)
+ *           	- Output: Analog
+ *           	- Default output 0-1 Volts
  *
- * Usage:       ./cs700h <file_path> [gpio_chip] [gpio_pin]
- * 				Example: ./cs700h rain_data.txt /dev/gpiochip4 17
- *
- * Build:       Requires libgpiod v2 and pthread. (Handled by the supplied make file.)
- * 				gcc -o cs700h cs700h.c -lgpiod -lpthread
+ * Housing:  Apogee TS-100 Aspirated Radiation Shield
+ *           - Fan-aspirated design for accurate ambient readings
+ *           - Minimizes solar radiation effects on temperature measurement
+ *           - 12 VDC fan operation
  *
  * Mods:
  *
  */
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,11 +51,10 @@
 #include <time.h>
 #include <ctype.h>
 #include <poll.h>
-#include <gpiod.h>
-#include "console_utils.h"
-#include "file_utils.h"
 #include <sys/ioctl.h>
 #include <linux/i2c-dev.h>
+#include "console_utils.h"
+#include "file_utils.h"
 
 // I2C Configuration
 #define I2C_ADDR 0x60
@@ -73,10 +73,6 @@
 #define MAX_MSG_LENGTH 512
 #define CPU_WAIT_USEC 10000
 
-#define GPIO_CHIP		"/dev/gpiochip4"  // Pi 4 and earlier gpiochip0, Pi 5 gpiochip4
-#define GPIO_PIN    	17                // BCM pin 17, physical pin 11
-#define MM_PER_TIP      0.254             // CS700H: 0.254mm per tip
-#define PULSE_WIDTH_NS  50000000LL        // Reed switch closure duration in nanoseconds
 
 #define NS_PER_SEC 1000000000LL
 #define NS_PER_MS  1000000LL
@@ -316,14 +312,14 @@ void* reader_thread(void* arg) {
 			free(line);
 			line = NULL;
 
-            long long new_interval_ns;
+            long long new_interval_ns = 0;
 
             if (mm_per_hour > 0) {
                 // (Seconds per Hour * Nanoseconds per second) / (Target mm / mm per tip)
-                double tips_per_hour = mm_per_hour / MM_PER_TIP;
-                new_interval_ns = (long long)((SEC_PER_HOUR * NS_PER_SEC) / tips_per_hour);
+                //double tips_per_hour = mm_per_hour / MM_PER_TIP;
+                //new_interval_ns = (long long)((SEC_PER_HOUR * NS_PER_SEC) / tips_per_hour);
             } else {
-                new_interval_ns = 0; // Flag for "dry"
+                //new_interval_ns = 0; // Flag for "dry"
             }
 
             pthread_mutex_lock(&data_mutex);
