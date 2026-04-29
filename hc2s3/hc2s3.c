@@ -53,6 +53,7 @@
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <linux/i2c-dev.h>
+#include <math.h>
 #include "console_utils.h"
 #include "file_utils.h"
 
@@ -61,8 +62,8 @@
 #define I2C_BUS "/dev/i2c-1"
 
 // MCP4728 Single Write Commands (DAC Input Register only)
-#define CMD_CH_A 0x58  // Humidity
-#define CMD_CH_B 0x5A  // Temperature
+//#define CMD_CH_A 0x58  // Humidity
+//#define CMD_CH_B 0x5A  // Temperature
 
 // Scaling Constants
 #define VREF_INT 2.048
@@ -73,6 +74,19 @@
 #define MAX_MSG_LENGTH 512
 #define CPU_WAIT_USEC 10000
 
+
+#define MAX_VOLT_STEP 2000 // The maximum step out of 4095, that we want to go to, represents 1.0 Volts
+/* MCP4728 I2C Address */
+#define DAC_I2C_ADDR          0x60
+
+/* MCP4728 Commands */
+#define CMD_WRITE_SINGLE_DAC  0x58  // Volatile write to one channel
+#define CMD_WRITE_EEPROM      0x51  // Write all channels to EEPROM (Sequential)
+#define CMD_WRITE_VREF        0x80  // Select Voltage Reference
+
+/* DAC Value Limits for Safety */
+#define DAC_MAX_VOLTS_1_0     2000  // Approx 1.0V with 2.048V VREF
+#define DAC_MIN_VAL           0
 
 #define NS_PER_SEC 1000000000LL
 #define NS_PER_MS  1000000LL
@@ -99,6 +113,7 @@ const char *program_name = "unknown";
 
 // Shared globals
 volatile long long shared_interval_ns = 0; // 0 for no rain
+int i2c_fd = -1;
 
 // Synchronization primitives
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
@@ -108,7 +123,7 @@ static pthread_cond_t  pulse_sleep_cond; // Moved initialization down to main, t
 pthread_mutex_t reader_sleep_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  reader_sleep_cond; // Moved initialization down to main, to change REALTIME Clock to MONOTONIC.
 // Global pointers to receiver and sender threads.
-pthread_t read_thread, send_thread;
+pthread_t read_thread, send_thread, sig_thread;
 
 
 /*
@@ -145,6 +160,10 @@ void cleanup_and_exit(int exit_code) {
 		pthread_join(send_thread, NULL);
 		send_thread = 0;
 	}
+    if (sig_thread != 0) {
+		pthread_join(sig_thread, NULL);
+		send_thread = 0;
+	}
 
     pthread_mutex_destroy(&pulse_sleep_mutex);
     pthread_mutex_destroy(&reader_sleep_mutex);
@@ -166,7 +185,7 @@ void cleanup_and_exit(int exit_code) {
  * Saves a voltage to the EEPROM so it persists after power loss.
  * channel: 0 (A) or 1 (B)
  */
-void save_default_to_eeprom(int fd, int channel, uint16_t dac_val) {
+void save_default_to_eeprom(int i2c_fd, int channel, uint16_t dac_val) {
     uint8_t buf[3];
 
     // Command: 01011 [Channel] 1  (The '1' at the end triggers the EEPROM write)
@@ -176,7 +195,7 @@ void save_default_to_eeprom(int fd, int channel, uint16_t dac_val) {
     buf[1] = 0x80 | ((dac_val >> 8) & 0x0F);
     buf[2] = dac_val & 0xFF;
 
-    if (write(fd, buf, 3) != 3) {
+    if (write(i2c_fd, buf, 3) != 3) {
         perror("EEPROM Write Failed");
     } else {
         printf("Channel %d default saved to EEPROM!\n", channel);
@@ -190,22 +209,22 @@ void save_default_to_eeprom(int fd, int channel, uint16_t dac_val) {
 /**
  * channel: 0 for A, 1 for B, 2 for C, 3 for D
  * dac_val: 0 to 4095
+ * Config: VREF=1 (Internal 2.048V), PD=0 (Normal), G=0 (Gain x1)
  */
-void write_to_specific_channel(int fd, int channel, uint16_t dac_val) {
+void write_to_specific_channel(int i2c_fd, int channel, uint16_t dac_val) {
     uint8_t buf[3];
 
     // Calculate the Command Byte
-    // Base is 0x58 (Channel A). Each channel shifts the bit by 2.
-    buf[0] = 0x58 | (channel << 1);
+    // Base is 0x58 (Channel A[0]). Each channel shifts the bit by 2.
+    buf[0] = 0x58 | (channel << 1); // shifts channel index (0, 1, 2, or 3) into the "Channel Select" bits (bits 2 and 1).
 
-    // Config: VREF=1 (Internal 2.048V), PD=0 (Normal), G=0 (Gain x1)
-    // Then add the top 4 bits of our 12-bit data
+    // add the top 4 bits of our 12-bit data
     buf[1] = 0x80 | ((dac_val >> 8) & 0x0F);
 
     // The remaining 8 bits of data
     buf[2] = dac_val & 0xFF;
 
-    if (write(fd, buf, 3) != 3) {
+    if (write(i2c_fd, buf, 3) != 3) {
         perror("I2C Write Failed");
     }
 }
@@ -225,7 +244,7 @@ uint16_t volt_to_dac(double voltage) {
  * Sends a single channel update to the MCP4728.
  * Uses Internal VREF, Gain x1, and Power Down = Normal.
  */
-void update_dac_channel(int fd, uint8_t command, uint16_t dac_val) {
+void update_dac_channel(int i2c_fd, uint8_t command, uint16_t dac_val) {
     uint8_t buf[3];
 
     buf[0] = command;
@@ -233,7 +252,7 @@ void update_dac_channel(int fd, uint8_t command, uint16_t dac_val) {
     buf[1] = 0x80 | ((dac_val >> 8) & 0x0F);
     buf[2] = dac_val & 0xFF;
 
-    if (write(fd, buf, 3) != 3) {
+    if (write(i2c_fd, buf, 3) != 3) {
         perror("I2C Write Failed");
     }
 }
@@ -249,6 +268,42 @@ void update_dac_channel(int fd, uint8_t command, uint16_t dac_val) {
 static void sleep_ns(long long ns) {
     struct timespec ts = {.tv_nsec = ns};
     nanosleep(&ts, NULL);
+}
+
+
+
+/**
+ * Ramps the voltage from current to target over a specified duration.
+ * duration_sec: Time in seconds to complete the climb
+ */
+void ramp_voltage(int fd, int channel, float current_v, float target_v, float duration_sec) {
+    // 1. Setup timing (50 updates per second for smoothness)
+    const int updates_per_sec = 50;
+    const int interval_us = 1000000 / updates_per_sec; // 20,000 microseconds
+    int total_steps = (int)(duration_sec * updates_per_sec);
+
+    if (total_steps <= 0) total_steps = 1;
+
+    // 2. Calculate how much the DAC value changes per step
+    // Convert Volts to DAC units (0-4095)
+    float current_dac = (current_v / 2.048) * 4095;
+    float target_dac = (target_v / 2.048) * 4095;
+    float step_size = (target_dac - current_dac) / total_steps;
+
+    printf("Ramping Channel %d: %.2fV -> %.2fV over %.1fs\n", 
+            channel, current_v, target_v, duration_sec);
+
+    // 3. The Ramp Loop
+    for (int i = 1; i <= total_steps; i++) {
+        uint16_t next_val = (uint16_t)(current_dac + (step_size * i));
+        // Safety Clamps (ensure we don't exceed 12-bit or your safety ceiling)
+        if (next_val > MAX_VOLT_STEP) next_val = MAX_VOLT_STEP; // Your 1.0V ceiling
+
+        write_to_specific_channel(fd, channel, next_val);
+
+        // Wait for the next step
+        usleep(interval_us);
+    }
 }
 
 // ---------------- Threads ----------------
@@ -422,7 +477,7 @@ void* sender_thread(void* arg) {
  *
  * Output:       Prints to stderr the appropriate error messages if encountered.
  * Modifies:     None.
- * Returns:      Returns an int 0 representing success once the program closes the fd, and joins the threads, or 1 if unable to open the serial port.
+ * Returns:      Returns an int 0 representing success once the program closes the i2c_fd, and joins the threads, or 1 if unable to open the serial port.
  * Assumptions:  device is a valid char * pointer and the line contains
  *               characters other than white space, and points to an FD.
  *		 		 The int provided by arguments is a valid baud rate, although B9600 is set on any errors.
@@ -432,16 +487,16 @@ void* sender_thread(void* arg) {
  */
 int main(int argc, char *argv[]) {
 
-int fd;
+	//int fd;
 
-    // 1. Open the I2C Bus
-    if ((fd = open(I2C_BUS, O_RDWR)) < 0) {
+    // Open the I2C Bus
+    if ((i2c_fd = open(I2C_BUS, O_RDWR)) < 0) {
         perror("Failed to open I2C bus");
         return 1;
     }
 
-    // 2. Set the I2C Slave Address
-    if (ioctl(fd, I2C_SLAVE, I2C_ADDR) < 0) {
+    // Set the I2C Slave Address
+    if (ioctl(i2c_fd, I2C_SLAVE, I2C_ADDR) < 0) {
         perror("Failed to acquire bus access/talk to slave");
         return 1;
     }
@@ -468,8 +523,8 @@ int fd;
         uint16_t temp_dac_val = volt_to_dac(temp_volts);
 
         // --- I2C OUTPUT SECTION ---
-        update_dac_channel(fd, CMD_CH_A, rh_dac_val);
-        update_dac_channel(fd, CMD_CH_B, temp_dac_val);
+        update_dac_channel(i2c_fd, CMD_CH_A, rh_dac_val);
+        update_dac_channel(i2c_fd, CMD_CH_B, temp_dac_val);
 
         printf("OUT -> RH: %.1f%% (%.3fV) | Temp: %.1fC (%.3fV)\n", 
                 sim_rh, rh_volts, sim_temp, temp_volts);
@@ -480,7 +535,7 @@ int fd;
 
 
     if (argc < 2) {
-        safe_console_error("Usage: %s <file_path> <GPIO_chip> <GPIO_pin>\n", argv[0]);
+        safe_console_error("Usage: %s <file_path>\n", argv[0]);
         return 1;
     }
 	program_name = argv[0]; // Global variable to hold the program name for console errors.
@@ -512,10 +567,6 @@ int fd;
 	sigaddset(&block_set, SIGQUIT);
 	pthread_sigmask(SIG_BLOCK, &block_set, NULL);
 
-	// Then create signal thread
-	pthread_t sig_thread;
-	pthread_create(&sig_thread, NULL, signal_thread, NULL);
-
 	// Initialize the pulse and reader conditions to use CLOCK_MONOTONIC
 	pthread_condattr_t attr;
     pthread_condattr_init(&attr);
@@ -524,9 +575,15 @@ int fd;
     pthread_cond_init(&reader_sleep_cond, &attr); // Initialize the global variable here
     pthread_condattr_destroy(&attr);
 
+	if (pthread_create(&sig_thread, NULL, signal_thread, NULL) != 0) {
+        safe_console_error("Failed to create signal thread: %s\n", strerror(errno));
+        terminate = 1;          // <- symmetrical, but not required
+		cleanup_and_exit(1);
+	}
+
     if (pthread_create(&read_thread, NULL, reader_thread, NULL) != 0) {
         safe_console_error("Failed to create reader thread: %s\n", strerror(errno));
-        terminate = 1;          // <- symmetrical, but not required
+        terminate = 1;          // <- needed becausr sig_thread is running
 		cleanup_and_exit(1);
     }
 
