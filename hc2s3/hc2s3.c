@@ -141,7 +141,7 @@ pthread_t read_thread, send_thread, sig_thread;
  */
 void cleanup_and_exit(int exit_code) {
     terminate = 1;
-	raise(SIGTERM);
+	pthread_kill(sig_thread, SIGTERM);
     // Wake sender
     pthread_mutex_lock(&pulse_sleep_mutex);
     pthread_cond_broadcast(&pulse_sleep_cond);

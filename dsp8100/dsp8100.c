@@ -173,7 +173,7 @@ void cleanup_and_exit(int exit_code) {
 	pthread_cond_broadcast(&sensor_cond);
     pthread_mutex_unlock(&sensor_mutex);
 
-   	raise(SIGTERM);
+	pthread_kill(sig_thread, SIGTERM);
 
 	if (recv_thread != 0) {
         pthread_join(recv_thread, NULL);

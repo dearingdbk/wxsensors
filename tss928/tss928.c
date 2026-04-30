@@ -254,7 +254,7 @@ void cleanup_and_exit(int exit_code) {
 	}
 	if (sig_thread != 0) {
 		pthread_join(sig_thread, NULL);
-		data_thread = 0;
+		sig_thread = 0;
 	}
 
     pthread_mutex_destroy(&file_mutex);

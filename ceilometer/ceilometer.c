@@ -355,7 +355,7 @@ void cleanup_and_exit(int exit_code) {
     pthread_cond_broadcast(&sensor_cond);
     pthread_mutex_unlock(&sensor_mutex);
 
-	raise(SIGTERM); // To wake the signal handling thread, in the event cleanup_and_exit was called naturally.
+	pthread_kill(sig_thread, SIGTERM); // To wake the signal handling thread, in the event cleanup_and_exit was called naturally.
 
 	if (recv_thread != 0) {
         pthread_join(recv_thread, NULL);

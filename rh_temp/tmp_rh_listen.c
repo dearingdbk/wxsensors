@@ -88,7 +88,7 @@ pthread_t sig_thread, recv_thread;
 void cleanup_and_exit(int exit_code) {
     terminate = 1;
 
-   	raise(SIGTERM);
+	pthread_kill(sig_thread, SIGTERM);
 
 	if (recv_thread != 0) {
         pthread_join(recv_thread, NULL);
