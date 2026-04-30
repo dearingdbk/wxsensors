@@ -523,8 +523,8 @@ int main(int argc, char *argv[]) {
         uint16_t temp_dac_val = volt_to_dac(temp_volts);
 
         // --- I2C OUTPUT SECTION ---
-        update_dac_channel(i2c_fd, CMD_CH_A, rh_dac_val);
-        update_dac_channel(i2c_fd, CMD_CH_B, temp_dac_val);
+        update_dac_channel(i2c_fd, 0, rh_dac_val);
+        update_dac_channel(i2c_fd, 1, temp_dac_val);
 
         printf("OUT -> RH: %.1f%% (%.3fV) | Temp: %.1fC (%.3fV)\n", 
                 sim_rh, rh_volts, sim_temp, temp_volts);
