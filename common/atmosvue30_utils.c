@@ -1,6 +1,6 @@
-/*
- * File:     atmosvue30_utils.c
- * Author:   Bruce Dearing
+/**
+ * @file     atmosvue30_utils.c
+ * @author   Bruce Dearing
  * Date:     23/01/2026
  * Version:  1.0
  * Purpose:  Implementation of AtmosVUE 30 Aviation Weather System emulation utilities.
