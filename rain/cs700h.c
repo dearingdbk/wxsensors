@@ -1,6 +1,6 @@
-/*
- * File:        cs700h.c
- * Author:      Bruce Dearing
+/**
+ * @file        cs700h.c
+ * @author:     Bruce Dearing
  * Date:        22/04/2026
  * Version:     1.0
  * Purpose:     Simulates a CS700H Tipping Bucket Rain Gauge using a Raspberry Pi 5.
@@ -109,7 +109,7 @@ static pthread_cond_t  pulse_sleep_cond; // Moved initialization down to main, t
 pthread_mutex_t reader_sleep_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  reader_sleep_cond; // Moved initialization down to main, to change REALTIME Clock to MONOTONIC.
 // Global pointers to receiver and sender threads.
-pthread_t read_thread, send_thread;
+pthread_t read_thread, send_thread, sig_thread;
 
 
 /*
@@ -452,10 +452,6 @@ int main(int argc, char *argv[]) {
 	sigaddset(&block_set, SIGQUIT);
 	pthread_sigmask(SIG_BLOCK, &block_set, NULL);
 
-	// Then create signal thread
-	pthread_t sig_thread;
-	pthread_create(&sig_thread, NULL, signal_thread, NULL);
-
 	// Initialize the pulse and reader conditions to use CLOCK_MONOTONIC
 	pthread_condattr_t attr;
     pthread_condattr_init(&attr);
@@ -464,9 +460,16 @@ int main(int argc, char *argv[]) {
     pthread_cond_init(&reader_sleep_cond, &attr); // Initialize the global variable here
     pthread_condattr_destroy(&attr);
 
+
+	if (pthread_create(&sig_thread, NULL, signal_thread, NULL) != 0) {
+        safe_console_error("Failed to create signal thread: %s\n", strerror(errno));
+        terminate = 1;          // <- symmetrical, but not required
+		cleanup_and_exit(1);
+	}
+
     if (pthread_create(&read_thread, NULL, reader_thread, NULL) != 0) {
         safe_console_error("Failed to create reader thread: %s\n", strerror(errno));
-        terminate = 1;          // <- symmetrical, but not required
+        terminate = 1;          // <- needed because sig_thread is running
 		cleanup_and_exit(1);
     }
 
