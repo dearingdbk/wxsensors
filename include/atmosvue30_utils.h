@@ -1,6 +1,6 @@
-/*
- * File:     atmosvue30_utils.h
- * Author:   Bruce Dearing
+/**
+ * @file     atmosvue30_utils.h
+ * @author   Bruce Dearing
  * Date:     23/01/2026
  * Version:  1.0
  * Purpose:  Header file for AtmosVUE 30 Aviation Weather System emulation.
