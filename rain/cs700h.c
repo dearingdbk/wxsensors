@@ -187,9 +187,9 @@ void cleanup_and_exit(int exit_code) {
 // ---------------- Command handling ----------------
 
 /*
- * Name:        sleep_ms
- * Purpose:     Sleep for a given number of milliseconds using nanosleep.
- * Arguments:   ms: milliseconds to sleep.
+ * Name:        sleep_ns
+ * Purpose:     Sleep for a given number of nanoseconds using nanosleep.
+ * Arguments:   ns: nanoseconds to sleep.
  */
 static void sleep_ns(long long ns) {
     struct timespec ts = {.tv_nsec = ns};
@@ -263,8 +263,8 @@ void* signal_thread(void* arg) {
 void* reader_thread(void* arg) {
     (void) arg;
 	char *line = NULL;
-    double mm_per_hour;
-	unsigned long duration_sec;
+    double mm_per_hour = 0;
+	unsigned long duration_sec = 0;
 
     while (!terminate) {
         line = get_next_line_copy(file_ptr, &file_mutex);
