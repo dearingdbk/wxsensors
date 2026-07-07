@@ -27,10 +27,10 @@
  *           	- Output: Analog
  *           	- Default output 0-1 Volts
  *
- * Housing:  Apogee TS-100 Aspirated Radiation Shield
- *           - Fan-aspirated design for accurate ambient readings
- *           - Minimizes solar radiation effects on temperature measurement
- *           - 12 VDC fan operation
+ * Housing:		Apogee TS-100 Aspirated Radiation Shield
+ *           	- Fan-aspirated design for accurate ambient readings
+ *           	- Minimizes solar radiation effects on temperature measurement
+ *           	- 12 VDC fan operation
  *
  * Mods:
  *
@@ -618,5 +618,6 @@ int main(int argc, char *argv[]) {
     }
     safe_console_print("Program %s terminated.\n", program_name);
 	cleanup_and_exit(0);
+	sleep_ns(0);
 	return 0; // We won't get here, but it quiets verbose warnings on a no return value.
 }
