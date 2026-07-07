@@ -1,6 +1,6 @@
-/*
- * File:     btd300.c
- * Author:   Bruce Dearing
+/**
+ * @file     btd300.c
+ * @Author   Bruce Dearing
  * Date:     05/01/2026
  * Version:  1.0
  * Purpose:  Emulates a Biral BTD-300 Thunderstorm Detector over RS-422.
@@ -125,7 +125,7 @@ static pthread_cond_t  sensor_cond; // Moved initialization down to main, to cha
 pthread_t recv_thread, send_thread, sig_thread;
 
 
-/*
+/**
  * Name:         cleanup_and_exit
  * Purpose:      helper function to cleanup sensors, and arrays.
  * Arguments:    exit_code, the exit code to send on close.
@@ -178,7 +178,7 @@ void cleanup_and_exit(int exit_code) {
 // ---------------- Command handling ----------------
 
 
-/*
+/**
  * Name:         parse_message
  * Purpose:      Tokenizes a space-delimited sensor string and populates a ParsedMessage struct.
  * Arguments:    msg: the raw input string to be parsed (modified by strtok_r).
