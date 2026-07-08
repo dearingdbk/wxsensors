@@ -126,6 +126,12 @@ void cleanup_and_exit(int exit_code) {
         recv_thread = 0;
     }
 
+	if (sig_thread != 0) {
+		pthread_cancel(sig_thread);
+		pthread_join(sig_thread, NULL);
+		sig_thread = 0;
+	}
+
     pthread_mutex_destroy(&file_mutex);
 
     // Close resources
@@ -419,7 +425,7 @@ int main(int argc, char *argv[]) {
 	// create the signal thread
 
 	if (pthread_create(&sig_thread, NULL, signal_thread, NULL) != 0) {
-        perror("Failed to create receiver thread");
+        perror("Failed to create signal thread");
         terminate = 1;
 		cleanup_and_exit(1);
 	}
@@ -433,6 +439,7 @@ int main(int argc, char *argv[]) {
     safe_console_print("Press 'ctrl-c' to quit.\n");
 
 	pthread_join(sig_thread, NULL); // Wait until the signal handle thread joins.
+	sig_thread = 0;
 
     safe_console_print("Program terminated.\n");
 	cleanup_and_exit(0);
