@@ -146,6 +146,12 @@ static pthread_cond_t  sensor_cond  = PTHREAD_COND_INITIALIZER;
 
 pthread_t recv_thread, send_thread, sig_thread;
 
+bool recv_thread_created = false;
+bool sig_thread_created = false;
+bool send_thread_created = false;
+
+bool sensor_cond_init = false;
+
 // These need to be freed upon exit.
 bp_sensor *sensor_one = NULL; // Global pointer to struct for Barometric sensor 1.
 bp_sensor *sensor_two = NULL; // Global pointer to struct for Barometric sensor 2.
@@ -170,28 +176,27 @@ bp_sensor *sensor_map[MAX_SENSOR_ADDRESS] = {NULL};
 void cleanup_and_exit(int exit_code) {
 	pthread_mutex_lock(&sensor_mutex);
     terminate = 1;
-	pthread_cond_broadcast(&sensor_cond);
+	if (sensor_cond_init) pthread_cond_broadcast(&sensor_cond);
     pthread_mutex_unlock(&sensor_mutex);
 
-	pthread_kill(sig_thread, SIGTERM);
-
-	if (recv_thread != 0) {
+	if (recv_thread_created) {
         pthread_join(recv_thread, NULL);
-        recv_thread = 0;
+        recv_thread_created = false;
     }
-    if (send_thread != 0) {
+    if (send_thread_created) {
         pthread_join(send_thread, NULL);
-        send_thread = 0;
+        send_thread_created = false;
     }
 
-    if (sig_thread != 0) {
+    if (sig_thread_created) {
+		pthread_cancel(sig_thread);
         pthread_join(sig_thread, NULL);
-        sig_thread = 0;
+        sig_thread_created = false;
     }
 
 	pthread_mutex_destroy(&sensor_mutex);
     pthread_mutex_destroy(&file_mutex);
-    pthread_cond_destroy(&sensor_cond);
+    if (sensor_cond_init) pthread_cond_destroy(&sensor_cond);
 
     if (sensor_one) free(sensor_one);
     // Close resources
@@ -943,7 +948,6 @@ void* sender_thread(void* arg) {
 
 int main(int argc, char *argv[]) {
 
-
     if (argc < 2) {
         safe_console_error("Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
         return 1;
@@ -1010,53 +1014,23 @@ int main(int argc, char *argv[]) {
 	    perror("Failed to create signal thread");
         terminate = 1;          // <- symmetrical, but not required
 	    cleanup_and_exit(1);
-	}
+	} else sig_thread_created = true;
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
         perror("Failed to create receiver thread");
         terminate = 1;          // <- symmetrical, but not required
 	    cleanup_and_exit(1);
-    }
+    } else sig_thread_created = true;
 
     if (pthread_create(&send_thread, NULL, sender_thread, NULL) != 0) {
         perror("Failed to create sender thread");
         terminate = 1;          // <- needed because recv_thread is running
-        pthread_join(recv_thread, NULL);
 	    cleanup_and_exit(1);
-    }
+    } else sig_thread_created = true;
 
     safe_console_print("Press 'q' + Enter to quit.\n");
-    while (!kill_flag) {
-        char input[8];
-        if (fgets(input, sizeof(input), stdin)) {
-            if (input[0] == 'q' || input[0] == 'Q' || kill_flag == 1) {
-                pthread_mutex_lock(&sensor_mutex);
-                terminate = 1;
-                kill_flag = 1;
-                pthread_cond_signal(&sensor_cond);  // wake sender_thread
-                pthread_mutex_unlock(&sensor_mutex);
-				break;
-            }
-        } else if (feof(stdin)) {  // keep an eye on the behaviour of this check.
-            pthread_mutex_lock(&sensor_mutex);
-            terminate = 1;
-            kill_flag = 1;
-            pthread_cond_signal(&sensor_cond);      // wake sender_thread
-            pthread_mutex_unlock(&sensor_mutex);
-            break; // stdin closed
-        } else {
-            continue; // temp read error
-        }
-    }
-
-	// Join threads
-    //pthread_join(recv_thread, NULL);
-    //pthread_join(send_thread, NULL);
-
-	// destroy mutexes, and conditions
-	//pthread_mutex_destroy(&file_mutex);
-	//pthread_mutex_destroy(&sensor_mutex);
-	//pthread_cond_destroy(&sensor_cond);
+    pthread_join(sig_thread, NULL);
+	sig_thread_created = false;
 
 	safe_console_print("Program terminated.\n");
 	cleanup_and_exit(0);
