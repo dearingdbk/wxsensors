@@ -128,6 +128,7 @@ bool recv_thread_created = false;
 bool sig_thread_created = false;
 bool send_thread_created = false;
 
+bool sensor_cond_init = false;
 /**
  * Name:         cleanup_and_exit
  * Purpose:      helper function to cleanup sensors, and arrays.
@@ -159,13 +160,13 @@ void cleanup_and_exit(int exit_code) {
 
     if (sig_thread_created) {
         pthread_cancel(sig_thread);
-		pthread_join(send_thread, NULL);
-        send_thread_created = false;
+		pthread_join(sig_thread, NULL);
+        sig_thread_created = false;
     }
 
 	pthread_mutex_destroy(&sensor_mutex);
     pthread_mutex_destroy(&file_mutex);
-    pthread_cond_destroy(&sensor_cond);
+    if (sensor_cond_init) pthread_cond_destroy(&sensor_cond);
 
     if (sensor_one) free(sensor_one);
     // Close resources
@@ -723,6 +724,7 @@ int main(int argc, char *argv[]) {
     pthread_condattr_init(&attr);
     pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
     pthread_cond_init(&sensor_cond, &attr); // Initialize the global variable here
+	sensor_cond_init = true;
     pthread_condattr_destroy(&attr);
 
 	// create the signal thread
