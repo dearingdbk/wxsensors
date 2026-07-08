@@ -279,8 +279,8 @@ void parse_message(char *msg, ParsedMessage *p_message) {
 		if (p_message->number_of_flashes < 4) goto end_flashes; // Jump to the end if the rest of the string is zeros.
 		// FLASH FOUR
 	   	if ((token = NEXT_T)) {
-			strncpy(temp_time_holder, token, TIME_STRING - 1);
-			temp_time_holder[TIME_STRING - 1] = '\0';
+			strncpy(temp_date_holder, token, DATE_STRING - 1);
+			temp_date_holder[DATE_STRING - 1] = '\0';
 		}
 		if ((token = NEXT_T)) {
 			strncpy(temp_time_holder, token, TIME_STRING - 1);
