@@ -137,12 +137,12 @@ volatile sig_atomic_t kill_flag = 0;
 
 // Global variables
 int serial_fd = -1;
-ParsedCommand p_cmd;
+//ParsedCommand p_cmd;
 
 // Synchronization primitives
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 static pthread_mutex_t sensor_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t  sensor_cond  = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t  sensor_cond; // Moved initialization down to main to allow for CLOCK_MONOTONIC
 
 pthread_t recv_thread, send_thread, sig_thread;
 
@@ -199,6 +199,8 @@ void cleanup_and_exit(int exit_code) {
     if (sensor_cond_init) pthread_cond_destroy(&sensor_cond);
 
     if (sensor_one) free(sensor_one);
+    if (sensor_two) free(sensor_two);
+    if (sensor_three) free(sensor_three);
     // Close resources
     if (serial_fd >= 0) close(serial_fd);
     if (file_ptr) fclose(file_ptr);
@@ -510,31 +512,31 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
  * Bugs:         None known.
  * Notes:
  */
-void handle_command(CommandType cmd) {
+void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 
     switch (cmd) {
         case CMD_A_SET:
-			if (p_cmd.params.auto_send.format <= MAX_FORMAT_NUM &&
-				p_cmd.params.auto_send.interval >= MIN_TRANS_INTERVAL &&
-				p_cmd.params.auto_send.interval <= MAX_TRANS_INTERVAL) {
-				if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
-					sensor_map[p_cmd.address]->output_format = p_cmd.params.auto_send.format;
-					sensor_map[p_cmd.address]->transmission_interval = p_cmd.params.auto_send.interval;
+			if (p_cmd->params.auto_send.format <= MAX_FORMAT_NUM &&
+				p_cmd->params.auto_send.interval >= MIN_TRANS_INTERVAL &&
+				p_cmd->params.auto_send.interval <= MAX_TRANS_INTERVAL) {
+				if (p_cmd->is_addressed && p_cmd->address != 0 && sensor_map[p_cmd->address] != NULL) {
+					sensor_map[p_cmd->address]->output_format = p_cmd->params.auto_send.format;
+					sensor_map[p_cmd->address]->transmission_interval = p_cmd->params.auto_send.interval;
 				} else {
-					sensor_one->output_format = p_cmd.params.auto_send.format;
-					sensor_one->transmission_interval = p_cmd.params.auto_send.interval;
-					sensor_two->output_format = p_cmd.params.auto_send.format;
-					sensor_two->transmission_interval = p_cmd.params.auto_send.interval;
-					sensor_three->output_format = p_cmd.params.auto_send.format;
-					sensor_three->transmission_interval = p_cmd.params.auto_send.interval;
+					sensor_one->output_format = p_cmd->params.auto_send.format;
+					sensor_one->transmission_interval = p_cmd->params.auto_send.interval;
+					sensor_two->output_format = p_cmd->params.auto_send.format;
+					sensor_two->transmission_interval = p_cmd->params.auto_send.interval;
+					sensor_three->output_format = p_cmd->params.auto_send.format;
+					sensor_three->transmission_interval = p_cmd->params.auto_send.interval;
 				}
 			} else safe_console_error("!011 Bad Value\r\n");
             break;
 		case CMD_A_FORMATTED:
-        	if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
+        	if (p_cmd->is_addressed && p_cmd->address != 0 && sensor_map[p_cmd->address] != NULL) {
 				safe_serial_write(serial_fd, "Format = %d\r,Interval = %.2f\r",
-											sensor_map[p_cmd.address]->output_format,
-											sensor_map[p_cmd.address]->transmission_interval);
+											sensor_map[p_cmd->address]->output_format,
+											sensor_map[p_cmd->address]->transmission_interval);
 			} else {
 				safe_serial_write(serial_fd, "Format = %d\r,Interval = %.2f\rFormat = %d\r,Interval = %.2f\rFormat = %d\r,Interval = %.2f\r",
 											sensor_one->output_format,
@@ -546,10 +548,10 @@ void handle_command(CommandType cmd) {
 			}
 			break;
         case CMD_A_QUERY:
-        	if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
+        	if (p_cmd->is_addressed && p_cmd->address != 0 && sensor_map[p_cmd->address] != NULL) {
 				safe_serial_write(serial_fd, "%d,%.2f\r",
-											sensor_map[p_cmd.address]->output_format,
-											sensor_map[p_cmd.address]->transmission_interval);
+											sensor_map[p_cmd->address]->output_format,
+											sensor_map[p_cmd->address]->transmission_interval);
 			} else {
 				safe_serial_write(serial_fd, "%d,%.2f\r%d,%.2f\r%d,%.2f\r",sensor_one->output_format,
 													sensor_one->transmission_interval,
@@ -560,17 +562,17 @@ void handle_command(CommandType cmd) {
 			}
 			break;
 		case CMD_B_SET:
-        		if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
-					sensor_map[p_cmd.address]->wait_interval = p_cmd.params.bus_wait.wait_interval;
+        		if (p_cmd->is_addressed && p_cmd->address != 0 && sensor_map[p_cmd->address] != NULL) {
+					sensor_map[p_cmd->address]->wait_interval = p_cmd->params.bus_wait.wait_interval;
 				} else {
-					sensor_one->wait_interval = p_cmd.params.bus_wait.wait_interval;
-					sensor_two->wait_interval = p_cmd.params.bus_wait.wait_interval;
-					sensor_three->wait_interval = p_cmd.params.bus_wait.wait_interval;
+					sensor_one->wait_interval = p_cmd->params.bus_wait.wait_interval;
+					sensor_two->wait_interval = p_cmd->params.bus_wait.wait_interval;
+					sensor_three->wait_interval = p_cmd->params.bus_wait.wait_interval;
 				}
 			break;
 		case CMD_B_QUERY:
-			if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
-				safe_serial_write(serial_fd, "%d\r",sensor_map[p_cmd.address]->wait_interval);
+			if (p_cmd->is_addressed && p_cmd->address != 0 && sensor_map[p_cmd->address] != NULL) {
+				safe_serial_write(serial_fd, "%d\r",sensor_map[p_cmd->address]->wait_interval);
 			} else {
 				safe_serial_write(serial_fd, "%d\r%d\r%d\r", sensor_one->wait_interval,
 															 sensor_two->wait_interval,
@@ -590,15 +592,15 @@ void handle_command(CommandType cmd) {
 		case CMD_H_QUERY:
 			break;
 		case CMD_I:
-			if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
-				information_print(sensor_map[p_cmd.address]);
+			if (p_cmd->is_addressed && p_cmd->address != 0 && sensor_map[p_cmd->address] != NULL) {
+				information_print(sensor_map[p_cmd->address]);
 			} else {
 				safe_serial_write(serial_fd, "%s\r%s\r%s\r", sensor_one->serial_number, sensor_two->serial_number, sensor_three->serial_number);
 			}
 			break;
 		case CMD_I_FORMATTED:
-			if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
-				information_print(sensor_map[p_cmd.address]);
+			if (p_cmd->is_addressed && p_cmd->address != 0 && sensor_map[p_cmd->address] != NULL) {
+				information_print(sensor_map[p_cmd->address]);
 			} else {
 				information_print(sensor_one);
 				information_print(sensor_two);
@@ -610,14 +612,14 @@ void handle_command(CommandType cmd) {
 		case CMD_M_QUERY:
 			break;
 		case CMD_N_SET:
-			if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
-				if (p_cmd.params.set_address.address == 0) {
-					sensor_map[p_cmd.address]->long_errors = false;
+			if (p_cmd->is_addressed && p_cmd->address != 0 && sensor_map[p_cmd->address] != NULL) {
+				if (p_cmd->params.set_address.address == 0) {
+					sensor_map[p_cmd->address]->long_errors = false;
 				} else { // The sensor is addressed, and we want to change to the new address.
-					reassign_sensor_address(p_cmd.address, p_cmd.params.set_address.address);
+					reassign_sensor_address(p_cmd->address, p_cmd->params.set_address.address);
 				}
 			} else { // Direct mode.
-				if (p_cmd.params.set_address.address == 0) {
+				if (p_cmd->params.set_address.address == 0) {
 					sensor_one->long_errors = false;
 					sensor_two->long_errors = false;
 					sensor_three->long_errors = false;
@@ -631,16 +633,16 @@ void handle_command(CommandType cmd) {
 		case CMD_N_FORMATTED:
 			break;
 		case CMD_N_LONG:
-			if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
-				if (sensor_map[p_cmd.address]->device_address == p_cmd.params.set_address.address) {
-					sensor_map[p_cmd.address]->long_errors = true;
+			if (p_cmd->is_addressed && p_cmd->address != 0 && sensor_map[p_cmd->address] != NULL) {
+				if (sensor_map[p_cmd->address]->device_address == p_cmd->params.set_address.address) {
+					sensor_map[p_cmd->address]->long_errors = true;
 				} else {
 					// The command was addressed, but address and new address were not the same, bad command. i.e. <SPACE>1:*N,0<CR>
 					// Here we expect the command to switch to long error messages i.e. <SPACE>1:*N,1<CR>
 					safe_serial_write(serial_fd, "ERROR !004 Bad Command\r\n");
 				}
 			} else { // Direct mode, target all sensors
-				if (p_cmd.params.set_address.address == 0) { // A zero here triggers a long error message change.
+				if (p_cmd->params.set_address.address == 0) { // A zero here triggers a long error message change.
 					sensor_one->long_errors = true;
 					sensor_two->long_errors = true;
 					sensor_three->long_errors = true;
@@ -659,8 +661,8 @@ void handle_command(CommandType cmd) {
 		case CMD_P_QUERY:
 			break;
         case CMD_R:
-        	if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
-        		bp_sensor *s = sensor_map[p_cmd.address];
+        	if (p_cmd->is_addressed && p_cmd->address != 0 && sensor_map[p_cmd->address] != NULL) {
+        		bp_sensor *s = sensor_map[p_cmd->address];
         		safe_serial_write(serial_fd, "%.3f\r\n", s->current_pressure);
     		} else {
         			// Direct mode - send all 3 sensor's data
@@ -671,8 +673,8 @@ void handle_command(CommandType cmd) {
     		break;
 
 		case CMD_R_UNITS:
-			if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
-        		bp_sensor *s = sensor_map[p_cmd.address];
+			if (p_cmd->is_addressed && p_cmd->address != 0 && sensor_map[p_cmd->address] != NULL) {
+        		bp_sensor *s = sensor_map[p_cmd->address];
         		safe_serial_write(serial_fd, "%.3f %s\r\n",
                          			s->current_pressure,
                          			get_pressure_units_text(s->pressure_units));
@@ -709,21 +711,21 @@ void handle_command(CommandType cmd) {
 		case CMD_S_QUERY:
 			break;
 		case CMD_U_SET:
-			if (p_cmd.params.units.unit_code <= MAX_UNIT_TYPE) {
-				if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
-					sensor_map[p_cmd.address]->pressure_units = p_cmd.params.units.unit_code;
+			if (p_cmd->params.units.unit_code <= MAX_UNIT_TYPE) {
+				if (p_cmd->is_addressed && p_cmd->address != 0 && sensor_map[p_cmd->address] != NULL) {
+					sensor_map[p_cmd->address]->pressure_units = p_cmd->params.units.unit_code;
 				} else {
-					sensor_one->pressure_units = p_cmd.params.units.unit_code;
-					sensor_two->pressure_units = p_cmd.params.units.unit_code;
-					sensor_three->pressure_units = p_cmd.params.units.unit_code;
+					sensor_one->pressure_units = p_cmd->params.units.unit_code;
+					sensor_two->pressure_units = p_cmd->params.units.unit_code;
+					sensor_three->pressure_units = p_cmd->params.units.unit_code;
 				}
 			} else {
 				// unit type does not fall into 0-24 do nothing or send/set an error.
 			}
 			break;
 		case CMD_U_QUERY: // <SPACE>U,?<CR>
-			if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
-				safe_serial_write(serial_fd, "%d\r", sensor_map[p_cmd.address]->pressure_units);
+			if (p_cmd->is_addressed && p_cmd->address != 0 && sensor_map[p_cmd->address] != NULL) {
+				safe_serial_write(serial_fd, "%d\r", sensor_map[p_cmd->address]->pressure_units);
 			} else {
 				safe_serial_write(serial_fd, "%d\r%d\r%d\r", sensor_one->pressure_units,
 															 sensor_two->pressure_units,
@@ -731,8 +733,8 @@ void handle_command(CommandType cmd) {
 			}
 			break;
 		case CMD_U_FORMATTED: // <SPACE>*U,?<CR>
-			if (p_cmd.is_addressed && p_cmd.address != 0 && sensor_map[p_cmd.address] != NULL) {
-				safe_serial_write(serial_fd, "Units = %d\r", sensor_map[p_cmd.address]->pressure_units);
+			if (p_cmd->is_addressed && p_cmd->address != 0 && sensor_map[p_cmd->address] != NULL) {
+				safe_serial_write(serial_fd, "Units = %d\r", sensor_map[p_cmd->address]->pressure_units);
 			} else {
 				safe_serial_write(serial_fd, "%d:Units = %d\r", sensor_one->device_address, sensor_one->pressure_units);
 				safe_serial_write(serial_fd, "%d:Units = %d\r", sensor_two->device_address, sensor_two->pressure_units);
@@ -824,8 +826,12 @@ void* receiver_thread(void* arg) {
 	    if (c == '\r' || c == '\n') {
                 if (len > 0) {
                     line[len] = '\0';
+
+					ParsedCommand local_cmd;
+					CommandType cmd_type = parse_command(line, &local_cmd);
+
 					pthread_mutex_lock(&sensor_mutex);   // <--- LOCK HERE
-		    		handle_command(parse_command(line, &p_cmd)); // handle received command here.
+		    		handle_command(cmd_type, &local_cmd); // handle received command here.
                     pthread_mutex_unlock(&sensor_mutex); // <--- UNLOCK HERE
 					len = 0;
                 } else { // empty line ignore
@@ -868,7 +874,7 @@ void* sender_thread(void* arg) {
         pthread_mutex_lock(&sensor_mutex);
 
 		// Calculate the next wakeup time (Current time + 10ms)
-        clock_gettime(CLOCK_REALTIME, &ts);
+        clock_gettime(CLOCK_MONOTONIC, &ts);
         ts.tv_nsec += (CPU_WAIT_NANOSECONDS); // 10000000
         if (ts.tv_nsec >= 1000000000L) {
             ts.tv_sec += 1;
@@ -1000,6 +1006,15 @@ int main(int argc, char *argv[]) {
     sensor_map[2] = sensor_two;
     sensor_map[3] = sensor_three;
 
+	pthread_condattr_t attr;
+
+	pthread_condattr_init(&attr);
+	pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+	pthread_cond_init(&sensor_cond, &attr);
+	sensor_cond_init = true;
+
+	pthread_condattr_destroy(&attr);
+
     // define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
     // allowing our c program, to close its loop, join threads, and close our serial device.
 	sigset_t block_set;
@@ -1020,13 +1035,13 @@ int main(int argc, char *argv[]) {
         perror("Failed to create receiver thread");
         terminate = 1;          // <- symmetrical, but not required
 	    cleanup_and_exit(1);
-    } else sig_thread_created = true;
+    } else recv_thread_created = true;
 
     if (pthread_create(&send_thread, NULL, sender_thread, NULL) != 0) {
         perror("Failed to create sender thread");
         terminate = 1;          // <- needed because recv_thread is running
 	    cleanup_and_exit(1);
-    } else sig_thread_created = true;
+    } else send_thread_created = true;
 
     safe_console_print("Press 'q' + Enter to quit.\n");
     pthread_join(sig_thread, NULL);
