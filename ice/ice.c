@@ -124,13 +124,13 @@ void cleanup_and_exit(int exit_code) {
 
 	if (recv_thread_created) {
         pthread_join(recv_thread, NULL);
-        recv_thread = 0;
+        recv_thread_created = false;
     }
 
 	if (sig_thread_created) {
 		pthread_cancel(sig_thread);
 		pthread_join(sig_thread, NULL);
-		sig_thread = 0;
+		sig_thread_created = false;
 	}
 
     pthread_mutex_destroy(&file_mutex);
@@ -440,7 +440,7 @@ int main(int argc, char *argv[]) {
     safe_console_print("Press 'ctrl-c' to quit.\n");
 
 	pthread_join(sig_thread, NULL); // Wait until the signal handle thread joins.
-
+	sig_thread_created = false;
     safe_console_print("Program terminated.\n");
 	cleanup_and_exit(0);
     return 0;
