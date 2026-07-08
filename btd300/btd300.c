@@ -145,7 +145,7 @@ bool sensor_cond_init = false;
 void cleanup_and_exit(int exit_code) {
 	pthread_mutex_lock(&sensor_mutex);
     terminate = 1;
-	pthread_cond_broadcast(&sensor_cond);
+	if (sensor_cond_init) pthread_cond_broadcast(&sensor_cond);
     pthread_mutex_unlock(&sensor_mutex);
 
 	if (recv_thread_created) {
@@ -239,7 +239,7 @@ void parse_message(char *msg, ParsedMessage *p_message) {
 		}
 		if ((token = NEXT_T)) {
 			strncpy(temp_time_holder, token, TIME_STRING - 1);
-			temp_date_holder[TIME_STRING - 1] = '\0';
+			temp_time_holder[TIME_STRING - 1] = '\0';
 	   	}
 		p_message->flash_epoch_array[0] = parse_to_epoch(temp_date_holder, temp_time_holder);
 		if ((token = NEXT_T)) p_message->time_since_flash_one = (uint8_t)atoi(token); // # of 10 millisecond intervals since Flash one.
@@ -254,7 +254,7 @@ void parse_message(char *msg, ParsedMessage *p_message) {
 		}
 		if ((token = NEXT_T)) {
 			strncpy(temp_time_holder, token, TIME_STRING - 1);
-			temp_date_holder[TIME_STRING - 1] = '\0';
+			temp_time_holder[TIME_STRING - 1] = '\0';
 		}
 		p_message->flash_epoch_array[1] = parse_to_epoch(temp_date_holder, temp_time_holder);
 	   	if ((token = NEXT_T)) p_message->time_since_flash_two = (uint8_t)atoi(token); // # of 10 millisecond intervals since Flash two.
@@ -269,7 +269,7 @@ void parse_message(char *msg, ParsedMessage *p_message) {
 		}
 		if ((token = NEXT_T)) {
 			strncpy(temp_time_holder, token, TIME_STRING - 1);
-			temp_date_holder[TIME_STRING - 1] = '\0';
+			temp_time_holder[TIME_STRING - 1] = '\0';
 		}
 		p_message->flash_epoch_array[2] = parse_to_epoch(temp_date_holder, temp_time_holder);
    		if ((token = NEXT_T)) p_message->time_since_flash_three = (uint8_t)atoi(token); // # of 10 millisecond intervals since Flash three.
@@ -280,11 +280,11 @@ void parse_message(char *msg, ParsedMessage *p_message) {
 		// FLASH FOUR
 	   	if ((token = NEXT_T)) {
 			strncpy(temp_time_holder, token, TIME_STRING - 1);
-			temp_date_holder[TIME_STRING - 1] = '\0';
+			temp_time_holder[TIME_STRING - 1] = '\0';
 		}
 		if ((token = NEXT_T)) {
 			strncpy(temp_time_holder, token, TIME_STRING - 1);
-			temp_date_holder[TIME_STRING - 1] = '\0';
+			temp_time_holder[TIME_STRING - 1] = '\0';
 		}
 		p_message->flash_epoch_array[3] = parse_to_epoch(temp_date_holder, temp_time_holder);
 		if ((token = NEXT_T)) p_message->time_since_flash_four = (uint8_t)atoi(token); // # of 10 millisecond intervals since Flash four.
