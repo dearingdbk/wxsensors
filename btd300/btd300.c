@@ -124,6 +124,9 @@ static pthread_cond_t  sensor_cond; // Moved initialization down to main, to cha
 // Global pointers to receiver and sender threads.
 pthread_t recv_thread, send_thread, sig_thread;
 
+bool recv_thread_created = false;
+bool sig_thread_created = false;
+bool send_thread_created = false;
 
 /**
  * Name:         cleanup_and_exit
@@ -144,14 +147,20 @@ void cleanup_and_exit(int exit_code) {
 	pthread_cond_broadcast(&sensor_cond);
     pthread_mutex_unlock(&sensor_mutex);
 
-	if (recv_thread != 0) {
+	if (recv_thread_created) {
         pthread_join(recv_thread, NULL);
-        recv_thread = 0;
+        recv_thread_created = false;
     }
 
-    if (send_thread != 0) {
+    if (send_thread_created) {
         pthread_join(send_thread, NULL);
-        send_thread = 0;
+        send_thread_created = false;
+    }
+
+    if (sig_thread_created) {
+        pthread_cancel(sig_thread);
+		pthread_join(send_thread, NULL);
+        send_thread_created = false;
     }
 
 	pthread_mutex_destroy(&sensor_mutex);
@@ -722,23 +731,25 @@ int main(int argc, char *argv[]) {
 		safe_console_error("Failed to create signal thread: %s\n", strerror(errno));
         terminate = 1;          // <- symmetrical, but not required
 		cleanup_and_exit(1);
-	}
+	} else sig_thread_created = true;
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
         safe_console_error("Failed to create receiver thread: %s\n", strerror(errno));
         terminate = 1;          // <- needed becaue sig_thread is running.
 		cleanup_and_exit(1);
-    }
+	} else recv_thread_created = true;
+
 
     if (pthread_create(&send_thread, NULL, sender_thread, NULL) != 0) {
         safe_console_error("Failed to create sender thread: %s\n", strerror(errno));
         terminate = 1;          // <- needed because recv_thread is running
 		cleanup_and_exit(1);
-    }
+	} else send_thread_created = true;
 
     safe_console_print("Press 'ctrl-c' to quit.\n");
 
 	pthread_join(sig_thread, NULL); // wait until the signal handle thread joins.
+	sig_thread_created = false;
 
     safe_console_print("Program %s terminated.\n", program_name);
 	cleanup_and_exit(0);
