@@ -103,7 +103,8 @@ int serial_fd = -1;
 static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 
 pthread_t sig_thread, recv_thread;
-
+bool sig_thread_created = false;
+bool recv_thread_created = false;
 
 /*
  * Name:         cleanup_and_exit
@@ -121,12 +122,12 @@ pthread_t sig_thread, recv_thread;
 void cleanup_and_exit(int exit_code) {
     terminate = 1;
 
-	if (recv_thread != 0) {
+	if (recv_thread_created) {
         pthread_join(recv_thread, NULL);
         recv_thread = 0;
     }
 
-	if (sig_thread != 0) {
+	if (sig_thread_created) {
 		pthread_cancel(sig_thread);
 		pthread_join(sig_thread, NULL);
 		sig_thread = 0;
@@ -428,18 +429,17 @@ int main(int argc, char *argv[]) {
         perror("Failed to create signal thread");
         terminate = 1;
 		cleanup_and_exit(1);
-	}
+	} else sig_thread_created = true;
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
         perror("Failed to create receiver thread");
         terminate = 1;
 		cleanup_and_exit(1);
-    }
+	} else recv_thread_created = true;
 
     safe_console_print("Press 'ctrl-c' to quit.\n");
 
 	pthread_join(sig_thread, NULL); // Wait until the signal handle thread joins.
-	sig_thread = 0;
 
     safe_console_print("Program terminated.\n");
 	cleanup_and_exit(0);
