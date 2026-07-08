@@ -121,17 +121,16 @@ pthread_t sig_thread, recv_thread;
 void cleanup_and_exit(int exit_code) {
     terminate = 1;
 
-	pthread_kill(sig_thread, SIGTERM);
-
+	//pthread_kill(sig_thread, SIGTERM);
 	if (recv_thread != 0) {
         pthread_join(recv_thread, NULL);
         recv_thread = 0;
     }
 
-    if (sig_thread != 0) {
-        pthread_join(sig_thread, NULL);
-        sig_thread = 0;
-    }
+    //if (sig_thread != 0) {
+    //    pthread_join(sig_thread, NULL);
+    //    sig_thread = 0;
+    //}
 
     pthread_mutex_destroy(&file_mutex);
 
@@ -317,7 +316,7 @@ void* receiver_thread(void* arg) {
         // n=0 means VTIME (0.1s) reached. n=1 means a byte arrived.
         int n = read(serial_fd, &c, 1);
 
-        if (n > 1) { // n will be 1 for a single byte
+        if (n == 1) { // n will be 1 for a single byte
             // Start of new command, detected by a letter (Z, F, etc.)
             if (isalpha(c)) {
                 // If we have an existing command, process it before starting the new one
@@ -437,8 +436,10 @@ int main(int argc, char *argv[]) {
 		cleanup_and_exit(1);
     }
 
-    safe_console_print("Press 'q' + Enter to quit.\n");
-    while (!kill_flag) {
+    safe_console_print("Press 'ctrl-c' to quit.\n");
+
+	pthread_join(sig_thread, NULL);
+/*	while (!kill_flag) {
         char input[8];
         if (fgets(input, sizeof(input), stdin)) {
             if (input[0] == 'q' || input[0] == 'Q' || kill_flag == 1) {
@@ -454,7 +455,7 @@ int main(int argc, char *argv[]) {
             continue; // temp read error
         }
     }
-
+*/
     safe_console_print("Program terminated.\n");
 	cleanup_and_exit(0);
     return 0;
