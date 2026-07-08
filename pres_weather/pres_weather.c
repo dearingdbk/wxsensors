@@ -240,6 +240,12 @@ static pthread_cond_t  sensor_cond; // Moved initialization down to main, to cha
 // Global pointers to receiver and sender threads.
 pthread_t recv_thread, send_thread, sig_thread;
 
+bool recv_thread_created = false;
+bool send_thread_created = false;
+bool sig_thread_created = false;
+
+bool sensor_cond_init = false;
+
 /*
  * Name:         cleanup_and_exit
  * Purpose:      helper function to cleanup sensors, and arrays.
@@ -256,28 +262,27 @@ pthread_t recv_thread, send_thread, sig_thread;
 void cleanup_and_exit(int exit_code) {
 	pthread_mutex_lock(&sensor_mutex);
     terminate = 1;
-	pthread_cond_broadcast(&sensor_cond);
+	if (sensor_cond_init) pthread_cond_broadcast(&sensor_cond);
     pthread_mutex_unlock(&sensor_mutex);
 
-	pthread_kill(sig_thread, SIGTERM);
-
-	if (recv_thread != 0) {
+	if (recv_thread_created) {
         pthread_join(recv_thread, NULL);
-        recv_thread = 0;
+        recv_thread_created = false;
     }
-    if (send_thread != 0) {
+    if (send_thread_created) {
         pthread_join(send_thread, NULL);
-        send_thread = 0;
+        send_thread_created = false;
     }
 
-    if (sig_thread != 0) {
+    if (sig_thread_created) {
+		pthread_cancel(sig_thread);
         pthread_join(sig_thread, NULL);
-        sig_thread = 0;
+        sig_thread_created = false;
     }
 
 	pthread_mutex_destroy(&sensor_mutex);
     pthread_mutex_destroy(&file_mutex);
-    pthread_cond_destroy(&sensor_cond);
+    if (sensor_cond_init) pthread_cond_destroy(&sensor_cond);
 
     if (sensor_one) free(sensor_one);
     // Close resources
@@ -1091,50 +1096,32 @@ int main(int argc, char *argv[]) {
     pthread_condattr_init(&attr);
     pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
     pthread_cond_init(&sensor_cond, &attr); // Initialize the global variable here
+	sensor_cond_init = true;
     pthread_condattr_destroy(&attr);
 
 	if (pthread_create(&sig_thread, NULL, signal_thread, NULL) != 0) {
         safe_console_error("Failed to create signal thread: %s\n", strerror(errno));
         terminate = 1;          // <- symmetrical, but not required
 		cleanup_and_exit(1);
-	}
+	} else sig_thread_created = true;
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
         safe_console_error("Failed to create receiver thread: %s\n", strerror(errno));
         terminate = 1;          // <- symmetrical, but not required
 		cleanup_and_exit(1);
-    }
+    } else recv_thread_created = true;
 
     if (pthread_create(&send_thread, NULL, sender_thread, NULL) != 0) {
         safe_console_error("Failed to create sender thread: %s\n", strerror(errno));
         terminate = 1;          // <- needed because recv_thread is running
         pthread_join(recv_thread, NULL);
 		cleanup_and_exit(1);
-    }
+    } else send_thread_created = true;
 
     safe_console_print("Press 'q' + Enter to quit.\n");
-    struct pollfd fds[1];
-	fds[0].fd = STDIN_FILENO;
-	fds[0].events = POLLIN;
-	while (!kill_flag) {
-		int ret = poll(fds, 1, 500);
+	pthread_join(sig_thread, NULL);
+	sig_thread_created = false;
 
-		if (ret == -1) {
-        	if (errno == EINTR) continue; // Interrupted by signal, check kill_flag
-        	safe_console_error("%s\n", strerror(errno));
-			break; // Actual error
-    	}
-		if (ret > 0 && (fds[0].revents & (POLLIN | POLLHUP))) {
-			char input[8];
-	     	if (fgets(input, sizeof(input), stdin)) {
-            	if (input[0] == 'q' || input[0] == 'Q' || kill_flag == 1) {
-                	kill_flag = 1;
-            	}
-        	} else if (feof(stdin)) {  // keep an eye on the behaviour of this check.
-            	kill_flag = 1;
-        	}
-		}
-    }
     safe_console_print("Program terminated.\n");
 	cleanup_and_exit(0);
 	return 0; // We won't get here, but it quiets verbose warnings on a no return value.
