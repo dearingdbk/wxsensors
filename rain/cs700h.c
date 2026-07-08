@@ -94,7 +94,6 @@ char *file_path = NULL; // path to file
 
 // Shared state
 volatile sig_atomic_t terminate = 0;
-volatile sig_atomic_t kill_flag = 0;
 
 const char *program_name = "unknown";
 
@@ -111,6 +110,12 @@ pthread_cond_t  reader_sleep_cond; // Moved initialization down to main, to chan
 // Global pointers to receiver and sender threads.
 pthread_t read_thread, send_thread, sig_thread;
 
+bool read_thread_created = false;
+bool send_thread_created = false;
+bool sig_thread_created = false;
+
+bool pulse_cond_init = false;
+bool reader_cond_init = false;
 
 /*
  * Name:         cleanup_and_exit
@@ -127,32 +132,38 @@ pthread_t read_thread, send_thread, sig_thread;
  */
 void cleanup_and_exit(int exit_code) {
     terminate = 1;
-	pthread_kill(sig_thread, SIGTERM);
     // Wake sender
     pthread_mutex_lock(&pulse_sleep_mutex);
-    pthread_cond_broadcast(&pulse_sleep_cond);
+    if (pulse_cond_init) pthread_cond_broadcast(&pulse_sleep_cond);
     pthread_mutex_unlock(&pulse_sleep_mutex);
 
     // Wake reader
     pthread_mutex_lock(&reader_sleep_mutex);
-    pthread_cond_signal(&reader_sleep_cond);
+    if (reader_cond_init) pthread_cond_signal(&reader_sleep_cond);
     pthread_mutex_unlock(&reader_sleep_mutex);
 
-    if (read_thread != 0) {
+    if (read_thread_created) {
 		pthread_join(read_thread, NULL);
-		read_thread = 0;
+		read_thread_created = false;
 	}
-    if (send_thread != 0) {
+
+    if (send_thread_created) {
 		pthread_join(send_thread, NULL);
-		send_thread = 0;
+		send_thread_created = false;
+	}
+
+    if (sig_thread_created) {
+		pthread_cancel(sig_thread);
+		pthread_join(sig_thread, NULL);
+		sig_thread_created = false;
 	}
 
     pthread_mutex_destroy(&pulse_sleep_mutex);
     pthread_mutex_destroy(&reader_sleep_mutex);
     pthread_mutex_destroy(&file_mutex);
     pthread_mutex_destroy(&data_mutex);
-    pthread_cond_destroy(&pulse_sleep_cond);
-    pthread_cond_destroy(&reader_sleep_cond);
+    if (pulse_cond_init) pthread_cond_destroy(&pulse_sleep_cond);
+    if (reader_cond_init) pthread_cond_destroy(&reader_sleep_cond);
 
     // Close resources
     if (file_ptr) fclose(file_ptr);
@@ -231,7 +242,6 @@ void* signal_thread(void* arg) {
     sigwait(&wait_set, &sig);     // Blocks until a signal arrives
 
     terminate = 1;
-    kill_flag = 1;
 
     // safely wake threads
     pthread_mutex_lock(&pulse_sleep_mutex);
@@ -457,51 +467,32 @@ int main(int argc, char *argv[]) {
     pthread_condattr_init(&attr);
     pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
     pthread_cond_init(&pulse_sleep_cond, &attr); // Initialize the global variable here
+	pulse_cond_init = true;
     pthread_cond_init(&reader_sleep_cond, &attr); // Initialize the global variable here
-    pthread_condattr_destroy(&attr);
+    reader_cond_init = true;
+	pthread_condattr_destroy(&attr);
 
 
 	if (pthread_create(&sig_thread, NULL, signal_thread, NULL) != 0) {
         safe_console_error("Failed to create signal thread: %s\n", strerror(errno));
         terminate = 1;          // <- symmetrical, but not required
 		cleanup_and_exit(1);
-	}
+	} else sig_thread_created = true;
 
     if (pthread_create(&read_thread, NULL, reader_thread, NULL) != 0) {
         safe_console_error("Failed to create reader thread: %s\n", strerror(errno));
         terminate = 1;          // <- needed because sig_thread is running
 		cleanup_and_exit(1);
-    }
+    } else read_thread_created = true;
 
     if (pthread_create(&send_thread, NULL, sender_thread, NULL) != 0) {
         safe_console_error("Failed to create sender thread: %s\n", strerror(errno));
         terminate = 1;          // <- needed because read_thread is running
 		cleanup_and_exit(1);
-    }
+    } else send_thread_created = true;
 
-    safe_console_print("Press 'q' + Enter to quit.\n");
-    struct pollfd fds[1];
-	fds[0].fd = STDIN_FILENO;
-	fds[0].events = POLLIN;
-	while (!kill_flag) {
-		int ret = poll(fds, 1, 500);
-
-		if (ret == -1) {
-        	if (errno == EINTR) continue; // Interrupted by signal, check kill_flag
-        	safe_console_error("%s\n", strerror(errno));
-			break; // Actual error
-    	}
-		if (ret > 0 && (fds[0].revents & (POLLIN | POLLHUP))) {
-			char input[8];
-	     	if (fgets(input, sizeof(input), stdin)) {
-            	if (input[0] == 'q' || input[0] == 'Q' || kill_flag == 1) {
-                	kill_flag = 1;
-            	}
-        	} else if (feof(stdin)) {  // keep an eye on the behaviour of this check.
-            	kill_flag = 1;
-        	}
-		}
-    }
+    safe_console_print("Press 'ctrl-c' to quit.\n");
+	pthread_join(sig_thread, NULL);
     safe_console_print("Program %s terminated.\n", program_name);
 	cleanup_and_exit(0);
 	return 0; // We won't get here, but it quiets verbose warnings on a no return value.
