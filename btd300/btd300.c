@@ -144,20 +144,14 @@ void cleanup_and_exit(int exit_code) {
 	pthread_cond_broadcast(&sensor_cond);
     pthread_mutex_unlock(&sensor_mutex);
 
-	pthread_kill(sig_thread, SIGTERM);
-
 	if (recv_thread != 0) {
         pthread_join(recv_thread, NULL);
         recv_thread = 0;
     }
+
     if (send_thread != 0) {
         pthread_join(send_thread, NULL);
         send_thread = 0;
-    }
-
-    if (sig_thread != 0) {
-        pthread_join(sig_thread, NULL);
-        sig_thread = 0;
     }
 
 	pthread_mutex_destroy(&sensor_mutex);
@@ -742,29 +736,10 @@ int main(int argc, char *argv[]) {
 		cleanup_and_exit(1);
     }
 
-    safe_console_print("Press 'q' + Enter to quit.\n");
-    struct pollfd fds[1];
-	fds[0].fd = STDIN_FILENO;
-	fds[0].events = POLLIN;
-	while (!kill_flag) {
-		int ret = poll(fds, 1, 500);
+    safe_console_print("Press 'ctrl-c' to quit.\n");
 
-		if (ret == -1) {
-        	if (errno == EINTR) continue; // Interrupted by signal, check kill_flag
-        	safe_console_error("%s\n", strerror(errno));
-			break; // Actual error
-    	}
-		if (ret > 0 && (fds[0].revents & (POLLIN | POLLHUP))) {
-			char input[8];
-	     	if (fgets(input, sizeof(input), stdin)) {
-            	if (input[0] == 'q' || input[0] == 'Q' || kill_flag == 1) {
-                	kill_flag = 1;
-            	}
-        	} else if (feof(stdin)) {  // keep an eye on the behaviour of this check.
-            	kill_flag = 1;
-        	}
-		}
-    }
+	pthread_join(sig_thread, NULL); // wait until the signal handle thread joins.
+
     safe_console_print("Program %s terminated.\n", program_name);
 	cleanup_and_exit(0);
 	return 0; // We won't get here, but it quiets verbose warnings on a no return value.
