@@ -121,16 +121,10 @@ pthread_t sig_thread, recv_thread;
 void cleanup_and_exit(int exit_code) {
     terminate = 1;
 
-	//pthread_kill(sig_thread, SIGTERM);
 	if (recv_thread != 0) {
         pthread_join(recv_thread, NULL);
         recv_thread = 0;
     }
-
-    //if (sig_thread != 0) {
-    //    pthread_join(sig_thread, NULL);
-    //    sig_thread = 0;
-    //}
 
     pthread_mutex_destroy(&file_mutex);
 
@@ -438,24 +432,8 @@ int main(int argc, char *argv[]) {
 
     safe_console_print("Press 'ctrl-c' to quit.\n");
 
-	pthread_join(sig_thread, NULL);
-/*	while (!kill_flag) {
-        char input[8];
-        if (fgets(input, sizeof(input), stdin)) {
-            if (input[0] == 'q' || input[0] == 'Q' || kill_flag == 1) {
-                terminate = 1;
-                kill_flag = 1;
-		break;
-            }
-        } else if (feof(stdin)) {  // keep an eye on the behaviour of this check.
-            terminate = 1;
-            kill_flag = 1;
-            break; // stdin closed
-        } else {
-            continue; // temp read error
-        }
-    }
-*/
+	pthread_join(sig_thread, NULL); // Wait until the signal handle thread joins.
+
     safe_console_print("Program terminated.\n");
 	cleanup_and_exit(0);
     return 0;
