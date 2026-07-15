@@ -1,7 +1,7 @@
 /*
  * File:     windobserver75_utils.h
  * Author:   Bruce Dearing
- * Date:     15/04/2026
+ * Date:     15/07/2026
  * Version:  1.0
  * Purpose:  Structures and prototypes for Gill Wind Observer 75 emulation.
  */
@@ -77,10 +77,6 @@ typedef struct {
     // Identity
 	char address; // A-Z
 	char units;	  // U1 through U5, M, N, P, K, F default = m/s
-	//char serial_number[MAX_SN_LEN];
-	//char loader_version[MAX_UNIT_STR];
-	//char software_version[MAX_UNIT_STR];
-	//char copyright_information[MAX_UNIT_STR];
     // Configuration
     WO75_SMode mode;
     long output_rate; // 1-10 outputs per second, default is 4 (once every 0.25 seconds) stored as nanoseconds.
@@ -89,7 +85,6 @@ typedef struct {
     struct timespec sensor_start_time;
 	struct tm sensor_time;
     bool initialized;
-
 } WO75_sensor;
 
 // Command type enumeration
@@ -160,8 +155,6 @@ typedef struct {
 	float wind_speed;
 	char msg_units;
 	uint8_t msg_status;
-	//char data_header[MAX_HEADER_STR];
-	//uint8_t site_id;
 } ParsedMessage;
 
 // Function Prototypes
@@ -169,11 +162,5 @@ int init_WO75_sensor(WO75_sensor **ptr);
 bool WO75_is_ready_to_send(WO75_sensor *sensor);
 
 uint8_t check_sum(const char *str_to_chk);
-//void reset_sensor(WO75_sensor *sensor);
-//void restore_sensor(WO75_sensor *sensor);
-
-//void conduct_self_test(WO75_sensor *sensor);
-
-//int update_sensor_time(const char *time_str, struct tm *sensor_time);
 
 #endif

@@ -2,7 +2,7 @@
  * File:     WO75_utils.c
  * Author:   Bruce Dearing
  * Date:     16/01/2026
- * Purpose:  Implementation of BTD-300-specific logic.
+ * Purpose:  Implementation of wind observer 75 specific logic.
  */
 
 #include <stdio.h>
@@ -16,12 +16,12 @@
 
 /*
  * Name:         init_WO75_sensor
- * Purpose:      Allocates memory for a PTB330 sensor structure and initializes
+ * Purpose:      Allocates memory for a WO75 sensor structure and initializes
  * 				 all members (serial, baud, modules, etc.) to default factory values.
- * Arguments:    ptr - A pointer to a pointer of type ptb330_sensor, used to
+ * Arguments:    ptr - A pointer to a pointer of type WO75_sensor, used to
  * 				 return the address of the allocated memory.
  *
- * Output:       An allocated and populated ptb330_sensor structure.
+ * Output:       An allocated and populated WO75_sensor structure.
  * Modifies:     Allocates memory on the heap and updates the provided pointer.
  * Returns:      0 on success, -1 if memory allocation fails.
  * Assumptions:  The provided ptr is a valid address of a pointer.
@@ -35,19 +35,12 @@ int init_WO75_sensor(WO75_sensor **ptr) {
     *ptr = malloc(sizeof(WO75_sensor));
     if (!*ptr) return -1;
     WO75_sensor *s = *ptr;
-	//memset(&s->strikes, 0, sizeof(s->strikes));
 	// Identity
-	// strncpy(s->serial_number, "000008675309", MAX_SN_LEN);
-	// strncpy(s->loader_version, "WO75 Loader Version 1.5", MAX_UNIT_STR);
-	// strncpy(s->software_version, "WO75 2.0 September 6, 2001", MAX_UNIT_STR);
-	// strncpy(s->copyright_information, "Copyright (c) 2001, Global Atmospherics, Inc", MAX_UNIT_STR);
-
     s->address = 'A';
-	s->units = NUM_TO_UNITS[1]; // U1-U5 default is U2 metres per second.
 	// Configuration
     s->mode = SMODE_M2;
-	// s->output_rate = OUTPUT_4HZ; // 1-10 Hz 4 is the default 0.25 seconds.
-    s->output_rate = HZ_TO_NANOSECONDS[10]; // 1-10 Hz 4 is the default 0.25 seconds.
+	s->units = NUM_TO_UNITS[1]; // U1-U5 default is U2 metres per second.
+    s->output_rate = HZ_TO_NANOSECONDS[4]; // 1-10 Hz 4 is the default 0.25 seconds.
 
 	// Timing
 	time_t now;
