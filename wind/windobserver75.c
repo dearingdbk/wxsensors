@@ -1,156 +1,90 @@
-/*
- * File:        windobserver75.c
- * Author:      Bruce Dearing
- * Date:        04/15/2026
- * Version:     1.0
- * Purpose:     Emulates a Vaisala TSS928 High-Precision Lightning Sensor.
- * 				This program sets up a serial connection with two threads:
- * 				- Receiver thread: parses and responds to incoming commands
- * 				- Sender thread: periodically transmits data strings in broadcast mode
+/**
+ * @file     windobserver75.c
+ * @author   Bruce Dearing
+ * @date     07/15/2026
+ * @version  1.0
+ * @brief    Emulates a Gill Wind Observer 75 Ultrasonic Wind Sensor.
+ * @details  This program sets up a serial connection with two threads:
+ * 			 - Receiver thread: parses and responds to incoming commands
+ * 			 - Sender thread: periodically transmits data strings in continuous mode (M1-M3)
+ * 			 using absolute timers to prevent schedule drift.
  *
- * 				Supported commands (per Vaisala TSS928 ASCII protocol):
- * 					A - send a present weather message. (default)
- *					B - send a status message.
- *					C - send a selftest message.
- *					D - reset the sensor.
- *					E - perform a type test.
- *					F - send a system run time message.
- *					G - send a version message.
- *					H - set the data output message. Arguments [0-2] 0 == Poll.
- *					I - set the distance unit. Arguments [1-3] 1 == miles. (NOT IMPLEMENTED, only for the TSS924)
- * 					J - set the aging interval. Arguments [1-4] 1 == 15 minutes.
- *					K - set diagnostic mode, and run a test. Arguments [1-3].
- *					L - set the angle of rotation. Arguments [0-359] 0 default.
- *					N - set the current time. Arguments [0-23]:[0-59]:[0-59] 00:00:00 default.
- *					P - return the # of optical and enable crossings. Arguments [0] 0 resets the count.
- *					R - return the average and standard deviation of the last 20 E/B rations.
- *					? or *? - list available commands.
- *					*DEF - restore default settings.
- *					*STATUS - send a status message.
- *					*SELFTEST - send a selftest message.
- *					*RESET - reset the sensor.
- *					*VERSION - send a version message.
- *					*FORMAT - set the data output message. Arguments [0-2] 0 == Poll.
- *					*TIME - set the current time. Arguments [0-23]:[0-59]:[0-59] 00:00:00 default.
- *					*NOISE - return the # of optical and enable crossings. Arguments [0] 0 resets the count.
- *					*EBRATIO - return the average and standard deviation of the last 20 E/B rations.
- * Output format:	(Standard ASCII Broadcast):
- *					Present Weather Message A<Enter>:
- *						NEAR: N [0-65535] NE [0-65535] E [0-65535] SE [0-65535] S [0-65535] SW [0-65535] W [0-65535] NW [0-65535]<CR><LF>
- *						DIST: N [0-65535] NE [0-65535] E [0-65535] SE [0-65535] S [0-65535] SW [0-65535] W [0-65535] NW [0-65535]<CR><LF>
- *						OVHD [0-65535] CLOUD [0-65535] TOTAL [0-65535] [P|F] [00-FF]H [0-99] C [0-65535] [0-65535] [0-65535] [0-65535] [0-65535] [0.000-9.999]<CR><LF>
+ * @section Commands Supported commands (per Gill Wind Observer ASCII Protocol):
+ * 			All interactive configuration commands must be preceded by the sensor address (e.g., A).
+ *			- Address Change:
+ *				- A to Z - sets the sensor's network address.
+ *			- Measurement Units:
+ *				- M1 - sets units to Metres per Second (m/s).
+ *				- M2 - sets units to Knots (knots).
+ *				- M3 - sets units to Miles per Hour (mph).
+ *				- M4 - sets units to Kilometres per Hour (km/h).
+ *				- M5 - sets units to Feet per Minute (fpm).
+ *			- Output Mode / Format:
+ *				- O1 - Polar + Status (Direction, Speed, Status).
+ *				- O2 - UV + Status (U-axis, V-axis, Status).
+ *				- O3 - Polar + UV + Status (Direction, Speed, U-axis, V-axis, Status).
+ *			- Output Rate (Continuous Modes):
+ *				- H1 - set output rate to 1 Hz.
+ *				- H2 - set output rate to 2 Hz.
+ *				- H3 - set output rate to 3 Hz.
+ *				- H4 - set output rate to 4 Hz (Default).
+ *				- H5 - set output rate to 5 Hz.
+ *				- H6 - set output rate to 6 Hz.
+ *				- H7 - set output rate to 7 Hz.
+ *				- H8 - set output rate to 8 Hz.
+ *				- H9 - set output rate to 9 Hz.
+ *				- H10 - set output rate to 10 Hz.
+ *			- Execution Modes:
+ *				- SMODE_M1 - Continuous ASCII UV output mode.
+ *				- SMODE_M2 - Continuous ASCII POLAR output mode (Default).
+ *			 	- SMODE_M3 - Polled ASCII UV output mode.
+ *			 	- SMODE_M4 - Polled ASCII POLAR output mode.
+ *				- SMODE_M5 - Continuous NMEA output mode.
+ *				- SMODE_M15 - Continuous Averaged ASCII POLAR output mode.
+ *				- SMODE_M14 - Polled Averaged ASCII POLAR output mode.
  *
- *					Status Message B<Enter>:
- *						FLASHES:<CR><LF>
- *						NEAR: N [0-65535] NE [0-65535] E [0-65535] SE [0-65535] S [0-65535] SW [0-65535] W [0-65535] NW [0-65535]<CR><LF>
- *						DIST: N [0-65535] NE [0-65535] E [0-65535] SE [0-65535] S [0-65535] SW [0-65535] W [0-65535] NW [0-65535]<CR><LF>
- *						OVHD [0-65535] CLOUD [0-65535] TOTAL [0-65535]<CR><LF>
- *						STROKES:<CR><LF>
- *						NEAR: N [0-65535] NE [0-65535] E [0-65535] SE [0-65535] S [0-65535] SW [0-65535] W [0-65535] NW [0-65535]<CR><LF>
- *						DIST: N [0-65535] NE [0-65535] E [0-65535] SE [0-65535] S [0-65535] SW [0-65535] W [0-65535] NW [0-65535]<CR><LF>
- *						OVHD [0-65535] CLOUD [0-65535] TOTAL [0-65535]<CR><LF>
- *						PASS [0-65535] FAIL [0-65535] TLOST 0 SLOST 0
+ * @section Outputs Output Formats:
+ * 			- Polar Output (Mode O1):
+ *	 			Format:  <STX><Address>,<Direction>,<Speed>,<Units>,<Status>,<ETX><Checksum><CR><LF>
+ * 				Example: \x02A,284,000.54,M,00,\x0301\r\n
  *
- *					Selftest Message C<Enter> or every 30 minutes:
- *						[P|F] [00-FF]H [-99-99] C [0-65535] [0-65535] [0-65535] [0-65535] [0-65535] [0.000-9.999]<CR><LF>
+ *			- UV Output (Mode O2):
+ * 				Format:  <STX><Address>,<U-Value>,<V-Value>,<Units>,<Status>,<ETX><Checksum><CR><LF>
+ *				Example: \x02A,+000.12,-000.52,M,00,\x030F\r\n
  *
- *					Reset Message D<Enter>:
- *						TSS928 Loader Version 1.5<CR><LF>
- *						TSS928 2.0 September 6, 2001
- *						Copyright (c) 2001, Global Atmosperics, Inc.
- *						[P|F] [00-FF]H [-99-99] C [0-65535] [0-65535] [0-65535] [0-65535] [0-65535] [0.000-9.999]<CR><LF>
+ *			- Polar + UV Output (Mode O3):
+ *				Format:  <STX><Address>,<Direction>,<Speed>,<U-Value>,<V-Value>,<Units>,<Status>,<ETX><Checksum><CR><LF>
+ *				Example: \x02A,284,000.54,+000.12,-000.52,M,00,\x030B\r\n
  *
- *					Type test message E<Enter>:
- *						ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789<CR><LF>
+ * @section  Status Status Codes:
+ *			- 00 - OK: Normal operation, no errors detected.
+ *			- 01 - Wind sensor axis failed (one or more transducers failed).
+ *			- 02 - Wind sensor axis failed (alternate error state).
+ *			- 04 - Non-volatile memory checksum failure.
+ *			- 08 - Internal electronic system error.
  *
- *					System run time message F<Enter>:
- *						D [0-65535] H [0-23] M [0-59] S [0-59]<CR><LF>
+ * @section  Usage Usage:
+ *			./windobserver75 <file_path> <serial_port_location> <baud_rate> <RS422|RS232>
+ *			The serial port must match /dev/tty(S|USB)[0-9]+
  *
- *					Version Message G<Enter>:
- *						TSS928 V2.0 September 6, 2001<CR><LF>
- *						Copyright (c) 2001, Global Atmospherics, Inc.<CR><LF>
+ * @section  Example Example:
+ *			./windobserver75 data.txt /dev/ttyUSB0 9600 RS422
  *
- *					Format Message H<Enter>:
- *						Modes: 0<CR><LF>
- *					Format Message H 0<Enter>:
- *						Modes: 0<CR><LF>
- *					Format Message H 1<Enter>:
- *						Modes: 1<CR><LF>
- *						NEAR: N [0-65535] NE [0-65535] E [0-65535] SE [0-65535] S [0-65535] SW [0-65535] W [0-65535] NW [0-65535]<CR><LF>
- *						DIST: N [0-65535] NE [0-65535] E [0-65535] SE [0-65535] S [0-65535] SW [0-65535] W [0-65535] NW [0-65535]<CR><LF>
- *						OVHD [0-65535] CLOUD [0-65535] TOTAL [0-65535] [P|F] [00-FF]H [0-99] C [0-65535] [0-65535] [0-65535] [0-65535] [0-65535] [0.000-9.999]<CR><LF>
- *					Format Message H 2<Enter>:
- *						Modes: 2<CR><LF>
- *						[FLASH|CLOUD] [0-4,294,967,294,999] [0-4,294,967,294,999] [0-3] [0-65535] [N|NE|E|SE|S|SW|W|NW|O|C]<CR><LF>
+ * @section  Spec Sensor: Gill Wind Observer 75 Ultrasonic Anemometer
+ *			- High-performance, solid-state 2-axis ultrasonic wind sensor.
+ *			- Wind Speed Range: 0-75 m/s (0-168 mph).
+ *			- Wind Direction Range: 0-359° (no dead band).
+ *			- Technology: Ultrasonic time-of-flight measurements (4 transducers).
+ *			- Accuracy: Speed +/- 2% @ 12 m/s, Direction +/- 2° @ 12 m/s.
+ *			- Alignment: Aligned to physical North arrow on the instrument base.
+ *			- Operating Temperature: -55°C to +70°C (with optional heating).
+ *			- Output: RS-422 full duplex / RS-232 / RS-485.
+ *			- Default Serial Settings: 9600 Baud, 8 Data Bits, 1 Stop Bit, No Parity (8N1).
  *
- *					Aging Limit Message J[1|2|3|4]<Enter>:
- *						A[15|10|5|30]<CR><LF>
- *
- *					Angle of Rotation Message L[0-359]<Enter>:
- *						R[0-359]<CR><LF>
- *
- *					Current Time Message N<Enter>:
- *						N [0-23]:[0-59]:[0-59]<CR><LF>
- *					Current Time Message N [0-23]:[0-59]:[0-59]<Enter>:
- *						N [0-23]:[0-59]:[0-59]<CR><LF>
- *
- *					E/B Ration Average and Standard Deviation Message R<Enter>:
- *						AVERAGE: [0-9.999] STD: [0-9.999]<CR><LF>
- *
- *					List Commands Message ?<Enter>:
- *						*DEF<CR><LF>
- *						*EBRATIO<CR><LF>
- *						*FORMAT<CR><LF>
- *						*NOISE<CR><LF>
- *						*RESET<CR><LF>
- *						*SELFTEST<CR><LF>
- *						*STATUS<CR><LF>
- *						*TIME<CR><LF>
- *						*VERSION<CR><LF>
- *						*?<CR><LF>
- * 						A<CR><LF>
- *						B<CR><LF>
- *						C<CR><LF>
- *						D<CR><LF>
- *						E<CR><LF>
- *						F<CR><LF>
- *						G<CR><LF>
- *						H<CR><LF>
- *						I<CR><LF>
- * 						J<CR><LF>
- *						K<CR><LF>
- *						L<CR><LF>
- *						N<CR><LF>
- *						P<CR><LF>
- *						R<CR><LF>
- *						?<CR><LF>
- *
- * Threat Levels:
- * 				0 - No Activity: No strikes detected within 30 NM
- * 				1 - Distant: Lightning detected between 15-30 NM
- * 				2 - Vicinity: Lightning detected between 5-15 NM
- * 				3 - Overhead: Lightning detected within 0-5 NM
- *
- * Usage:		flash <file_path> <serial_port_location> <baud_rate> <RS422|RS232>
- *				The serial port must match /dev/tty(S|USB)[0-9]+
- *
- * Example: 	./flash data.txt /dev/ttyUSB0 9600 RS232
- *
- * Sensor:      Vaisala TSS928 Lightning Sensor
- * 				- High-precision thunderstorm detection for airport/critical infra
- *				- Technology: Combined patented magnetic direction finding and electric field pulse analysis
- *				- Detection range: 0-30 Nautical Miles (0-56 km)
- *				- Flash types: Detects Cloud-to-Ground (CG) and Intra-Cloud (IC)
- *				- Directional Accuracy: < 2 degrees RMS
- *				- Range Accuracy: Provides distance based on optical/magnetic waveform coincidence
- *				- Sensitivity: High-gain sensors for low-amplitude IC discharge detection
- *				- Operating temperature: -40°C to +55°C
- *				- Output: RS-232, RS-422, or RS-485
- *				- Default baud rate: 9600 (configurable to 19200)
- *
- * Mods:
- *
+ * @section  History Modifications:
+ *			- 07/15/2026: Refactored sender loop to use absolute pthreads timed-waits for drift-free transmission.
  */
+
 
 #include <stdio.h>
 #include <stdlib.h>
