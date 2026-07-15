@@ -47,8 +47,4 @@ char get_wind_units(int chk_val);
 
 /// END WIND SENSOR ///
 
-/// FLASH SENSOR ///
-
-/// END FLASH SENSOR ///
-
 #endif

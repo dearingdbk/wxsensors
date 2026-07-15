@@ -167,6 +167,9 @@ sudo apt install libgpiod-dev gpiod
 
 # add the user to the dialout group, enabling access to serial devices.
 sudo usermod -aG dialout $USER && logout 
+
+# add the moreutils package if you want to time the different programs.
+sudo apt install moreutils
 ```
 
 ## Building
@@ -190,6 +193,9 @@ Executables are output to the `bin/` directory, organized by sensor type.
 ```bash
 # General usage pattern
 <sensor> <data_file> [serial_port] [baud_rate] [RS232|RS422|RS485|SDI-12]
+
+# Timing
+<sensor> <data_file> [serial_port] [baud_rate] [RS232|RS422|RS485|SDI-12] | ts '[%Y-%m-%d %H:%M:%.S]'
 
 # Examples
 bin/wind/wind_listen /path/to/wind_data.txt

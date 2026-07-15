@@ -1,0 +1,126 @@
+/*
+ * File:     WO75_utils.c
+ * Author:   Bruce Dearing
+ * Date:     16/01/2026
+ * Purpose:  Implementation of BTD-300-specific logic.
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include <ctype.h>
+#include "crc_utils.h"
+#include "windobserver75_utils.h"
+
+
+/*
+ * Name:         init_WO75_sensor
+ * Purpose:      Allocates memory for a PTB330 sensor structure and initializes
+ * 				 all members (serial, baud, modules, etc.) to default factory values.
+ * Arguments:    ptr - A pointer to a pointer of type ptb330_sensor, used to
+ * 				 return the address of the allocated memory.
+ *
+ * Output:       An allocated and populated ptb330_sensor structure.
+ * Modifies:     Allocates memory on the heap and updates the provided pointer.
+ * Returns:      0 on success, -1 if memory allocation fails.
+ * Assumptions:  The provided ptr is a valid address of a pointer.
+ *
+ * Bugs:         None known.
+ * Notes:        Uses CLOCK_MONOTONIC for thread timing and UTC (gmtime) for
+ * 				 the initial date string.
+ *				 Must be freed by the caller.
+ */
+int init_WO75_sensor(WO75_sensor **ptr) {
+    *ptr = malloc(sizeof(WO75_sensor));
+    if (!*ptr) return -1;
+    WO75_sensor *s = *ptr;
+	//memset(&s->strikes, 0, sizeof(s->strikes));
+	// Identity
+	// strncpy(s->serial_number, "000008675309", MAX_SN_LEN);
+	// strncpy(s->loader_version, "WO75 Loader Version 1.5", MAX_UNIT_STR);
+	// strncpy(s->software_version, "WO75 2.0 September 6, 2001", MAX_UNIT_STR);
+	// strncpy(s->copyright_information, "Copyright (c) 2001, Global Atmospherics, Inc", MAX_UNIT_STR);
+
+    s->address = 'A';
+	s->units = NUM_TO_UNITS[1]; // U1-U5 default is U2 metres per second.
+	// Configuration
+    s->mode = SMODE_M2;
+	// s->output_rate = OUTPUT_4HZ; // 1-10 Hz 4 is the default 0.25 seconds.
+    s->output_rate = HZ_TO_NANOSECONDS[10]; // 1-10 Hz 4 is the default 0.25 seconds.
+
+	// Timing
+	time_t now;
+	time(&now); // Get our current epoch time.
+	gmtime_r(&now, &s->sensor_time); // Store current epoch time in our tm struct.
+	clock_gettime(CLOCK_MONOTONIC, &s->last_send_time); // timespec time, for when the sensor sent last message.
+	clock_gettime(CLOCK_MONOTONIC, &s->sensor_start_time); // timespec time for when the sensor initialized.
+	s->initialized = true;
+    return 0;
+}
+
+/*
+ * Name:         WO75_is_ready_to_send
+ * Purpose:      Determines if the required time interval has elapsed since the
+ * 				 last data transmission based on the sensor's configuration.
+ * Arguments:    sensor - Pointer to the skyvue8_sensor structure containing
+ * 				 mode and timing data.
+ *
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      true if the sensor is in RUN mode and the interval has passed;
+ * 				 false otherwise.
+ * Assumptions:  sensor->last_send_time was initialized with CLOCK_MONOTONIC.
+ *
+ * Bugs:         None known.
+ * Notes:        Uses CLOCK_MONOTONIC to ensure timing remains consistent even
+ * 				 if the system real-time clock is adjusted.
+ */
+bool WO75_is_ready_to_send(WO75_sensor *sensor) {
+    if (!sensor) return false;
+
+    //struct timespec now;
+    //clock_gettime(CLOCK_MONOTONIC, &now);
+	// Calculate elapsed time in nanoseconds
+    //long elapsed_sec = now.tv_sec - sensor->last_send_time.tv_sec;
+    //long elapsed_nsec = now.tv_nsec - sensor->last_send_time.tv_nsec;
+    // long seconds = now.tv_sec - sensor->last_send_time.tv_sec;
+    // Convert total elapsed time to nanoseconds
+    //long long total_elapsed_ns = ((long long)elapsed_sec * 1000000000LL) + elapsed_nsec;
+
+    // Check if the elapsed nanoseconds meet or exceed the target interval
+    //if (total_elapsed_ns >= sensor->output_rate) {
+    if (sensor->mode == SMODE_M2) return true;
+    //}
+
+	// if (seconds >= (long)sensor->message_interval) return true;
+    return false;
+}
+
+
+/*
+ * Name:         check_sum
+ * Purpose:      Takes a '\0' delimited string, and returns a checksum of the characters XOR.
+ * Arguments:    str_to_chk the string that checksum will be calculated for
+ *
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      returns an unsigned 8 bit integer of the checksum of str_to_chk.
+ * Assumptions:  Terminate is set to false.
+ *
+ * Bugs:         None known.
+ * Notes:        To print in HEX utilize dprintf(serial_fd, "%c%s%c%02X\r\n",2, str_to_chk, check_sum(str_to_chk));
+ */
+uint8_t check_sum(const char *str_to_chk) {
+
+    uint8_t checksum = 0;
+    if (str_to_chk == NULL) {
+        return 0;
+    }
+    while (*str_to_chk != '\0') {
+        checksum ^= (uint8_t)(*str_to_chk);
+        str_to_chk++;
+    }
+    return checksum;
+}
+
