@@ -21,24 +21,6 @@
 #define MAX_HEADER_STR 7
 #define MAX_SELF_TEST_FLAG 6
 
-#define SECONDS_IN_DAY 86400
-#define SECONDS_IN_HOUR 3600
-#define SECONDS_IN_MIN 60
-
-
-typedef enum {
-    OUTPUT_1HZ  = 1000000000L, // 1.00s
-    OUTPUT_2HZ  =  500000000L, // 0.50s
-    OUTPUT_3HZ  =  333333333L, // 0.33s (approximated)
-    OUTPUT_4HZ  =  250000000L, // 0.25s (default)
-    OUTPUT_5HZ  =  200000000L, // 0.20s
-    OUTPUT_6HZ  =  166666666L, // 0.16s
-    OUTPUT_7HZ  =  142857142L, // 0.14s
-    OUTPUT_8HZ  =  125000000L, // 0.125s
-    OUTPUT_9HZ  =  111111111L, // 0.11s
-    OUTPUT_10HZ =  100000000L  // 0.10s
-} OutputIntervalNs;
-
 // Index 0 is unused (or set to 0 to disable continuous sending)
 static const long HZ_TO_NANOSECONDS[] = {
 	0,                 // 0 Hz (Polled/Stop)
@@ -160,7 +142,6 @@ typedef struct {
 // Function Prototypes
 int init_WO75_sensor(WO75_sensor **ptr);
 bool WO75_is_ready_to_send(WO75_sensor *sensor);
-
 uint8_t check_sum(const char *str_to_chk);
 
 #endif

@@ -57,11 +57,22 @@
  *				Example: \x02A,284,000.54,+000.12,-000.52,M,00,\x030B\r\n
  *
  * @section  Status Status Codes:
- *			- 00 - OK: Normal operation, no errors detected.
- *			- 01 - Wind sensor axis failed (one or more transducers failed).
- *			- 02 - Wind sensor axis failed (alternate error state).
- *			- 04 - Non-volatile memory checksum failure.
- *			- 08 - Internal electronic system error.
+ *			- 00 - OK: Normal operation, no errors detected, heating set off.
+ *			- A	 - OK: NMEA data Acceptable
+ *			- 01 - Wind sensor axis 1 failed (one or more transducers failed).
+ *			- 02 - Wind sensor axis 2 failed (alternate error state).
+ *			- 04 - Wind sensor axis 1 and 2 failed.
+ *			- 08 - NVM Error.
+ *			- 09 - ROM Error.
+ *			- 51 - Measurement Average building.
+ *			- 62 - No power to heating module.
+ *			- 63 - Hardware Fault.
+ *			- 65 - Warning Heater supply volts too high, or pcb too hot.
+ *			- V  - NMEA data void.
+ *			- 66 - OK and heating enabled.
+ *			- 67 - No power to heating module.
+ *			- 68 - Hardware fault.
+ *			- 69 - Warning Heater Supply volts too high or pcb too hot.
  *
  * @section  Usage Usage:
  *			./windobserver75 <file_path> <serial_port_location> <baud_rate> <RS422|RS232>
@@ -112,8 +123,6 @@
 #define MAX_CMD_LENGTH 256
 #define MAX_MSG_LENGTH 512
 #define CPU_WAIT_USEC 10000
-#define MINUTE_INTERVAL 60
-#define THIRTY_MIN_INTERVAL 1800
 
 #define DEBUG_MODE // Comment this line out to disable all debug prints
 
@@ -140,14 +149,11 @@ WO75_sensor *sensor_one = NULL; // Global pointer to struct for skyvue8 sensor .
 // Synchronization primitives
 /*	MUTEX		|	OWNS
 	send_mutex	|	sensor_one->mode, sensor_one->message_interval, sensor_one->last_send_time, sensor_cond
-	data_mutex	|	sensor_one->StrikeBin, advance_one_minute()
 	file_mutex	|	file_ptr
 */
 static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
 static pthread_mutex_t sensor_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutex_t data_sleep_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  sensor_cond; // Moved initialization down to main, to change REALTIME Clock to MONOTONIC.
-static pthread_cond_t  data_sleep_cond; // Moved initialization down to main, to change REALTIME Clock to MONOTONIC.
 
 // Global pointers to receiver and sender threads.
 pthread_t recv_thread, send_thread, sig_thread;
@@ -157,7 +163,6 @@ bool send_thread_created = false;
 bool sig_thread_created = false;
 
 bool sensor_cond_init = false;
-bool data_sleep_cond_init = false;
 
 /*
  * Name:         cleanup_and_exit
@@ -177,7 +182,6 @@ void cleanup_and_exit(int exit_code) {
     terminate = 1;
     pthread_mutex_unlock(&sensor_mutex);
     if (sensor_cond_init) pthread_cond_broadcast(&sensor_cond);
-	if (data_sleep_cond_init) pthread_cond_broadcast(&data_sleep_cond);
 
 	if (recv_thread_created) {
         pthread_join(recv_thread, NULL);
@@ -195,9 +199,7 @@ void cleanup_and_exit(int exit_code) {
 
     pthread_mutex_destroy(&file_mutex);
 	pthread_mutex_destroy(&sensor_mutex);
-	pthread_mutex_destroy(&data_sleep_mutex);
 	if (sensor_cond_init) pthread_cond_destroy(&sensor_cond);
-	if (data_sleep_cond_init) pthread_cond_destroy(&data_sleep_cond);
 
 	if (sensor_one) free(sensor_one);
     // Close resources
@@ -238,7 +240,7 @@ void parse_message(char *msg, ParsedMessage *p_msg) {
 
 	// These are pulled from a text file in this format:
 	// A,121,000.8,M,00
-	if ((token = strtok_r(msg, ",", &saveptr))) p_msg->msg_address = token[0]; // Sensor Address A-Z
+	if ((token = strtok_r(msg, ",", &saveptr))) p_msg->msg_address = (char)token[0]; // Sensor Address A-Z
    	#define NEXT_T strtok_r(NULL, ",", &saveptr) // Small macro to keep the code below cleaner.
    	if ((token = NEXT_T)) p_msg->wind_direction = (uint16_t)atoi(token); 	// Wind Direction Polar
    	if ((token = NEXT_T)) p_msg->wind_speed = (float)atof(token); 	// Wind Speed TODO: We could use strof(token, &endptr) to be more robust.
@@ -264,14 +266,9 @@ void parse_message(char *msg, ParsedMessage *p_msg) {
  */
 void process_and_send(ParsedMessage *p_msg) {
 
-    // pthread_mutex_lock(&sensor_mutex); // Lock before IO on sensor_one.
-
     char final_msg[MAX_LINE_LENGTH];
     // Builds the msg string, from sensor struct values, and values read from provided file.
     snprintf(final_msg, sizeof(final_msg), "%c,%03d,%06.2f,%c,%02d,", p_msg->msg_address, p_msg->wind_direction, p_msg->wind_speed, p_msg->msg_units, p_msg->msg_status);
-
-    // pthread_mutex_unlock(&sensor_mutex); // Unlock after IO on sensor_one.
-    DEBUG_PRINT("\x02%s\x03%02X\r\n", final_msg, check_sum(final_msg));
     safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", final_msg, check_sum(final_msg));
 }
 
@@ -342,7 +339,7 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 	switch (cmd) {
 		case CMD_ENABLE:
 			// process_and_send();
-			DEBUG_PRINT("%s", p_cmd->raw_params);
+			(void)p_cmd;
 			break;
 		case CMD_POLL:
 			// TODO: NOT Implemented fully, STATUS message sends flashes and strokes.
@@ -401,11 +398,6 @@ void* signal_thread(void* arg) {
     pthread_mutex_lock(&sensor_mutex);
     pthread_cond_broadcast(&sensor_cond);
     pthread_mutex_unlock(&sensor_mutex);
-
-    pthread_mutex_lock(&data_sleep_mutex);
-    pthread_cond_broadcast(&data_sleep_cond);
-    pthread_mutex_unlock(&data_sleep_mutex);
-
 
     return NULL;
 }
@@ -622,17 +614,13 @@ int main(int argc, char *argv[]) {
     	fprintf(stderr, "Fatal: pthread_condattr_init failed: %d\n", ret);
 	 	cleanup_and_exit(1);
 	}
-    // pthread_condattr_init(&attr);
     if ((ret = pthread_condattr_setclock(&attr, CLOCK_MONOTONIC)) != 0) {
     	fprintf(stderr, "Fatal: pthread_condattr_setclock failed: %d\n", ret);
     	pthread_condattr_destroy(&attr);
 	  	cleanup_and_exit(1);
 	}
-	// pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
     pthread_cond_init(&sensor_cond, &attr); // Initialize the global variable here
 	sensor_cond_init = true;
-    pthread_cond_init(&data_sleep_cond, &attr); // Initialize the global variable here
-	data_sleep_cond_init = true;
     pthread_condattr_destroy(&attr);
 
 	if (pthread_create(&sig_thread, NULL, signal_thread, NULL) != 0) {
