@@ -270,7 +270,6 @@ void process_and_send(ParsedMessage *p_msg) {
     // Builds the msg string, from sensor struct values, and values read from provided file.
     snprintf(final_msg, sizeof(final_msg), "%c,%03d,%06.2f,%c,%02d,", p_msg->msg_address, p_msg->wind_direction, p_msg->wind_speed, p_msg->msg_units, p_msg->msg_status);
     safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", final_msg, check_sum(final_msg));
-    DEBUG_PRINT("\x02%s\x03%02X\r\n", final_msg, check_sum(final_msg));
 }
 
 /*
