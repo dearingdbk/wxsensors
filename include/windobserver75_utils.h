@@ -20,6 +20,7 @@
 #define TIME_STRING 7
 #define MAX_HEADER_STR 7
 #define MAX_SELF_TEST_FLAG 6
+#define NS_PER_SEC 1000000000LL
 
 // Index 0 is unused (or set to 0 to disable continuous sending)
 static const long HZ_TO_NANOSECONDS[] = {

@@ -270,6 +270,7 @@ void process_and_send(ParsedMessage *p_msg) {
     // Builds the msg string, from sensor struct values, and values read from provided file.
     snprintf(final_msg, sizeof(final_msg), "%c,%03d,%06.2f,%c,%02d,", p_msg->msg_address, p_msg->wind_direction, p_msg->wind_speed, p_msg->msg_units, p_msg->msg_status);
     safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", final_msg, check_sum(final_msg));
+    DEBUG_PRINT("\x02%s\x03%02X\r\n", final_msg, check_sum(final_msg));
 }
 
 /*
@@ -301,7 +302,12 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
             char next = ptr[cmd_table[i].len];
             if (next == '\0' || isalnum((unsigned char)next)) { // If the command is terminated, or has additional text. !! Excludes \t \n \r
 				cmd->type = cmd_table[i].type;
-                ptr += cmd_table[i].len; // Jump past command
+
+                if (cmd_table[i].len == 1 && isalpha((unsigned char)ptr[0])) {
+                    cmd->sensor_id = (char)toupper((unsigned char)ptr[0]);
+                }
+
+				ptr += cmd_table[i].len; // Jump past command
                 // Skip any spaces to point at arguments
                 while (*ptr && isspace((unsigned char)*ptr)) ptr++;
 
@@ -338,22 +344,55 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 	switch (cmd) {
 		case CMD_ENABLE:
-			// process_and_send();
-			(void)p_cmd;
+			pthread_mutex_lock(&sensor_mutex);
+			if (sensor_one->mode == SMODE_M4) {
+				sensor_one->mode = SMODE_M2;
+			}
+			if (sensor_one->mode == SMODE_M3) {
+				sensor_one->mode = SMODE_M1;
+			}
+			if (sensor_one->mode == SMODE_M14) {
+				sensor_one->mode = SMODE_M15;
+			}
+		    pthread_cond_broadcast(&sensor_cond); // Wake up the thread, if it was sleeping.
+			pthread_mutex_unlock(&sensor_mutex);
 			break;
 		case CMD_POLL:
-			// TODO: NOT Implemented fully, STATUS message sends flashes and strokes.
-			// process_and_send();
+			// TODO: Kludged solution which just sends the configured sensor id, and the next line.
+			(void)p_cmd;
+			char *line = get_next_line_copy(file_ptr, &file_mutex);
+            if (line) {
+                ParsedMessage local_msg;  // LOCAL, not global
+                parse_message(line, &local_msg);
+                process_and_send(&local_msg);
+                fflush(NULL);  // Flush all output streams
+                free(line);
+                line = NULL;
+            }
 			break;
 		case CMD_DISABLE:
 			pthread_mutex_lock(&sensor_mutex);
+			if (sensor_one->mode == SMODE_M2) {
+				sensor_one->mode = SMODE_M4;
+			}
+			if (sensor_one->mode == SMODE_M1) {
+				sensor_one->mode = SMODE_M3;
+			}
+			if (sensor_one->mode == SMODE_M15) {
+				sensor_one->mode = SMODE_M14;
+			}
+		    pthread_cond_broadcast(&sensor_cond); // Wake up the thread, if it was sleeping.
 			pthread_mutex_unlock(&sensor_mutex);
 			break;
 		case CMD_UNIT_ID:
+		    char unit_id_msg[MAX_LINE_LENGTH];
 			pthread_mutex_lock(&sensor_mutex);
+		    snprintf(unit_id_msg, sizeof(unit_id_msg), "%c", sensor_one->address);
 			pthread_mutex_unlock(&sensor_mutex);
+    		safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", unit_id_msg, check_sum(unit_id_msg));
 			break;
 		case CMD_CONFIG:
+			// TODO: Unlikely we would need to configure the sensor on the fly.
 			break;
 		case CMD_UNKNOWN:
 			safe_serial_write(serial_fd, "Unrecognized command\r\n");
@@ -479,26 +518,12 @@ void* sender_thread(void* arg) {
 		// Determine if we should wait for a specific time or indefinitely
 		interval = sensor_one->output_rate; // If we are in polled mode, output_rate is zero.
 
-		ts.tv_nsec += interval;
-        if (ts.tv_nsec >= 1000000000L) {
-            ts.tv_sec  += 1;
-            ts.tv_nsec -= 1000000000L;
-        }
+		long long total_nsec = (long long)ts.tv_nsec + interval;
+		ts.tv_sec  += total_nsec / NS_PER_SEC; // 1000000000LL
+		ts.tv_nsec  = total_nsec % NS_PER_SEC; // 1000000000LL
 
-
-        if (sensor_one != NULL && sensor_one->mode == SMODE_M2) { // TODO: Need to add other continuous mode handlers here.
-			//interval = sensor_one->output_rate; // If we are in polled mode, output_rate is zero.
-            // Calculate absolute time: Last Send Time + Interval
-            // Use current REALTIME + (Interval - Time Since Last Send)
-
-            //ts.tv_nsec += interval;
-            // Handle nanosecond overflow
-            //if (ts.tv_nsec >= 1000000000L) {
-            //    ts.tv_sec += 1;
-            //    ts.tv_nsec -= 1000000000L;
-            //}
-            // ts.tv_sec += interval;
-            // Wait until that specific second arrives OR a signal interrupts us
+        if (sensor_one != NULL && !(sensor_one->mode == SMODE_M3 || sensor_one->mode == SMODE_M4 || sensor_one->mode == SMODE_M14)) {
+            // Wait until that specific interval time has passed OR a signal interrupts this thread.
             pthread_cond_timedwait(&sensor_cond, &sensor_mutex, &ts);
         } else {
             // If in Polling/Stop Mode, wait indefinitely for a signal from the receiver
@@ -528,15 +553,12 @@ void* sender_thread(void* arg) {
                 free(line);
                 line = NULL;
             }
-			//process_and_send();
-            //fflush(NULL);  // Flush all output streams
-
-			// Update timestamp with lock
-            /*pthread_mutex_lock(&sensor_mutex);
+			// Update timestamp with lock. Note: this is not a required step, as we removed this logic from WO75_is_ready_to_send().
+            pthread_mutex_lock(&sensor_mutex);
             if (sensor_one != NULL) {
                 clock_gettime(CLOCK_MONOTONIC, &sensor_one->last_send_time);
             }
-            pthread_mutex_unlock(&sensor_mutex);*/
+            pthread_mutex_unlock(&sensor_mutex);
         }
     }
     return NULL;
@@ -605,7 +627,6 @@ int main(int argc, char *argv[]) {
 	sigaddset(&block_set, SIGTERM);
 	sigaddset(&block_set, SIGQUIT);
 	pthread_sigmask(SIG_BLOCK, &block_set, NULL);
-
 
 	// Initialize the send condition to use CLOCK_MONOTONIC
 	pthread_condattr_t attr;

@@ -71,26 +71,10 @@ int init_WO75_sensor(WO75_sensor **ptr) {
  */
 bool WO75_is_ready_to_send(WO75_sensor *sensor) {
     if (!sensor) return false;
-
+	// Because this specific Gill Windobserver 75 sensor operates on sub-second timing, we have removed the checks for last-send time on all continuous modes.
     if (sensor->mode == SMODE_M1) return true;
     if (sensor->mode == SMODE_M2) return true;
     if (sensor->mode == SMODE_M5) return true;
-
-	// Because this specific Gill Windobserver 75 sensor operates on sub-second timing, we have removed the checks for last-send time on all continuous modes.
-    if (sensor->mode == SMODE_M15){
-    	struct timespec now;
-    	clock_gettime(CLOCK_MONOTONIC, &now);
-		// Calculate elapsed time in nanoseconds
-    	long elapsed_sec = now.tv_sec - sensor->last_send_time.tv_sec;
-    	long elapsed_nsec = now.tv_nsec - sensor->last_send_time.tv_nsec;
-    	//long seconds = now.tv_sec - sensor->last_send_time.tv_sec;
-    	// Convert total elapsed time to nanoseconds
-    	long long total_elapsed_ns = ((long long)elapsed_sec * 1000000000LL) + elapsed_nsec;
-
-    	// Check if the elapsed nanoseconds meet or exceed the target interval
-    	if (total_elapsed_ns >= sensor->output_rate) return true;
-	}
-
     return false;
 }
 
