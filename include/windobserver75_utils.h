@@ -143,6 +143,5 @@ typedef struct {
 // Function Prototypes
 int init_WO75_sensor(WO75_sensor **ptr);
 bool WO75_is_ready_to_send(WO75_sensor *sensor);
-uint8_t check_sum(const char *str_to_chk);
 
 #endif

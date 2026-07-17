@@ -77,31 +77,3 @@ bool WO75_is_ready_to_send(WO75_sensor *sensor) {
     if (sensor->mode == SMODE_M5) return true;
     return false;
 }
-
-
-/*
- * Name:         check_sum
- * Purpose:      Takes a '\0' delimited string, and returns a checksum of the characters XOR.
- * Arguments:    str_to_chk the string that checksum will be calculated for
- *
- * Output:       None.
- * Modifies:     None.
- * Returns:      returns an unsigned 8 bit integer of the checksum of str_to_chk.
- * Assumptions:  Terminate is set to false.
- *
- * Bugs:         None known.
- * Notes:        To print in HEX utilize dprintf(serial_fd, "%c%s%c%02X\r\n",2, str_to_chk, check_sum(str_to_chk));
- */
-uint8_t check_sum(const char *str_to_chk) {
-
-    uint8_t checksum = 0;
-    if (str_to_chk == NULL) {
-        return 0;
-    }
-    while (*str_to_chk != '\0') {
-        checksum ^= (uint8_t)(*str_to_chk);
-        str_to_chk++;
-    }
-    return checksum;
-}
-

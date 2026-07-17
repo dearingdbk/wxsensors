@@ -269,7 +269,7 @@ void process_and_send(ParsedMessage *p_msg) {
     char final_msg[MAX_LINE_LENGTH];
     // Builds the msg string, from sensor struct values, and values read from provided file.
     snprintf(final_msg, sizeof(final_msg), "%c,%03d,%06.2f,%c,%02d,", p_msg->msg_address, p_msg->wind_direction, p_msg->wind_speed, p_msg->msg_units, p_msg->msg_status);
-    safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", final_msg, check_sum(final_msg));
+    safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", final_msg, checksumXOR(final_msg));
 }
 
 /*
@@ -388,7 +388,7 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 			pthread_mutex_lock(&sensor_mutex);
 		    snprintf(unit_id_msg, sizeof(unit_id_msg), "%c", sensor_one->address);
 			pthread_mutex_unlock(&sensor_mutex);
-    		safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", unit_id_msg, check_sum(unit_id_msg));
+    		safe_serial_write(serial_fd, "\x02%s\x03%02X\r\n", unit_id_msg, checksumXOR(unit_id_msg));
 			break;
 		case CMD_CONFIG:
 			// TODO: Unlikely we would need to configure the sensor on the fly.
