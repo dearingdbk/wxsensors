@@ -79,7 +79,6 @@
 #include <time.h>
 #include <ctype.h>
 #include "serial_utils.h"
-#include "sensor_utils.h"
 #include "console_utils.h"
 #include "file_utils.h"
 #include "crc_utils.h"
