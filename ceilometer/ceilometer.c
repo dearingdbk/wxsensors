@@ -458,15 +458,24 @@ void parse_message(char *msg, ParsedMessage *p_message) {
  */
 void process_and_send(ParsedMessage *msg) {
 
-	char msg_buffer[MAX_MSG_LENGTH]; // 512
 	if (msg == NULL) return;
+
+	char msg_buffer[MAX_MSG_LENGTH]; // 512
+	char local_software_version[MAX_SV_LEN]; // 4
+
+	pthread_mutex_lock(&sensor_mutex);
+	char local_address = (char)sensor_one->address;
+	strncpy(local_software_version, sensor_one->software_version, MAX_SV_LEN - 1);
+	local_software_version[MAX_SV_LEN - 1] = '\0';
+	pthread_mutex_unlock(&sensor_mutex);
+
 		switch(msg->message_id) {
 			case MSG_001: {
 				// See wxsensors.xlsx for message breakdown.
 				int length = snprintf(msg_buffer, sizeof(msg_buffer), "%s%c%s%03d\x02\r\n%c%c %03d %s %s %s %s %04X%04X%04X\r\n\x03",
     				"CS",											// 1.  char* - "CS" Always CS
-					(char)sensor_one->address,						// 2.  char - Sensor ID
-    				sensor_one->software_version,		   			// 3.  char* - Operating System
+					local_address,									// 2.  char - Sensor ID
+    				local_software_version,				   			// 3.  char* - Operating System
     				msg->message_id,								// 4.  uint8_t - Message ID
 					(char)msg->detection_status,	       			// 5.  char - Detection Status
     				(char)msg->alarm_status,		  				// 6.  char - Alarm Status
@@ -719,9 +728,9 @@ void* receiver_thread(void* arg) {
                     ParsedCommand local_cmd;
                     CommandType cmd_type = parse_command(line, &local_cmd);
 
-					pthread_mutex_lock(&sensor_mutex);   // <--- LOCK HERE
+					// pthread_mutex_lock(&sensor_mutex);   // <--- LOCK HERE
 		    		handle_command(cmd_type, &local_cmd); // handle received command here.
-                    pthread_mutex_unlock(&sensor_mutex); // <--- UNLOCK HERE
+                    // pthread_mutex_unlock(&sensor_mutex); // <--- UNLOCK HERE
                     len = 0;
                 } else { // empty line ignore
                 }
