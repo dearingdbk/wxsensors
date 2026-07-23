@@ -304,6 +304,7 @@
 #define MAX_CMD_LENGTH 256
 #define MAX_MSG_LENGTH 512
 #define CPU_WAIT_USEC 10000
+#define CNTL_AND_SPACE 32
 
 #define DEBUG_MODE // Comment this line out to disable all debug prints
 
@@ -484,9 +485,9 @@ void process_and_send(ParsedMessage *msg) {
 		    		msg->second_height,      						// 9.  char* - Second Height
     				msg->third_height,           					// 10.  char* - Third Height
 		    		msg->fourth_height,						  		// 11.  char* - Fourth Height
-    				msg->most_sig_alarm,							// 12. uint16_t - Most Significant Alarm
-		    		msg->middle_sig_alarm,							// 13. uint16_t - Middle Significant Alarm
-    				msg->least_sig_alarm 				  			// 14. uint16_t - Least Significant Alarm
+    				(unsigned int)msg->most_sig_alarm,				// 12. uint16_t - Most Significant Alarm
+		    		(unsigned int)msg->middle_sig_alarm,			// 13. uint16_t - Middle Significant Alarm
+    				(unsigned int)msg->least_sig_alarm	  			// 14. uint16_t - Least Significant Alarm
 					);
 
 				if (length > 0 && length < (int)sizeof(msg_buffer)) {
@@ -571,7 +572,8 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 	memset(cmd, 0, sizeof(ParsedCommand)); // zero out the contents of our ParsedCommand
     const char *ptr = buf;
 
-    while (*ptr && isspace((unsigned char)*ptr)) ptr++; // Skip any leading whitespace.
+	while (*ptr && ((unsigned char)*ptr <= CNTL_AND_SPACE)) ptr++; // Skip all leading control chars and space. <STX> <ETX>
+    // while (*ptr && isspace((unsigned char)*ptr)) ptr++; // Skip any leading whitespace.
 
     for (size_t i = 0; i < CMD_TABLE_SIZE; i++) {
 
@@ -620,13 +622,13 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 
 	 switch (cmd) {
-		case CMD_POLL:
+		case CMD_POLL: {
 			char *saveptr; // Our place keeper in the msg string.
 			char *token; // Where we temporarily store each token.
-			uint8_t sensor_id;
-			uint8_t message_id;
+			uint8_t sensor_id = 0;
+			uint8_t message_id = 0;
 
-			if ((token = strtok_r(p_cmd->raw_params, " \r\n", &saveptr))) sensor_id = atoi(token);  // Set sensor ID.
+			if ((token = strtok_r(p_cmd->raw_params, " \r\n", &saveptr))) sensor_id = (uint8_t)token[0];  // Set sensor ID.
 			if ((token = strtok_r(NULL, " \r\n", &saveptr)))  message_id = atoi(token);  // Set message ID.
 
         	char *line = get_next_line_copy(file_ptr, &file_mutex);
@@ -642,6 +644,7 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 				line = NULL;
         	}
 			break;
+		}
 		case CMD_ERROR:
 			    // TODO: Implement a generic error handler.
 			break;
