@@ -507,7 +507,7 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 	memcpy(hex_tmp, p2 + 1, hex_len); // Copy the 4 chars of the CRC into hex_tmp.
 
 	// Now strip the spaces so strtol only sees "8AB9"
-	strip_whitespace(hex_tmp); // This is liekly not a required step, if the string does not have spaces.
+	strip_whitespace(hex_tmp); // This is likely not a required step, if the string does not have spaces.
 	uint16_t received = (uint16_t)strtol(hex_tmp, NULL, 16);
 
  	// Check if the CRC received is the same as the data sent with it.
