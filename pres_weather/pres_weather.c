@@ -505,12 +505,13 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
     // Index:     ^   ^            ^   ^   ^
     //           stx data_start  p2+1  p1 etx
 	memcpy(hex_tmp, p2 + 1, hex_len); // Copy the 4 chars of the CRC into hex_tmp.
-
+	hex_tmp[hex_len] = '\0';
 	// Now strip the spaces so strtol only sees "8AB9"
 	strip_whitespace(hex_tmp); // This is likely not a required step, if the string does not have spaces.
 	uint16_t received = (uint16_t)strtol(hex_tmp, NULL, 16);
 
  	// Check if the CRC received is the same as the data sent with it.
+	//TODO: Add in a mutex lock here, when accessing sensor_one.
 	if (calculated != received && sensor_one->crc_checking_enabled) return CMD_INVALID_CRC;
 
     // --- IDENTIFY ENUM & PARSE CONTENT ---
@@ -588,10 +589,11 @@ CommandType parse_command(const char *buf, ParsedCommand *cmd) {
 	if (cmd->type == CMD_SET || cmd->type == CMD_SETNC) {
     	char *t;
     	char *s = saveptr;
-		size_t full_length = strlen(buf); // Use strlen() here to count the full length of the buf.
+		size_t full_length = strnlen(buf, MAX_INPUT_STR); // Use strnlen() here to count the full length of the buf.
 		if (full_length >= MAX_INPUT_STR) full_length = MAX_INPUT_STR - 1; // Safety check, only copy to the size of the buffer -1 for '\0'.
 		memcpy(cmd->params.set_params.full_cmd_string, buf, full_length); // Store the full buf CMD string to echo back to the SET command.
-    	#define NEXT_T strtok_r(NULL, " ", &s) // Small macro to keep the code below cleaner.
+    	cmd->params.set_params.full_cmd_string[full_length] = '\0';
+		#define NEXT_T strtok_r(NULL, " ", &s) // Small macro to keep the code below cleaner.
 
     	// IDs and Alarms
    		if ((t = NEXT_T)) cmd->params.set_params.new_sensor_id = atoi(t); // Store the updated sensor ID
