@@ -16,6 +16,7 @@
 #define MAX_FORM_STR 128
 #define MAX_ADDR_LEN 4
 #define MAX_SN_LEN 16
+#define MAX_SV_LEN 4
 #define MAX_PROD_NAME 10
 #define MAX_BATCH_NUM 64
 #define MAX_LITERAL_SIZE 30

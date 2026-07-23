@@ -38,7 +38,7 @@ int init_skyvue8_sensor(skyvue8_sensor **ptr) {
     skyvue8_sensor *s = *ptr;
 	// Identity
 	strncpy(s->serial_number, "SN1000", MAX_SN_LEN);
-    strncpy(s->software_version, "004", 4);
+    strncpy(s->software_version, "004", MAX_SV_LEN);
     s->address = '0';
 	// Configuration
     s->mode = SMODE_POLL;
