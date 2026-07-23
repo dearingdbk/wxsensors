@@ -267,6 +267,24 @@ typedef enum {
     CMD_INVALID_FORMAT  // Command format error
 } CommandType;
 
+typedef struct {
+    const char *name;
+    CommandType type;
+    size_t len;
+} CommandMap;
+
+#define CMD_ENTRY(str, enum_val) { str, enum_val, sizeof(str) - 1 }
+
+static const CommandMap cmd_table[] = {
+    CMD_ENTRY("POLL",   	CMD_POLL),
+    CMD_ENTRY("GET",     	CMD_GET),
+    CMD_ENTRY("SET",     	CMD_GET),
+    CMD_ENTRY("SETNC",     	CMD_GET),
+    CMD_ENTRY("MSGSET",     CMD_GET),
+    CMD_ENTRY("ACCRES",     CMD_GET)
+};
+
+#define CMD_TABLE_SIZE (sizeof(cmd_table) / sizeof(CommandMap))
 
 // Parsed command structure
 typedef struct {
