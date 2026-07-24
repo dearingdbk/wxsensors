@@ -2,7 +2,7 @@
  * File:     ceilometer.c
  * Author:   Bruce Dearing
  * Date:     27/02/2026
- * Version:  1.0
+ * Version:  1.1
  * Purpose:  Emulates a Campbell Scientific SkyVUE 8 LIDAR Ceilometer over RS-232/RS-485/USB.
  *           This program sets up a serial connection with two threads:
  *            - Receiver thread: parses and responds to incoming commands
