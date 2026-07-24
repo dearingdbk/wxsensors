@@ -126,7 +126,7 @@ $(BIN_DIR)/%/%: $(COMMON_OBJ)
 	else \
 		CURRENT_LDFLAGS="$(LDFLAGS)"; \
 		CURRENT_CFLAGS="$(CFLAGS)"; \
-		if [ "$$folder_name" = "rain" ]; then \
+		if [ "$$folder_name" = "rain" ] || [ "$$folder_name" = "fan_sim" ]; then \
 				echo "Adding libgpiod flags for $$folder_name..."; \
 				CURRENT_CFLAGS="$$CURRENT_CFLAGS $(GPIOD_CFLAGS)"; \
 				CURRENT_LDFLAGS="$$CURRENT_LDFLAGS $(GPIOD_LIBS)"; \
