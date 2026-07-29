@@ -21,8 +21,8 @@
  * 				Default BCM Pin: 27 (Physical Pin 13)
  *
  * Wiring:      GPIO_OUT_PIN (BCM 27) ───┐
- * 										 │ [NPN transistor]
- * 										GND ─────────────────────┘
+ * 					 │                [NPN transistor]
+ * 					GND ─────────────────────┘
  * 				GPIO drives the transistor base; the collector sinks the
  * 				tach line low for the pulse duration, mimicking an
  * 				open-collector fan tach pulse (active = pulse present).
@@ -63,19 +63,19 @@
 #include "console_utils.h"
 
 #define GPIO_CHIP           "/dev/gpiochip4"   // Pi 4 and earlier gpiochip0, Pi 5 gpiochip4
-#define GPIO_PIN            27                  // BCM pin 5, physical pin 13
+#define GPIO_PIN            27                 // BCM pin 27, physical pin 13
 
-#define PULSES_PER_REV      2                   // Typical 3/4-wire PC fan tach output
-#define PULSE_WIDTH_NS      200000LL            // 200us active pulse width
+#define PULSES_PER_REV      2                  // Typical 3/4-wire PC fan tach output
+#define PULSE_WIDTH_NS      200000LL           // 200us active pulse width
 
-#define DEFAULT_RPM         3000                // Starting RPM
+#define DEFAULT_RPM         3000               // Starting RPM
 #define MIN_RPM             0                  // Floor - 0 means "stalled" (no pulses)
-#define MAX_RPM_DEFAULT     6000                // Upper limit unless overridden via argv[3]
+#define MAX_RPM_DEFAULT     6000               // Upper limit unless overridden via argv[3]
 #define RPM_STEP            100                // RPM change per arrow keypress
 
 #define NS_PER_SEC          1000000000LL
-#define INPUT_POLL_MS        150                // How often input_thread rechecks 'terminate'
-#define ESC_SEQ_TIMEOUT_MS    50                // Wait for the rest of an escape sequence
+#define INPUT_POLL_MS        150               // How often input_thread rechecks 'terminate'
+#define ESC_SEQ_TIMEOUT_MS    50               // Wait for the rest of an escape sequence
 
 #define DEBUG_MODE // Comment this line out to disable all debug prints
 
@@ -503,7 +503,7 @@ static int enable_raw_mode(void) {
 int main(int argc, char *argv[]) {
 
 	if (argc < 2) {
-        safe_console_error("Usage: %s <file_path> <GPIO_chip> <GPIO_pin>\n", argv[0]);
+        safe_console_error("Usage: %s <GPIO_chip> [GPIO_pin] [MAX_RPM]\n", argv[0]);
         return 1;
     }
 
