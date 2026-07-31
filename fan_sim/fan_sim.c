@@ -34,7 +34,7 @@
  * 				- Starting RPM: 3000. Adjustable in RPM_STEP increments between
  * 				MIN_RPM and max_rpm (default MAX_RPM_DEFAULT, overridable via argv).
  *
- * Usage:       ./fan_rpm_sim [gpio_chip] [gpio_pin] [max_rpm]
+ * Usage:       ./fan_rpm_sim [gpio_chip> [gpio_pin] [max_rpm]
  * 				Example: ./fan_rpm_sim /dev/gpiochip4 17 6000
  * 				Controls: Up arrow = +RPM_STEP, Down arrow = -RPM_STEP, Ctrl+C = quit.
  *
