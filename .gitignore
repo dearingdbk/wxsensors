@@ -1,5 +1,5 @@
 bin/
 obj/
-cldn_parser/
-rh_temp/analog_rh.py
-rh_temp/mcp4728.py
+Doxyfile
+html/
+latex/
