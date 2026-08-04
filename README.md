@@ -193,6 +193,7 @@ Executables are output to the `bin/` directory, organized by sensor type.
 ```bash
 # General usage pattern
 <sensor> <data_file> [serial_port] [baud_rate] [RS232|RS422|RS485|SDI-12]
+<sesnor> <gpio_chip> [gpio_pin] [max_rpm]
 
 # Timing
 <sensor> <data_file> [serial_port] [baud_rate] [RS232|RS422|RS485|SDI-12] | ts '[%Y-%m-%d %H:%M:%.S]'
@@ -201,6 +202,7 @@ Executables are output to the `bin/` directory, organized by sensor type.
 bin/wind/wind_listen /path/to/wind_data.txt
 bin/wind/wind_listen /path/to/wind_data.txt /dev/ttyUSB0 9600 RS485
 bin/rh_temp/rh_temp_listen /path/to/rh_temp_data.txt /dev/ttyUSB1 9600 RS422
+bin/fan_sim/fan_sim /dev/gpiochip4 27 6000
 ```
 
 ### Parameters
@@ -250,7 +252,7 @@ wxsensors/
 │   ├── ptb330_utils.h
 │   ├── tss928_utils.h
 │   ├── q131.h
-│   ├── sensor_utils.h
+│   ├── windobserver75_utils.h
 │   ├── serial_utils.h
 │   └── skyvue8_utils.h
 ├── common/               # Shared source files
@@ -261,7 +263,7 @@ wxsensors/
 │   ├── file_utils.c
 │   ├── ptb330_utils.c
 │   ├── tss928_utils.c
-│   ├── sensor_utils.c
+│   ├── windobserver75_utils.c
 │   ├── serial_utils.c
 │   └── skyvue8_utils.c
 ├── wind/                 # Gill WindObserver 75 emulator
@@ -286,6 +288,8 @@ wxsensors/
 │   └── rain.c
 ├── sensor_control/       # Graphical User Interface Program
 │   └── sensor_control.c
+├── fan_sim/              # Aspirated Shield Fan Tachometer Signal emulator
+│   └── fan_sim.c
 ├── data_files/           # Sample sensor data files
 ├── bin/                  # Compiled executables (generated)
 ├── obj/                  # Object files (generated)
