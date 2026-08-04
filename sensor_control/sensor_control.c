@@ -40,7 +40,7 @@ extern const char* __lsan_default_suppressions() {
 #define MAX_PATH_LEN 256
 #define MAX_FLAGS_LEN 512
 #define MAX_WINDOW_WIDTH 950
-#define MAX_WINDOW_HEIGHT 650
+#define MAX_WINDOW_HEIGHT 700
 
 // Sensor definition structure
 typedef struct {
@@ -72,6 +72,7 @@ static SensorDef sensor_defs[] = {
     {"btd300",      "Biral BTD-300",            "./data_files/flash/flash_data.txt /dev/ttyUSB5 9600 RS422"},
     {"ice",         "Goodrich 0872F1",          "./data_files/ice/ice_data.txt /dev/ttyUSB6 2400 RS232"},
     {"rain",        "Campbell CS700H",          "./data_files/rain/rain_data.txt /dev/ttyUSB7 1200 SDI-12"},
+    {"fan_sim",	    "Aspirated Shield",		"/dev/gpiochip4 27 3000"},
     {NULL, NULL, NULL}
 };
 
