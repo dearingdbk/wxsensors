@@ -1092,7 +1092,6 @@ int main(int argc, char *argv[]) {
 	sigaddset(&block_set, SIGQUIT);
 	pthread_sigmask(SIG_BLOCK, &block_set, NULL);
 
-
 	// Initialize the send condition to use CLOCK_MONOTONIC
 	pthread_condattr_t attr;
     pthread_condattr_init(&attr);
@@ -1120,7 +1119,7 @@ int main(int argc, char *argv[]) {
 		cleanup_and_exit(1);
     } else send_thread_created = true;
 
-    safe_console_print("Press 'q' + Enter to quit.\n");
+    safe_console_print("Press 'ctrl-c' to quit.\n");
 	pthread_join(sig_thread, NULL);
 	sig_thread_created = false;
 

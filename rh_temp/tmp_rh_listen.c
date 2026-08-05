@@ -49,14 +49,25 @@
 #include <pthread.h>
 #include <signal.h>
 #include <time.h>
+#include <ctype.h>
 #include "serial_utils.h"
 #include "console_utils.h"
 #include "file_utils.h"
+#include "crc_utils.h"
+#include "hc2a_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B19200	     // Adjust as needed, main has logic to take arguments for a new baud rate
 #define MAX_LINE_LENGTH 1024
+#define MAX_CMD_LENGTH 256
 
+#define DEBUG_MODE // Comment this line out to disable all debug prints
+
+#ifdef DEBUG_MODE
+    #define DEBUG_PRINT(fmt, ...) printf("DEBUG: " fmt, ##__VA_ARGS__)
+#else
+    #define DEBUG_PRINT(fmt, ...) // Becomes empty space during compilation
+#endif
 
 FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
@@ -65,11 +76,24 @@ volatile sig_atomic_t terminate = 0;
 volatile sig_atomic_t kill_flag = 0;
 // volatile bool running = false;
 int serial_fd = -1;
+const char *program_name = "unknown";
+// This needs to be freed upon exit.
+HC2A_sensor *sensor_one = NULL; // Global pointer to struct for HC2A sensor.
 
 /* Synchronization primitives */
-static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
+static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
+static pthread_mutex_t sensor_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  sensor_cond; // Moved initialization down to main, to change REALTIME Clock to MONOTONIC.
 
-pthread_t sig_thread, recv_thread;
+// Global pointers to receiver and sender threads.
+pthread_t recv_thread, send_thread, sig_thread;
+
+
+bool recv_thread_created = false;
+bool send_thread_created = false;
+bool sig_thread_created = false;
+
+bool sensor_cond_init = false;
 
 
 /*
@@ -86,22 +110,31 @@ pthread_t sig_thread, recv_thread;
  * Notes:
  */
 void cleanup_and_exit(int exit_code) {
+    pthread_mutex_lock(&sensor_mutex);
     terminate = 1;
+    if (sensor_cond_init) pthread_cond_broadcast(&sensor_cond);
+    pthread_mutex_unlock(&sensor_mutex);
 
-	pthread_kill(sig_thread, SIGTERM);
-
-	if (recv_thread != 0) {
+    if (recv_thread_created) {
         pthread_join(recv_thread, NULL);
-        recv_thread = 0;
+        recv_thread_created = false;
+    }
+    if (send_thread_created) {
+        pthread_join(send_thread, NULL);
+        send_thread_created = false;
     }
 
-    if (sig_thread != 0) {
+    if (sig_thread_created) {
+        pthread_cancel(sig_thread);
         pthread_join(sig_thread, NULL);
-        sig_thread = 0;
+        sig_thread_created = false;
     }
 
+    pthread_mutex_destroy(&sensor_mutex);
     pthread_mutex_destroy(&file_mutex);
+    if (sensor_cond_init) pthread_cond_destroy(&sensor_cond);
 
+    if (sensor_one) free(sensor_one);
     // Close resources
     if (serial_fd >= 0) close(serial_fd);
     if (file_ptr) fclose(file_ptr);
@@ -111,13 +144,46 @@ void cleanup_and_exit(int exit_code) {
     exit(exit_code);
 }
 
-// ---------------- Command handling ----------------
+/*
+ * Name:         parse_message
+ * Purpose:      Tokenizes a space-delimited sensor string and populates a ParsedMessage struct.
+ * Arguments:    msg: the raw input string to be parsed (modified by strtok_r).
+ *               p_message: pointer to the struct where parsed data will be stored.
+ *
+ * Output:       None (internal debug prints to console only).
+ * Modifies:     p_message: overwrites with new data.
+ *               msg: the input string is modified (nulls inserted by strtok_r).
+ * Returns:      None
+ * Assumptions:  msg is a valid space-delimited string matching the sensor protocol.
+ *               p_message has been allocated by the caller.
+ *
+ * Bugs:         None known.
+ * Notes:        Uses a local macro NEXT_T to sequence through 32 expected fields.
+ *               Ensures string fields (METAR, BLM) are safely null-terminated.
+ */
+void parse_message(char *msg, ParsedMessage *p_message) {
+    return;
 
-typedef enum {
-    CMD_UNKNOWN,
-    CMD_RDD,
-} CommandType;
+}
 
+
+/*
+ * Name:         process_and_send
+ * Purpose:      Parse a data line, format the message string, and send with CRC.
+ * Arguments:    msg: Pointer to the ParsedMessage struct containing the data stripped from the file/buffer.
+ *
+ * Output:       Prints the formatted sensor message with STX/ETX and CRC to serial.
+ * Modifies:     None.
+ * Returns:      None.
+ * Assumptions:  sensor is initialized, and the msg has data fields filled.
+ *
+ * Bugs:         None known.
+ * Notes:        Ensures the 32-field format matches the hardware specification.
+ */
+void process_and_send(ParsedMessage *msg) {
+    return;
+
+}
 
 /*
  * Name:         parse_command
@@ -133,9 +199,47 @@ typedef enum {
  * Notes:
  */
 
-CommandType parse_command(const char* buf) {
-    if (strncmp(buf, "{F00RDD}", 6) == 0)   	return CMD_RDD; // Expected poll request from AWI and CS systems.
-    if (strncmp(buf, "{F00RDD", 7) == 0)    return CMD_RDD; // Optional command request with a checksum instead of '{' as the end.
+CommandType parse_command(const char* buf, ParsedCommand *cmd) {
+    memset(cmd, 0, sizeof(ParsedCommand));
+    cmd->type = CMD_UNKNOWN;
+    if (buf == NULL) return CMD_UNKNOWN;
+    char local_buf[MAX_CMD_LENGTH]; 
+    strncpy(local_buf, buf, MAX_CMD_LENGTH - 1);
+    local_buf[MAX_CMD_LENGTH - 1] = '\0'; 
+    
+    char *p = local_buf;
+    char* residual_ptr = NULL;
+    char *saveptr = NULL; // Our place keeper in the msg string.
+    char *token = NULL; // Where we temporarily store each token.
+    
+    // Commands come in this format |{F00RDD}<CR>
+    if (*p == '|') p++; // Skip past the first vertical bar, this is used with multiple sensors in slave mode.
+    if (*p == '{') {
+        p++; // Skip past the curly bracket to start looking at the address. 
+        
+        if (*p == ' ') {
+            p++; // Here the space represents an unknown identifier, all sensors will broadcast. 
+        } else if (isalpha((unsigned char)*p)) {
+            cmd->cmd_unit_ident = toupper(*p++);
+        }
+        
+        long val = strtol(p, &residual_ptr, 10);
+        if (p == residual_ptr) {
+            return CMD_UNKNOWN; 
+        } else {
+           cmd->sensor_id = (uint8_t)val; 
+        }
+        if ((token = strtok_r(residual_ptr, "}\r", &saveptr))) {
+                
+            for (size_t i = 0; i < CMD_TABLE_SIZE; i++) {
+                if (strncasecmp(token, cmd_table[i].name, cmd_table[i].len) == 0) {
+                    cmd->type = cmd_table[i].type;
+                    return cmd->type;
+                }
+            }
+        }
+    }
+    cmd->type = CMD_UNKNOWN;
     return CMD_UNKNOWN;
 }
 
@@ -153,14 +257,15 @@ CommandType parse_command(const char* buf) {
  * Bugs:         None known.
  * Notes:
  */
-void handle_command(CommandType cmd) {
+void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
     char *resp_copy = NULL;
-
+    p_cmd->cmd_unit_ident = 'F';
     switch (cmd) {
         case CMD_RDD:
             resp_copy = get_next_line_copy(file_ptr, &file_mutex);
             if (resp_copy) {
                 safe_serial_write(serial_fd, "%s\r\n", resp_copy);
+                DEBUG_PRINT("MADE IT HERE\n%s\r\n", resp_copy);
                 free(resp_copy);
             } else {
                 safe_console_error("ERR: Empty file\r\n");
@@ -203,7 +308,13 @@ void* signal_thread(void* arg) {
     terminate = 1;
     kill_flag = 1;
 
+    // safely wake threads
+    pthread_mutex_lock(&sensor_mutex);
+    pthread_cond_broadcast(&sensor_cond);
+    pthread_mutex_unlock(&sensor_mutex);
+
     return NULL;
+
 }
 
 
@@ -232,8 +343,10 @@ void* receiver_thread(void* arg) {
         if (n > 0) {
 	    if (c == '\r' || c == '\n') {
                 if (len > 0) {
-                    line[len] = '\0';
-				    handle_command(parse_command(line));
+                    line[len] = '\0'; // Terminate with NULL for safety.
+                    ParsedCommand local_cmd;
+                    CommandType cmd_type = parse_command(line, &local_cmd);
+                    handle_command(cmd_type, &local_cmd); // handle received command here.
                     len = 0;
                 }
             } else if (len < sizeof(line)-1) {
@@ -244,6 +357,80 @@ void* receiver_thread(void* arg) {
         } else {
             // no data available, avoid busy loop
             usleep(10000);
+        }
+    }
+    return NULL;
+}
+
+
+
+/*
+ * Name:         sender_thread
+ * Purpose:      On continuous == 1 and assuming terminate != 1 it will get the next line from a specified file, usinf
+ *               get_next_line_copy() and send that line to the serial device using safe_write_response() function every 2 seconds.
+ * Arguments:    arg: thread arguments.
+ *
+ * Output:       Error messages if encountered, prints to serial device.
+ * Modifies:     None.
+ * Returns:      NULL.
+ * Assumptions:  serial port will have data, and that data will translate to a command.
+ *
+ * Bugs:         None known.
+ * Notes:
+ */
+void* sender_thread(void* arg) {
+    (void)arg;
+    struct timespec ts;
+    bool should_send = false;
+    int interval = 0;
+
+    while (!terminate) {
+        pthread_mutex_lock(&sensor_mutex);
+
+        // Determine if we should wait for a specific time or indefinitely
+        if (sensor_one != NULL && sensor_one->mode == SMODE_M2) {
+            //interval = sensor_one->message_interval; // If we are in polled mode, message_interval is zero.
+            // Calculate absolute time: Last Send Time + Interval
+            // Use current REALTIME + (Interval - Time Since Last Send)
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+            // Add the continuous interval (in seconds) to the current time
+            ts.tv_sec += interval;
+            // Wait until that specific second arrives OR a signal interrupts us
+            pthread_cond_timedwait(&sensor_cond, &sensor_mutex, &ts);
+        } else {
+            // If in Polling/Stop Mode, wait indefinitely for a signal from the receiver
+            pthread_cond_wait(&sensor_cond, &sensor_mutex);
+        }
+
+        if (terminate) {
+            pthread_mutex_unlock(&sensor_mutex);
+            break;
+        }
+
+        // is_ready_to_send() handles the interval and timing logic internally, and checks if the sensor is Pollling or Continuous.
+        should_send = (sensor_one != NULL && HC2A_is_ready_to_send(sensor_one));
+
+        pthread_mutex_unlock(&sensor_mutex);  // <-- UNLOCK BEFORE I/O
+
+        // Do I/O operations WITHOUT holding the mutex
+        if (should_send) {
+            char *line = get_next_line_copy(file_ptr, &file_mutex);
+
+            if (line) {
+                ParsedMessage local_msg;  // LOCAL, not global
+                parse_message(line, &local_msg);
+                process_and_send(&local_msg);
+                fflush(NULL);  // Flush all output streams
+                free(line);
+                line = NULL;
+            }
+
+            // Update timestamp with lock
+            pthread_mutex_lock(&sensor_mutex);
+            if (sensor_one != NULL) {
+                clock_gettime(CLOCK_MONOTONIC, &sensor_one->last_send_time);
+            }
+            pthread_mutex_unlock(&sensor_mutex);
         }
     }
     return NULL;
@@ -279,6 +466,7 @@ int main(int argc, char *argv[]) {
         cleanup_and_exit(1);
     }
 
+    program_name = argv[0]; // Global variable to hold the program name for console errors.
     file_path = argv[1]; // gets the supplied file path
 
     file_ptr = fopen(file_path, "r");
@@ -301,6 +489,11 @@ int main(int argc, char *argv[]) {
 		cleanup_and_exit(1);
     }
 
+    if (init_HC2A_sensor(&sensor_one) != 0) {
+        safe_console_error("Failed to initialize sensor_one\n");
+        cleanup_and_exit(1);
+    }
+
 	// Block signals in main (inherited by all threads)
 	sigset_t block_set;
 	sigemptyset(&block_set);
@@ -308,7 +501,7 @@ int main(int argc, char *argv[]) {
 	sigaddset(&block_set, SIGTERM);
 	sigaddset(&block_set, SIGQUIT);
 	pthread_sigmask(SIG_BLOCK, &block_set, NULL);
-
+/*
 	// Then create signal thread
 	if (pthread_create(&sig_thread, NULL, signal_thread, NULL) != 0) {
         safe_console_error("Failed to create signal thread: %s\n", strerror(errno));
@@ -321,9 +514,47 @@ int main(int argc, char *argv[]) {
         terminate = 1;          // <- symmetrical, but not required
 		cleanup_and_exit(1);
     }
+*/
+    // Initialize the send condition to use CLOCK_MONOTONIC
+    pthread_condattr_t attr;
+    pthread_condattr_init(&attr);
+    pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+    pthread_cond_init(&sensor_cond, &attr); // Initialize the global variable here
+    sensor_cond_init = true;
+    pthread_condattr_destroy(&attr);
 
-    safe_console_print("Press 'q' + Enter to quit.\n");
-    while (!kill_flag) { // Keep looping until the global kill_flag is set (user wants to quit or signal received)
+    if (pthread_create(&sig_thread, NULL, signal_thread, NULL) != 0) {
+        safe_console_error("Failed to create signal thread: %s\n", strerror(errno));
+        terminate = 1;          // <- symmetrical, but not required
+        cleanup_and_exit(1);
+    } else sig_thread_created = true;
+
+    if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
+        safe_console_error("Failed to create receiver thread: %s\n", strerror(errno));
+        terminate = 1;          // <- needed because sig_thread is running
+        cleanup_and_exit(1);
+    } else recv_thread_created = true;
+
+
+    if (pthread_create(&send_thread, NULL, sender_thread, NULL) != 0) {
+        safe_console_error("Failed to create sender thread: %s\n", strerror(errno));
+        terminate = 1;          // <- needed because recv_thread is running
+        cleanup_and_exit(1);
+    } else send_thread_created = true;
+
+
+    ParsedCommand local_cmd;
+    CommandType cmd_type = parse_command("{ 99RDD}\r", &local_cmd);
+    handle_command(cmd_type, &local_cmd); // handle received command here.
+    
+    safe_console_print("Press 'ctrl-c' to quit.\n");
+    pthread_join(sig_thread, NULL); // Wait until signal thread joins.
+    sig_thread_created = false;
+    safe_console_print("Program %s terminated.\n", program_name);
+    cleanup_and_exit(0);
+    return 0; // We won't get here, but it quiets verbose warnings on a no return value.
+    
+    /*while (!kill_flag) { // Keep looping until the global kill_flag is set (user wants to quit or signal received)
         char input[8];   // Buffer to store user input (up to 7 chars + null terminator)
         // try to read a line from standard input (stdin)
         if (fgets(input, sizeof(input), stdin)) {
@@ -339,5 +570,5 @@ int main(int argc, char *argv[]) {
 
 	safe_console_print("Program terminated.\n");
 	cleanup_and_exit(0);
-    return 0;
+    return 0;*/
 }
