@@ -463,7 +463,7 @@ void process_and_send(ParsedMessage *msg) {
 
 	char msg_buffer[MAX_MSG_LENGTH]; // 512
 	char local_software_version[MAX_SV_LEN]; // 4
-
+    
 	pthread_mutex_lock(&sensor_mutex);
 	char local_address = (char)sensor_one->address;
 	strncpy(local_software_version, sensor_one->software_version, MAX_SV_LEN - 1);
