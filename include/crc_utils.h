@@ -31,4 +31,6 @@ uint16_t calculate_cs4(const char *str, size_t len);
 
 unsigned char calculate_csx(const char *str, size_t len);
 
+char checksum(const char *str);
+
 #endif
