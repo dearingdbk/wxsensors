@@ -74,7 +74,7 @@ FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
 // Shared state
 volatile sig_atomic_t terminate = 0;
-volatile sig_atomic_t kill_flag = 0;
+//volatile sig_atomic_t kill_flag = 0;
 // volatile bool running = false;
 int serial_fd = -1;
 const char *program_name = "unknown";
@@ -298,6 +298,7 @@ CommandType parse_command(const char* buf, ParsedCommand *cmd) {
  * Notes:
  */
 void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
+(void) p_cmd;
     switch (cmd) {
         case CMD_RDD:
             char *line = get_next_line_copy(file_ptr, &file_mutex);
@@ -311,6 +312,24 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
             } else {
                 safe_console_error("ERR: Empty file\r\n");
             }
+            break;
+        case CMD_REN:
+            //  TODO:
+            break;
+        case CMD_HCA:
+            // TODO:
+            break;
+        case CMD_LGC:
+            // TODO:
+            break;
+        case CMD_ERD:
+            // TODO:
+            break;
+        case CMD_TID:
+            // TODO:
+            break;
+        case CMD_HRD:
+            // TODO:
             break;
         default:
             safe_console_print("CMD: Unknown command\n");
@@ -347,7 +366,6 @@ void* signal_thread(void* arg) {
     sigwait(&wait_set, &sig);     // Blocks until a signal arrives
 
     terminate = 1;
-    kill_flag = 1;
 
     // safely wake threads
     pthread_mutex_lock(&sensor_mutex);
@@ -478,24 +496,24 @@ void* sender_thread(void* arg) {
 }
 
 /*
- * Name:         Main
- * Purpose:      Main funstion, which opens up serial port, and creates a receiver and transmit threads to listen, and respond to commands 
- *               over that serial port. Can take two arguments or no arguments. If changing the serial device name and baud rate, you must supply both.
- *               i.e. tmp_bp_listen <serial_device> <baud_rate>
- *		 uses ternary statements to set either default values for SERIAL_PORT, and BAUD_RATE which are defined above.
- * 		 (condition) ? (value if true) : (value if false)
+ * Name:        Main
+ * Purpose:     Main funstion, which opens up serial port, and creates a receiver and transmit threads to listen, and respond to commands 
+ *              over that serial port. Can take two arguments or no arguments. If changing the serial device name and baud rate, you must supply both.
+ *              i.e. tmp_bp_listen <serial_device> <baud_rate>
+ *		        uses ternary statements to set either default values for SERIAL_PORT, and BAUD_RATE which are defined above.
+ *              (condition) ? (value if true) : (value if false)
  *
- * Arguments:    file_path: The location of the file we want to read from, line by line.
- *               device: the string representing the file descriptor of the serial port which should
- * 		 match the pattern ^/dev/tty(S|USB)[0-9]+$. This is tested with function is_valid_tty()
- *		 baud: the string value representing the proposed baud rate, this string is sent to get_baud_rate() which returns a speed_t value.
+ * Arguments:   file_path: The location of the file we want to read from, line by line.
+ *              device: the string representing the file descriptor of the serial port which should
+ * 		        match the pattern ^/dev/tty(S|USB)[0-9]+$. This is tested with function is_valid_tty()
+ *		        baud: the string value representing the proposed baud rate, this string is sent to get_baud_rate() which returns a speed_t value.
  *
- * Output:       Prints to stderr the appropriate error messages if encountered.
- * Modifies:     None.
- * Returns:      Returns an int 0 representing success once the program closes the fd, and joins the threads, or 1 if unable to open the serial port.
- * Assumptions:  device is a valid char * pointer and the line contains
- *               characters other than white space, and points to an FD.
- *		 The int provided by arguments is a valid baud rate, although B9600 is set on any errors.
+ * Output:      Prints to stderr the appropriate error messages if encountered.
+ * Modifies:    None.
+ * Returns:     Returns an int 0 representing success once the program closes the fd, and joins the threads, or 1 if unable to open the serial port.
+ * Assumptions: device is a valid char * pointer and the line contains
+ *              characters other than white space, and points to an FD.
+ *		        The int provided by arguments is a valid baud rate, although B9600 is set on any errors.
  *
  * Bugs:         None known.
  * Notes:
@@ -542,20 +560,8 @@ int main(int argc, char *argv[]) {
 	sigaddset(&block_set, SIGTERM);
 	sigaddset(&block_set, SIGQUIT);
 	pthread_sigmask(SIG_BLOCK, &block_set, NULL);
-/*
-	// Then create signal thread
-	if (pthread_create(&sig_thread, NULL, signal_thread, NULL) != 0) {
-        safe_console_error("Failed to create signal thread: %s\n", strerror(errno));
-        terminate = 1;          // <- symmetrical, but not required
-		cleanup_and_exit(1);
-	}
-
-    if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
-        safe_console_error("Failed to create receiver thread: %s\n", strerror(errno));
-        terminate = 1;          // <- symmetrical, but not required
-		cleanup_and_exit(1);
-    }
-*/
+    
+    
     // Initialize the send condition to use CLOCK_MONOTONIC
     pthread_condattr_t attr;
     pthread_condattr_init(&attr);
