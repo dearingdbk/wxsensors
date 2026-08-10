@@ -60,6 +60,7 @@
 #define BAUD_RATE   B19200	     // Adjust as needed, main has logic to take arguments for a new baud rate
 #define MAX_LINE_LENGTH 1024
 #define MAX_CMD_LENGTH 256
+#define MAX_MSG_LENGTH 512
 
 #define DEBUG_MODE // Comment this line out to disable all debug prints
 
@@ -162,8 +163,20 @@ void cleanup_and_exit(int exit_code) {
  *               Ensures string fields (METAR, BLM) are safely null-terminated.
  */
 void parse_message(char *msg, ParsedMessage *p_message) {
-    return;
+    memset(p_message, 0, sizeof(ParsedMessage)); // zero out the ParsedMessage struct.
+    char *saveptr; // Our place keeper in the msg string.
+    char *token; // Where we temporarily store each token.
 
+    // These are pulled from a text file in this format:
+    // 4.45,0,20.07,0,0
+    // RH, RH Alarm, Temp, Temp Alarm, Alarm Byte
+    if ((token = strtok_r(msg, ",", &saveptr))) p_message->rel_humidity = (float)strtof(token, NULL);  // Set Relative Humidity.
+    #define NEXT_T strtok_r(NULL, ",", &saveptr) // Small macro to keep the code below cleaner.
+    if ((token = NEXT_T)) p_message->rh_alarm = (uint8_t)atoi(token);                         // Set RH Alarm Status.
+    if ((token = NEXT_T)) p_message->temperature = (float)strtof(token, NULL);             // Set Temperature.
+    if ((token = NEXT_T)) p_message->temp_alarm = (uint8_t)atoi(token);                       // Set Teperature Alarm.
+    if ((token = NEXT_T)) p_message->alarm_byte = (uint8_t)atoi(token);                       // Set Alarm Byte.
+    #undef NEXT_T
 }
 
 
@@ -181,8 +194,35 @@ void parse_message(char *msg, ParsedMessage *p_message) {
  * Notes:        Ensures the 32-field format matches the hardware specification.
  */
 void process_and_send(ParsedMessage *msg) {
-    return;
+    
+    if (msg == NULL) return;
+    char msg_buffer[MAX_MSG_LENGTH]; // 512
+    HC2A_sensor local_sensor;
+    pthread_mutex_lock(&sensor_mutex);
+    char rh_char   = trend_tracker_update(&sensor_one->rh_trend, msg->rel_humidity);
+    char temp_char = trend_tracker_update(&sensor_one->temp_trend, msg->temperature);
+    local_sensor = *sensor_one;
+    pthread_mutex_unlock(&sensor_mutex);
 
+    snprintf(msg_buffer, sizeof(msg_buffer), "{%c%02urdd %03u; %.2f;%%rh;%03u;%c; %.2f;°C;%03u;%c;nc;---.-;°C;000; ;%03u;%s;%s;%s ;%03u;",
+                                                            (char)local_sensor.unit_ident,  // Unit Identifier 'F'
+                                                            (unsigned int)local_sensor.address,
+                                                            (unsigned int)local_sensor.probe_type,
+                                                            (float)msg->rel_humidity,       // RH
+                                                            (unsigned int)msg->rh_alarm,
+                                                            (char)rh_char,
+                                                            (float)msg->temperature,
+                                                            (unsigned int)msg->temp_alarm,
+                                                            (char)temp_char,
+                                                            (unsigned int)local_sensor.device_type,
+                                                            local_sensor.firmware_version,
+                                                            local_sensor.serial_number,
+                                                            local_sensor.device_name,
+                                                            msg->alarm_byte);
+    char calc_checksum = checksum(msg_buffer);
+    safe_serial_write(serial_fd, "%s%c\r\n", msg_buffer, calc_checksum);
+    DEBUG_PRINT("%s%c\r\n", msg_buffer, calc_checksum);
+    
 }
 
 /*
@@ -258,15 +298,16 @@ CommandType parse_command(const char* buf, ParsedCommand *cmd) {
  * Notes:
  */
 void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
-    char *resp_copy = NULL;
-    p_cmd->cmd_unit_ident = 'F';
     switch (cmd) {
         case CMD_RDD:
-            resp_copy = get_next_line_copy(file_ptr, &file_mutex);
-            if (resp_copy) {
-                safe_serial_write(serial_fd, "%s\r\n", resp_copy);
-                DEBUG_PRINT("MADE IT HERE\n%s\r\n", resp_copy);
-                free(resp_copy);
+            char *line = get_next_line_copy(file_ptr, &file_mutex);
+            if (line) {
+                ParsedMessage local_msg;  // LOCAL, not global
+                parse_message(line, &local_msg);
+                process_and_send(&local_msg);
+                fflush(NULL);  // Flush all output streams
+                free(line);
+                line = NULL;
             } else {
                 safe_console_error("ERR: Empty file\r\n");
             }
@@ -388,7 +429,7 @@ void* sender_thread(void* arg) {
         pthread_mutex_lock(&sensor_mutex);
 
         // Determine if we should wait for a specific time or indefinitely
-        if (sensor_one != NULL && sensor_one->mode == SMODE_M2) {
+        if (sensor_one != NULL && sensor_one->mode == SMODE_M1) {
             //interval = sensor_one->message_interval; // If we are in polled mode, message_interval is zero.
             // Calculate absolute time: Last Send Time + Interval
             // Use current REALTIME + (Interval - Time Since Last Send)
@@ -543,32 +584,10 @@ int main(int argc, char *argv[]) {
     } else send_thread_created = true;
 
 
-    ParsedCommand local_cmd;
-    CommandType cmd_type = parse_command("{ 99RDD}\r", &local_cmd);
-    handle_command(cmd_type, &local_cmd); // handle received command here.
-    
     safe_console_print("Press 'ctrl-c' to quit.\n");
     pthread_join(sig_thread, NULL); // Wait until signal thread joins.
     sig_thread_created = false;
     safe_console_print("Program %s terminated.\n", program_name);
     cleanup_and_exit(0);
     return 0; // We won't get here, but it quiets verbose warnings on a no return value.
-    
-    /*while (!kill_flag) { // Keep looping until the global kill_flag is set (user wants to quit or signal received)
-        char input[8];   // Buffer to store user input (up to 7 chars + null terminator)
-        // try to read a line from standard input (stdin)
-        if (fgets(input, sizeof(input), stdin)) {
-            if (input[0] == 'q' || input[0] == 'Q' || kill_flag == 1) {
-                terminate = 1;
-		break;
-            }
-        } else { // fgets returned NULL: could be EOF or read error
-            if (feof(stdin)) { terminate = 1; kill_flag = 1; break; } // Check if end-of-file (EOF) was reached
-            if (ferror(stdin)) { clearerr(stdin); continue; }  // Check if a read error occurred, re-loop
-        }
-    }
-
-	safe_console_print("Program terminated.\n");
-	cleanup_and_exit(0);
-    return 0;*/
 }

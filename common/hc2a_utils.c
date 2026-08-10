@@ -36,13 +36,18 @@ int init_HC2A_sensor(HC2A_sensor **ptr) {
     if (!*ptr) return -1;
     HC2A_sensor *s = *ptr;
 	// Identity
-    s->address = 99;
+    s->address = 00;
+    s->unit_ident = 'F';
 	// Configuration
     s->mode = SMODE_M2;
+    s->probe_type = 1; // 1 = digital probe, 2 = analog probe, 3 = pressure probe.
+    s->device_type = 20;                   // 
     strncpy(s->serial_number, "0025036130", MAX_SN_LEN);
     strncpy(s->device_name, "HC2A", MAX_NAME_STR);
     strncpy(s->firmware_version, "V1.2-1", MAX_FIRM_VER);
-	// Timing
+	memset(&s->temp_trend, 0, sizeof(s->temp_trend));
+	memset(&s->rh_trend, 0, sizeof(s->rh_trend));
+    // Timing
 	time_t now;
 	time(&now); // Get our current epoch time.
 	gmtime_r(&now, &s->sensor_time); // Store current epoch time in our tm struct.
@@ -75,4 +80,32 @@ bool HC2A_is_ready_to_send(HC2A_sensor *sensor) {
     if (sensor->mode == SMODE_M1) return true;
     if (sensor->mode == SMODE_M2) return true;
     return false;
+}
+
+
+char trend_tracker_update(trend_tracker_t *t, float value)
+{
+    char trend = '=';
+
+    if (t->count == TREND_HISTORY_LEN) {
+        // Buffer is full: the slot about to be overwritten holds the
+        // reading from exactly TREND_WINDOW_S seconds ago.
+        float baseline = t->samples[t->head];
+        float delta = value - baseline;
+
+        if (delta > TREND_THRESHOLD) {
+            trend = '+';
+        } else if (delta < -TREND_THRESHOLD) {
+            trend = '-';
+        }
+    }
+    // else: fewer than 60s of history so far, stay at '='
+
+    t->samples[t->head] = value;
+    t->head = (t->head + 1) % TREND_HISTORY_LEN;
+    if (t->count < TREND_HISTORY_LEN) {
+        t->count++;
+    }
+
+    return trend;
 }
