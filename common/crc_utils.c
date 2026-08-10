@@ -167,6 +167,20 @@ uint8_t checksumXOR(const char *str_to_chk) {
     return checksum;
 }
 
+
+/*
+ * Name:         calculate_cs2
+ * Purpose:      Takes a '\0' delimited string, and returns a checksum of the characters XOR.
+ * Arguments:    str_to_chk the string that checksum will be calculated for
+ *
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      returns an unsigned char of the checksum of str.
+ * Assumptions:  Terminate is set to false.
+ *
+ * Bugs:         None known.
+ * Notes:        To print in HEX utilize dprintf(serial_fd, "%c%s%c%02X\r\n",2, str_to_chk, check_sum(str_to_chk));
+ */
 unsigned char calculate_cs2(const char *str, size_t len) {
     unsigned char sum = 0;
 
@@ -177,7 +191,19 @@ unsigned char calculate_cs2(const char *str, size_t len) {
     return sum;
 }
 
-
+/*
+ * Name:         calculate_cs4
+ * Purpose:      Takes a '\0' delimited string, and returns a checksum of the characters XOR.
+ * Arguments:    str_to_chk the string that checksum will be calculated for
+ *
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      returns an unsigned 16 bit integer of the checksum of str_to_chk.
+ * Assumptions:  Terminate is set to false.
+ *
+ * Bugs:         None known.
+ * Notes:        To print in HEX utilize dprintf(serial_fd, "%c%s%c%02X\r\n",2, str_to_chk, check_sum(str_to_chk));
+ */
 uint16_t calculate_cs4(const char *str, size_t len) {
     uint16_t sum = 0; // uint16_t naturally wraps at 65535
     for (size_t i = 0; i < len; i++) {
@@ -186,6 +212,20 @@ uint16_t calculate_cs4(const char *str, size_t len) {
     return sum;
 }
 
+
+/*
+ * Name:         calculate_csx
+ * Purpose:      Takes a '\0' delimited string, and returns a checksum of the characters XOR.
+ * Arguments:    str_to_chk the string that checksum will be calculated for
+ *
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      returns an unsigned 8 bit integer of the checksum of str_to_chk.
+ * Assumptions:  Terminate is set to false.
+ *
+ * Bugs:         None known.
+ * Notes:        To print in HEX utilize dprintf(serial_fd, "%c%s%c%02X\r\n",2, str_to_chk, check_sum(str_to_chk));
+ */
 unsigned char calculate_csx(const char *str, size_t len) {
     unsigned char xor_result = 0;
 
@@ -200,5 +240,30 @@ unsigned char calculate_csx(const char *str, size_t len) {
         xor_result ^= b;
     }
     return xor_result;
+}
+
+/*
+ * Name:         checksum
+ * Purpose:      Takes a '\0' delimited string, and returns a checksum of the characters XOR.
+ * Arguments:    str_to_chk the string that checksum will be calculated for
+ *
+ * Output:       None.
+ * Modifies:     None.
+ * Returns:      returns an unsigned char of the checksum of str.
+ * Assumptions:  Terminate is set to false.
+ *
+ * Bugs:         None known.
+ * Notes:        To print in HEX utilize dprintf(serial_fd, "%c%s%c%02X\r\n",2, str_to_chk, check_sum(str_to_chk));
+ */
+char checksum(const char *str) {
+    int sum = 0;
+
+    if (str == NULL) return ' ';
+
+    while (*str != '\0') {
+        sum += (unsigned char)(*str);
+        str++;
+    }   
+    return (char)((sum & 0x003F) + 0x0020);
 }
 
