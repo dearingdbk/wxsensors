@@ -1123,7 +1123,7 @@ int main(int argc, char *argv[]) {
 	pthread_join(sig_thread, NULL);
 	sig_thread_created = false;
 
-    safe_console_print("Program terminated.\n");
+    safe_console_print("\rProgram terminated.\n");
 	cleanup_and_exit(0);
 	return 0; // We won't get here, but it quiets verbose warnings on a no return value.
 }

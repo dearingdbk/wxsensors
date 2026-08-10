@@ -753,7 +753,7 @@ int main(int argc, char *argv[]) {
 	pthread_join(sig_thread, NULL); // wait until the signal handle thread joins.
 	sig_thread_created = false;
 
-    safe_console_print("Program %s terminated.\n", program_name);
+    safe_console_print("\rProgram %s terminated.\n", program_name);
 	cleanup_and_exit(0);
 	return 0; // We won't get here, but it quiets verbose warnings on a no return value.
 }
