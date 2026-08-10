@@ -68,11 +68,11 @@ static SensorDef sensor_defs[] = {
     {"rh_temp",     "Rotronic HC2A-S3",         "./data_files/rh_temp/rh_temp_data.txt /dev/ttyUSB1 9600 RS485"},
     {"pres_weather","Campbell AtmosVue30",      "./data_files/pres_weather/pres_weather.txt /dev/ttyUSB2 38400 RS232"},
     {"dsp8100",  	"Barometric Sensor",        "./data_files/barometric/barometric_data.txt /dev/ttyUSB3 9600 RS485"},
-    {"ceilometer",  "Ceilometer",               "./data_files/ceilometer/ceil_data.txt /dev/ttyUSB4 115200 RS232"},
-    {"btd300",      "Biral BTD-300",            "./data_files/flash/flash_data.txt /dev/ttyUSB5 9600 RS422"},
+    {"ceilometer",  "Ceilometer",               "./data_files/ceilometer/skyvue8_test_data.txt /dev/ttyUSB4 115200 RS232"},
+    {"tss928",      "Vaisala TSS-928",          "./data_files/flash/tss928_flash_data.txt /dev/ttyUSB5 9600 RS422"},
     {"ice",         "Goodrich 0872F1",          "./data_files/ice/ice_data.txt /dev/ttyUSB6 2400 RS232"},
-    {"rain",        "Campbell CS700H",          "./data_files/rain/rain_data.txt /dev/ttyUSB7 1200 SDI-12"},
-    {"fan_sim",	    "Aspirated Shield",		"/dev/gpiochip4 27 3000"},
+    {"rain",        "Campbell CS700H",          "./data_files/rain/rain_data.txt /dev/gpiochip4 17"},
+    {"fan_sim",	    "Aspirated Shield",		    "/dev/gpiochip4 27 3000"},
     {NULL, NULL, NULL}
 };
 
