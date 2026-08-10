@@ -94,7 +94,7 @@ char *file_path = NULL; // path to file
 // Shared state
 int sampling = 0; // Is the sensor in sampling mode or not, the default for the sensor will be yes i.e. 1.
 volatile sig_atomic_t terminate = 0;
-volatile sig_atomic_t kill_flag = 0;
+//volatile sig_atomic_t kill_flag = 0;
 
 int serial_fd = -1;
 
@@ -104,6 +104,8 @@ static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file
 pthread_t sig_thread, recv_thread;
 bool sig_thread_created = false;
 bool recv_thread_created = false;
+
+const char *program_name = "unknown";
 
 /*
  * Name:         cleanup_and_exit
@@ -287,7 +289,6 @@ void* signal_thread(void* arg) {
     sigwait(&wait_set, &sig);     // Blocks until a signal arrives
 
     terminate = 1;
-    kill_flag = 1;
 
     return NULL;
 }
@@ -394,7 +395,7 @@ int main(int argc, char *argv[]) {
     }
 
     file_path = argv[1];
-
+    program_name = argv[0]; // Global variable to hold the program name for console errors.
     file_ptr = fopen(file_path, "r");
     if (!file_ptr) {
         safe_console_error("Failed to open file: %s\n", strerror(errno));
@@ -440,7 +441,7 @@ int main(int argc, char *argv[]) {
 
 	pthread_join(sig_thread, NULL); // Wait until the signal handle thread joins.
 	sig_thread_created = false;
-    safe_console_print("\rProgram terminated.\n");
+    safe_console_print("\rProgram %s terminated.\n", program_name);
 	cleanup_and_exit(0);
     return 0;
 }
