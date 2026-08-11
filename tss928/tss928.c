@@ -226,6 +226,7 @@ bool sig_thread_created = false;
 bool sensor_cond_init = false;
 bool data_sleep_cond_init = false;
 
+int8_t temperature = 0;
 /*
  * Name:         cleanup_and_exit
  * Purpose:      helper function to cleanup sensors, and arrays.
@@ -309,8 +310,8 @@ void parse_message(char *msg) {
 	char *token; // Where we temporarily store each token.
     pthread_mutex_lock(&sensor_mutex); // Lock before IO on sensor_one.
 	// These are pulled from a text file in this format:
-	//	NEAR N,NEAR NE, NEAR E,NEAR SE,NEAR S,NEAR SW,NEAR W,NEAR NW,DIST N,DIST NE,DIST E,DIST SE,DIST S,DIST SW,DIST W,DIST NW, OVHD, CLOUD
-	//	  0		 0		  0		 0		 0		0		0		0	   0	  0		  0		 0		 0		0		0	   0		0	   0
+	//	NEAR N,NEAR NE, NEAR E,NEAR SE,NEAR S,NEAR SW,NEAR W,NEAR NW,DIST N,DIST NE,DIST E,DIST SE,DIST S,DIST SW,DIST W,DIST NW, OVHD, CLOUD TEMP
+	//	  0		 0		  0		 0		 0		0		0		0	   0	  0		  0		 0		 0		0		0	   0		0	   0   27
 	if ((token = strtok_r(msg, ",", &saveptr))) record_ground_strike(&sensor_one->strikes, NEAR, NORTH, (uint16_t)atoi(token)); // Range Ring 0 (NEAR), Quadrant 0 (N)
    	#define NEXT_T strtok_r(NULL, ",", &saveptr) // Small macro to keep the code below cleaner.
    	if ((token = NEXT_T)) record_ground_strike(&sensor_one->strikes, NEAR, NORTH_EAST, (uint16_t)atoi(token)); 	// Range Ring 0 (NEAR), Quadrant 1 (NE)
@@ -330,6 +331,7 @@ void parse_message(char *msg) {
 	if ((token = NEXT_T)) record_ground_strike(&sensor_one->strikes, DIST, NORTH_WEST, (uint16_t)atoi(token));	// Range Ring 1 (DIST), Quadrant 7 (NW)
 	if ((token = NEXT_T)) record_overhead_strike(&sensor_one->strikes, (uint16_t)atoi(token));					// Overhead Strikes
 	if ((token = NEXT_T)) record_cloud_strike(&sensor_one->strikes, (uint16_t)atoi(token));						// Cloud Lightning
+	if ((token = NEXT_T)) temperature =  (int8_t)atoi(token);						                            // Temperature
 	#undef NEXT_T
     pthread_mutex_unlock(&sensor_mutex); // Unlock after IO on sensor_one.
 }
@@ -362,7 +364,7 @@ void process_and_send(void) {
 	}
 	safe_serial_write(serial_fd, "NEAR: N %u NE %u E %u SE %u S %u SW %u W %u NW %u\r\n"
 								 "DIST: N %u NE %u E %u SE %u S %u SW %u W %u NW %u\r\n"
-								 "OVHD %u CLOUD %u TOTAL %u %c %02xH %d C %u %u %u %u %u %f\r\n",
+								 "OVHD %u CLOUD %u TOTAL %u %c %02xH %d C %u %u %u %u %u %.3f\r\n",
 									sensor_one->strikes.ground_totals[NEAR][NORTH], 		// NEAR N
 									sensor_one->strikes.ground_totals[NEAR][NORTH_EAST],	// NEAR NE
 									sensor_one->strikes.ground_totals[NEAR][EAST],			// NEAR E
@@ -384,7 +386,7 @@ void process_and_send(void) {
 									temp_total,												// TOTALS
 									'P',													// char P | F Pass or Fail
 									0,														// Status Code 00-FF
-									27,														// Temperature TODO: build a function to get current temperature.
+									temperature,											// Temperature TODO: build a function to get current temperature.
 									sensor_one->strikes.total_strikes_since_reset,			// Total Strikes since Self Test
 									0,													 	// Total rejected strokes
 									0,														// Total rejected by minimum EB ratio since last selftest
@@ -462,11 +464,13 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 	switch (cmd) {
 		case CMD_SEND:
 			process_and_send();
+            fflush(NULL);  // Flush all output streams
 			break;
 		case CMD_STATUS:
 			// TODO: NOT Implemented fully, STATUS message sends flashes and strokes.
-			process_and_send();
-			break;
+			process_and_send();	
+            fflush(NULL);  // Flush all output streams
+            break;
 		case CMD_RESET:
 			pthread_mutex_lock(&sensor_mutex);
 			reset_sensor(sensor_one);
@@ -474,13 +478,13 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 							   sensor_one->loader_version,
 							   sensor_one->software_version,
 							   sensor_one->copyright_information,
-							   'P', 0, 27, sensor_one->strikes.total_strikes_since_reset, 0, 0, 0, 0, 0.000);
+							   'P', 0, temperature, sensor_one->strikes.total_strikes_since_reset, 0, 0, 0, 0, 0.000);
 			pthread_mutex_unlock(&sensor_mutex);
 			break;
 		case CMD_SELFTEST:
 			pthread_mutex_lock(&sensor_mutex);
 			conduct_self_test(sensor_one);
-			safe_serial_write(serial_fd, "%c %02xH %d C %u %u %u %u %u %f\r\n",'P', 0, 27, sensor_one->strikes.total_strikes_since_reset, 0, 0, 0, 0, 0.000);
+			safe_serial_write(serial_fd, "%c %02xH %d C %u %u %u %u %u %f\r\n",'P', 0, temperature, sensor_one->strikes.total_strikes_since_reset, 0, 0, 0, 0, 0.000);
 			pthread_mutex_unlock(&sensor_mutex);
 			break;
 		case CMD_TYPETEST:
