@@ -401,7 +401,7 @@ void* receiver_thread(void* arg) {
         int n = read(serial_fd, &c, 1);
         if (n > 0) {
 	    if (c == '\r' || c == '\n') {
-                if (len > 0) {
+            if (len > 0) {
                     line[len] = '\0'; // Terminate with NULL for safety.
                     ParsedCommand local_cmd;
                     CommandType cmd_type = parse_command(line, &local_cmd);
