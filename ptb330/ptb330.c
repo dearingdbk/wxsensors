@@ -167,7 +167,10 @@ void cleanup_and_exit(int exit_code) {
 
     if (sensor_one) free(sensor_one);
     // Close resources
-    if (serial_fd >= 0) close(serial_fd);
+    if (serial_fd >= 0) {
+        tcflush(serial_fd, TCOFLUSH);
+        close(serial_fd);
+    }
     if (file_ptr) fclose(file_ptr);
     // Cleanup utilities
     console_cleanup();

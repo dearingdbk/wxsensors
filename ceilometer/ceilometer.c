@@ -110,7 +110,7 @@
  *           - Battery: Internal 12V 7Ah sealed lead-acid with deep discharge protection
  *           - USB service port: USB 1.1/2.0 compatible, fixed 115200 baud
  *           - Weight: 18 kg (40 lb) excluding cables
- *           - Dimensions: 737mm H × 294mm W × 240mm D (29" × 11.6" × 9.5")
+ *           - Dimensions: 737mm H × 294mm W × 240mm D (29" × 11.6" × 9.5"")
  *           - Base plate: 316 × 316 mm (12.4" × 12.4")
  *           - Tilt angles: 0°, 6°, 12°, 18°, 24° from vertical (adjustable)
  *           - Tilt compensation: Automatic via dual-axis inclinometer
@@ -380,7 +380,10 @@ void cleanup_and_exit(int exit_code) {
 
     if (sensor_one) free(sensor_one);
     // Close resources
-    if (serial_fd >= 0) close(serial_fd);
+    if (serial_fd >= 0) {
+        tcflush(serial_fd, TCOFLUSH);
+        close(serial_fd);
+    }
     if (file_ptr) fclose(file_ptr);
     // Cleanup utilities
     console_cleanup();
