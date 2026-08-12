@@ -77,8 +77,8 @@ int init_av30_sensor(av30_sensor **ptr) {
     av30_sensor *sensor = (av30_sensor *)malloc(sizeof(av30_sensor));
     if (!sensor) return -1;
 
-    strncpy(sensor->serial_number, "32000", MAX_SN_LEN);
-    strncpy(s->serial_number, "AtmosVUE 30", MAX_MODEL_STR);
+    strncpy(sensor->serial_number, "32000", MAX_SN_LN);
+    strncpy(sensor->serial_number, "AtmosVUE 30", MAX_MODEL_STR);
     sensor->sensor_id = 0;
 
     sensor->visibility = 10000;

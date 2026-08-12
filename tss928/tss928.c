@@ -365,39 +365,41 @@ void process_and_send(void) {
 			temp_total += sensor_one->strikes.ground_totals[i][j];
 		}
 	}
+    TSS928_sensor local_sensor = *sensor_one;
+    pthread_mutex_unlock(&sensor_mutex); // Unlock after IO on sensor_one.
 	safe_serial_write(serial_fd, "NEAR: N %u NE %u E %u SE %u S %u SW %u W %u NW %u\r\n"
 								 "DIST: N %u NE %u E %u SE %u S %u SW %u W %u NW %u\r\n"
 								 "OVHD %u CLOUD %u TOTAL %u %c %02xH %d C %u %u %u %u %u %.3f\r\n",
-									sensor_one->strikes.ground_totals[NEAR][NORTH], 		// NEAR N
-									sensor_one->strikes.ground_totals[NEAR][NORTH_EAST],	// NEAR NE
-									sensor_one->strikes.ground_totals[NEAR][EAST],			// NEAR E
-									sensor_one->strikes.ground_totals[NEAR][SOUTH_EAST],	// NEAR SE
-									sensor_one->strikes.ground_totals[NEAR][SOUTH],			// NEAR S
-									sensor_one->strikes.ground_totals[NEAR][SOUTH_WEST],	// NEAR SW
-									sensor_one->strikes.ground_totals[NEAR][WEST],			// NEAR W
-									sensor_one->strikes.ground_totals[NEAR][NORTH_WEST],	// NEAR NW
-									sensor_one->strikes.ground_totals[DIST][NORTH],			// DIST N
-									sensor_one->strikes.ground_totals[DIST][NORTH_EAST],	// DIST NE
-									sensor_one->strikes.ground_totals[DIST][EAST],			// DIST E
-									sensor_one->strikes.ground_totals[DIST][SOUTH_EAST],	// DIST SE
-									sensor_one->strikes.ground_totals[DIST][SOUTH],			// DIST S
-									sensor_one->strikes.ground_totals[DIST][SOUTH_WEST],	// DIST SW
-									sensor_one->strikes.ground_totals[DIST][WEST],			// DIST W
-									sensor_one->strikes.ground_totals[DIST][NORTH_WEST],	// DIST NW
-									sensor_one->strikes.overhead_total,						// OVHD
-									sensor_one->strikes.cloud_total,						// CLOUD
+									local_sensor.strikes.ground_totals[NEAR][NORTH], 		// NEAR N
+									local_sensor.strikes.ground_totals[NEAR][NORTH_EAST],	// NEAR NE
+									local_sensor.strikes.ground_totals[NEAR][EAST],			// NEAR E
+									local_sensor.strikes.ground_totals[NEAR][SOUTH_EAST],	// NEAR SE
+									local_sensor.strikes.ground_totals[NEAR][SOUTH],			// NEAR S
+									local_sensor.strikes.ground_totals[NEAR][SOUTH_WEST],	// NEAR SW
+									local_sensor.strikes.ground_totals[NEAR][WEST],			// NEAR W
+									local_sensor.strikes.ground_totals[NEAR][NORTH_WEST],	// NEAR NW
+									local_sensor.strikes.ground_totals[DIST][NORTH],			// DIST N
+									local_sensor.strikes.ground_totals[DIST][NORTH_EAST],	// DIST NE
+									local_sensor.strikes.ground_totals[DIST][EAST],			// DIST E
+									local_sensor.strikes.ground_totals[DIST][SOUTH_EAST],	// DIST SE
+									local_sensor.strikes.ground_totals[DIST][SOUTH],			// DIST S
+									local_sensor.strikes.ground_totals[DIST][SOUTH_WEST],	// DIST SW
+									local_sensor.strikes.ground_totals[DIST][WEST],			// DIST W
+									local_sensor.strikes.ground_totals[DIST][NORTH_WEST],	// DIST NW
+									local_sensor.strikes.overhead_total,						// OVHD
+									local_sensor.strikes.cloud_total,						// CLOUD
 									temp_total,												// TOTALS
 									'P',													// char P | F Pass or Fail
 									0,														// Status Code 00-FF
-									temperature,											// Temperature TODO: build a function to get current temperature.
-									sensor_one->strikes.total_strikes_since_reset,			// Total Strikes since Self Test
+									temperature,											// Temperature.
+									local_sensor.strikes.total_strikes_since_reset,			// Total Strikes since Self Test
 									0,													 	// Total rejected strokes
 									0,														// Total rejected by minimum EB ratio since last selftest
 									0,														// Total rejected by maximum EB ratio since last selftest
 									0,														// Total rejected by minimum B amplitude since last selftest
 									0.0);													// Average E/B Ration since last selftest
 
-    pthread_mutex_unlock(&sensor_mutex); // Unlock after IO on sensor_one.
+    // pthread_mutex_unlock(&sensor_mutex); // Unlock after IO on sensor_one.
 }
 
 /*
