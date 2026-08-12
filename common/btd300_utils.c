@@ -37,7 +37,8 @@ int init_BTD300_sensor(BTD300_sensor **ptr) {
 
     BTD300_sensor *s = *ptr;
 	// Identity
-	strncpy(s->serial_number, "000008675309", MAX_SN_LEN);
+	strncpy(s->serial_number, "000008675309", MAX_SN_LEN - 1);
+	s->serial_number[MAX_SN_LEN - 1] = '\0';
 
     s->address = 1;
 	// Configuration

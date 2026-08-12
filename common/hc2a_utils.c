@@ -42,9 +42,12 @@ int init_HC2A_sensor(HC2A_sensor **ptr) {
     s->mode = SMODE_M2;
     s->probe_type = 1; // 1 = digital probe, 2 = analog probe, 3 = pressure probe.
     s->device_type = 20;                   // 
-    strncpy(s->serial_number, "0025036130", MAX_SN_LEN);
-    strncpy(s->device_name, "HC2A", MAX_NAME_STR);
-    strncpy(s->firmware_version, "V1.2-1", MAX_FIRM_VER);
+    strncpy(s->serial_number, "0025036130", MAX_SN_LEN - 1);
+    s->serial_number[MAX_SN_LEN - 1] = '\0';
+    strncpy(s->device_name, "HC2A", MAX_NAME_STR - 1);
+    s->device_name[MAX_NAME_STR - 1] = '\0';
+    strncpy(s->firmware_version, "V1.2-1", MAX_FIRM_VER - 1);
+    s->firmware_version[MAX_FIRM_VER - 1] = '\0';
 	memset(&s->temp_trend, 0, sizeof(s->temp_trend));
 	memset(&s->rh_trend, 0, sizeof(s->rh_trend));
     // Timing

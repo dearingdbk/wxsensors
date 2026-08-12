@@ -44,10 +44,13 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
 
     ptb330_sensor *s = *ptr;
 	// Identity
-	strncpy(s->serial_number, "G1234567", MAX_SN_LEN);
+	strncpy(s->serial_number, "G1234567", MAX_SN_LEN - 1);
+    s->serial_number[MAX_SN_LEN - 1] = '\0';
     strncpy(s->software_version, "1.12", 5);
+    s->software_version[4] = '\0';
     s->address = 0;
-	strncpy(s->batch_num, "1234", MAX_BATCH_NUM);
+	strncpy(s->batch_num, "1234", MAX_BATCH_NUM - 1);
+    s->batch_num[MAX_BATCH_NUM - 1] = '\0';
 	// Configuration
     s->mode = SMODE_STOP;
     s->units = UNIT_HPA;
@@ -70,12 +73,18 @@ int init_ptb330_sensor(ptb330_sensor **ptr) {
 	memset(&s->module_two, 0, sizeof(s->module_two));
 	memset(&s->module_three, 0, sizeof(s->module_three));
 	memset(&s->module_four, 0, sizeof(s->module_four));
-	strncpy(s->module_one.serial_number, "M1234567", MAX_SN_LEN);
-	strncpy(s->module_two.serial_number, "M7654321", MAX_SN_LEN);
-	strncpy(s->module_three.serial_number, "M4713526", MAX_SN_LEN);
-	strncpy(s->module_one.batch_num, "550", MAX_BATCH_NUM);
-	strncpy(s->module_two.batch_num, "550", MAX_BATCH_NUM);
-	strncpy(s->module_three.batch_num, "550", MAX_BATCH_NUM);
+	strncpy(s->module_one.serial_number, "M1234567", MAX_SN_LEN - 1);
+	s->module_one.serial_number[MAX_SN_LEN - 1] = '\0'; // NULL Terminate
+	strncpy(s->module_two.serial_number, "M7654321", MAX_SN_LEN - 1);
+	s->module_two.serial_number[MAX_SN_LEN - 1] = '\0'; // NULL Terminate
+	strncpy(s->module_three.serial_number, "M4713526", MAX_SN_LEN - 1);
+	s->module_three.serial_number[MAX_SN_LEN - 1] = '\0'; // NULL Terminate
+	strncpy(s->module_one.batch_num, "550", MAX_BATCH_NUM - 1);
+	s->module_one.batch_num[MAX_BATCH_NUM - 1] = '\0'; // NULL Terminate
+	strncpy(s->module_two.batch_num, "550", MAX_BATCH_NUM - 1);
+	s->module_two.batch_num[MAX_BATCH_NUM - 1] = '\0'; // NULL Terminate
+	strncpy(s->module_three.batch_num, "550", MAX_BATCH_NUM - 1);
+	s->module_three.batch_num[MAX_BATCH_NUM - 1] = '\0'; // NULL Terminate
 	s->initialized = true;
 	clock_gettime(CLOCK_MONOTONIC, &s->last_send_time);
 	time_t now = time(NULL);

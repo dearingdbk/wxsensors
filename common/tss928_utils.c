@@ -37,10 +37,14 @@ int init_TSS928_sensor(TSS928_sensor **ptr) {
     TSS928_sensor *s = *ptr;
 	memset(&s->strikes, 0, sizeof(s->strikes));
 	// Identity
-	strncpy(s->serial_number, "000008675309", MAX_SN_LEN);
-	strncpy(s->loader_version, "TSS928 Loader Version 1.5", MAX_UNIT_STR);
-	strncpy(s->software_version, "TSS928 2.0 September 6, 2001", MAX_UNIT_STR);
-	strncpy(s->copyright_information, "Copyright (c) 2001, Global Atmospherics, Inc", MAX_UNIT_STR);
+	strncpy(s->serial_number, "000008675309", MAX_SN_LEN - 1);
+	s->serial_number[MAX_SN_LEN - 1] = '\0';
+    strncpy(s->loader_version, "TSS928 Loader Version 1.5", MAX_UNIT_STR - 1);
+    s->loader_version[MAX_UNIT_STR - 1] = '\0';
+	strncpy(s->software_version, "TSS928 2.0 September 6, 2001", MAX_UNIT_STR - 1);
+	s->software_version[MAX_UNIT_STR - 1] = '\0';
+	strncpy(s->copyright_information, "Copyright (c) 2001, Global Atmospherics, Inc", MAX_UNIT_STR - 1);
+	s->copyright_information[MAX_UNIT_STR - 1] = '\0';
 
     s->address = 1;
 	// Configuration
