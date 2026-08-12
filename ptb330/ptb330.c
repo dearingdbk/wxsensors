@@ -256,7 +256,9 @@ void process_and_send(ParsedMessage *msg) {
 
 	char msg_buffer[MAX_MSG_LENGTH]; // 512
 	if (msg == NULL) return;
+    pthread_mutex_lock(&sensor_mutex);
 	build_dynamic_output(msg, msg_buffer, sizeof(msg_buffer));
+    pthread_mutex_unlock(&sensor_mutex);
 	safe_serial_write(serial_fd, "%s\r\n", msg_buffer);
 }
 
@@ -607,9 +609,11 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 				      safe_console_error("Invalid Command Format: %s\n", strerror(errno));
 				}
 			} else {
-				strncpy(sensor_one->format_string, p_cmd->raw_params, MAX_FORM_STR - 1); // Copy the param string to the sensor, error handling?
+				pthread_mutex_lock(&sensor_mutex);
+                strncpy(sensor_one->format_string, p_cmd->raw_params, MAX_FORM_STR - 1); // Copy the param string to the sensor, error handling?
 				sensor_one->format_string[MAX_FORM_STR - 1] = '\0';
 				parse_form_string(p_cmd->raw_params); // This is going to go through the remaing string after FORM, and build the compiled_form[] fields.
+                pthread_mutex_unlock(&sensor_mutex);
 			}
 			break;
 		case CMD_TIME:

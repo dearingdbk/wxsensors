@@ -2,7 +2,7 @@
  * File:     hc2a_utils.c
  * Author:   Bruce Dearing
  * Date:     16/01/2026
- * Purpose:  Implementation of wind observer 75 specific logic.
+ * Purpose:  Implementation of HC2A HygroClip Relative Humidity and Temperature Sensor specific logic.
  */
 
 #include <stdio.h>
@@ -16,12 +16,12 @@
 
 /*
  * Name:         init_HC2A_sensor
- * Purpose:      Allocates memory for a WO75 sensor structure and initializes
+ * Purpose:      Allocates memory for an HC2A sensor structure and initializes
  * 				 all members (serial, baud, modules, etc.) to default factory values.
- * Arguments:    ptr - A pointer to a pointer of type WO75_sensor, used to
+ * Arguments:    ptr - A pointer to a pointer of type HC2A_sensor, used to
  * 				 return the address of the allocated memory.
  *
- * Output:       An allocated and populated WO75_sensor structure.
+ * Output:       An allocated and populated HC2A_sensor structure.
  * Modifies:     Allocates memory on the heap and updates the provided pointer.
  * Returns:      0 on success, -1 if memory allocation fails.
  * Assumptions:  The provided ptr is a valid address of a pointer.
@@ -58,7 +58,7 @@ int init_HC2A_sensor(HC2A_sensor **ptr) {
 }
 
 /*
- * Name:         WO75_is_ready_to_send
+ * Name:         HC2A_is_ready_to_send
  * Purpose:      Determines if the required time interval has elapsed since the
  * 				 last data transmission based on the sensor's configuration.
  * Arguments:    sensor - Pointer to the skyvue8_sensor structure containing

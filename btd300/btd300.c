@@ -226,8 +226,11 @@ void parse_message(char *msg, ParsedMessage *p_message) {
    	}
 	// HANDLE EPOCH CONVERSION
 	p_message->original_epoch = parse_to_epoch(temp_date_holder, temp_time_holder);
-	if ((token = NEXT_T)) p_message->number_of_flashes = (uint8_t)atoi(token); // Number of Flashes in the message string.
-   	if ((token = NEXT_T)) p_message->warning_indicator = (uint8_t)atoi(token); // Warning Indicator.
+	if ((token = NEXT_T)) {
+        uint8_t flashes = (uint8_t)atoi(token); // Number of Flashes in the message string.	
+        p_message->number_of_flashes = (uint8_t)(flashes > MAX_FLASHES ? MAX_FLASHES : flashes);
+    }
+    if ((token = NEXT_T)) p_message->warning_indicator = (uint8_t)atoi(token); // Warning Indicator.
    	if ((token = NEXT_T)) p_message->warning_flags = (uint8_t)atoi(token); // Warning Indicator.
 	if ((token = NEXT_T)) {
 		strncpy(p_message->self_test_flags, token, MAX_SELF_TEST_FLAG - 1); // Set the Self Test Flags.

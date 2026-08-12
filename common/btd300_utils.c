@@ -97,7 +97,7 @@ bool BTD300_is_ready_to_send(BTD300_sensor *sensor) {
  */
 int reset_flash(BTD300_sensor **ptr) {
     if (*ptr == NULL) {
-        perror("Unable to communicate with sensor\n");
+        perror("Unable to communicate with sensor");
         return 1;
     }
 	BTD300_sensor *s = *ptr;
@@ -124,7 +124,7 @@ int reset_flash(BTD300_sensor **ptr) {
  */
 int set_dist(BTD300_sensor **ptr, int distance_id, int distance) {
     if (*ptr == NULL) {
-        perror("Unable to communicate with sensor\n");
+        perror("Unable to communicate with sensor");
         return -1;
     }
 

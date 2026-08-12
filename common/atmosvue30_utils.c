@@ -23,7 +23,8 @@
 
 #define MAX_TOKENS 32
 #define DT_STRING 7
-
+#define MAX_SN_LN 16
+#define MAX_MODEL_STR 20
 
 // Message format names
 const char* message_format_names[15] = {
@@ -76,8 +77,8 @@ int init_av30_sensor(av30_sensor **ptr) {
     av30_sensor *sensor = (av30_sensor *)malloc(sizeof(av30_sensor));
     if (!sensor) return -1;
 
-    strcpy(sensor->serial_number, "32000");
-    strcpy(sensor->model_number, "AtmosVUE 30");
+    strncpy(sensor->serial_number, "32000", MAX_SN_LEN);
+    strncpy(s->serial_number, "AtmosVUE 30", MAX_MODEL_STR);
     sensor->sensor_id = 0;
 
     sensor->visibility = 10000;

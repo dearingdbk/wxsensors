@@ -386,6 +386,9 @@ CommandType parse_command(const char *buf, ParsedCommand *p_cmd) {
             // This is an address
             p_cmd->is_addressed = true; // mark the 'is_addressed' value to true.
             p_cmd->address = atoi(addr_str); // convert that address string to an int and store in p_cmd struct.
+            if (p_cmd->address >= MAX_SENSOR_ADDRESS) {
+                return CMD_BAD_CMD; // Reject out of range address.
+            }
             ptr++; // skip ':'
         } else {
             // Not an address - invalid format

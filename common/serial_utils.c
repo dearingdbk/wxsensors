@@ -268,13 +268,13 @@ int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
 
     int fd = open(portname, O_RDWR | O_NOCTTY | O_SYNC);
     if (fd < 0) {
-        perror("Error opening serial port\n");
+        perror("Error opening serial port");
         return -1;
     }
 
     struct termios tty;
     if (tcgetattr(fd, &tty) != 0) {
-        perror("Error from tcgetattr\n");
+        perror("Error from tcgetattr");
         close(fd);
         return -1;
     }
@@ -332,7 +332,7 @@ int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
     tty.c_cc[VTIME] = 1;
 
 	if (tcsetattr(fd, TCSANOW, &tty) != 0) {
-        perror("Error from tcsetattr\n");
+        perror("Error from tcsetattr");
         close(fd);
         return -1;
     }
@@ -349,7 +349,7 @@ int open_serial_port(const char* portname, speed_t baud_rate, SerialMode mode) {
         rs485conf.delay_rts_after_send  = 0;
 
         if (ioctl(fd, TIOCSRS485, &rs485conf) < 0) {
-            perror("Warning: RS-485 mode not enabled (driver may not support)\n");
+            perror("Warning: RS-485 mode not enabled (driver may not support)");
             printf("Continuing in RS-422/RS-232 mode.\n");
         } else {
             printf("RS-485 half-duplex mode enabled via ioctl.\n");
