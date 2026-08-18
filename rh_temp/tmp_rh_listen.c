@@ -396,7 +396,7 @@ void* signal_thread(void* arg) {
  */
 void* receiver_thread(void* arg) {
     (void)arg;
-    char line[256];
+    char line[MAX_CMD_LENGTH];
     size_t len = 0;
 
     while (!terminate) {
@@ -522,7 +522,7 @@ void* sender_thread(void* arg) {
  * Notes:
  */
 int main(int argc, char *argv[]) {
-
+    
     if (argc < 2) {
         safe_console_error("Usage: %s <file_path> <serial_device> <baud_rate> <RS422|RS485>\n", argv[0]);
         cleanup_and_exit(1);
