@@ -53,6 +53,39 @@ unsigned short crc16(char *buffer, int length) {
 }
 
 /*
+ * Name:         calculate_crc8
+ * Purpose:      Returns the CRC value of the buffer string provided.
+ * Arguments:    buffer - the string to calculate the CRC from.
+ *               length - the length of the buffer string.
+ *
+ * Output:       None.
+ * Modifies:     unsigned short crc.
+ * Returns:      the calculated CRC value of the string provided.
+ * Assumptions:
+ *
+ * Bugs:         None known.
+ * Notes:
+ */
+uint8_t calculate_crc8(const uint8_t *data, size_t length) {
+    uint8_t crc = 0x00;
+    const uint8_t poly = 0x07;
+
+    for (size_t i = 0; i < length; i++) {
+        crc ^= data[i];
+        for (int bit = 0; bit < 8; bit++) {
+            if (crc & 0x80) {
+                crc = (crc << 1) ^ poly;
+            } else {
+                crc <<= 1;
+            } 
+        }
+
+    } 
+    return crc ^ 0xFF;
+}
+
+
+/*
  * Name:         crc_ccitt
  * Purpose:      Returns the CRC value of the buffer string provided.
  * Arguments:    line_of_date - the string to calculate the CRC from.
