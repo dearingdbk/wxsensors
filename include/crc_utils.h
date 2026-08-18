@@ -33,4 +33,5 @@ unsigned char calculate_csx(const char *str, size_t len);
 
 char checksum(const char *str);
 
+uint8_t calculate_crc8(const uint8_t *data, size_t length);
 #endif
