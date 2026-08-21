@@ -185,6 +185,18 @@ make full
 
 # Clean all
 make clean
+
+# Build only the sensors with sanitize options on
+make sanitize
+
+# Build only the sensors with sanitize options off
+make nosanitize
+
+# Build everything sanitize options on
+make full-sanitize
+
+# Build everything sanitize options off
+make full-nosanitize
 ```
 
 Executables are output to the `bin/` directory, organized by sensor type.
