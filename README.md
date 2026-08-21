@@ -245,28 +245,32 @@ For consistent USB serial device naming, create a udev rule:
 wxsensors/
 ├── include/              # Shared header files
 │   ├── atmosvue30_utils.h
+│   ├── btd300_utils.h
 │   ├── console_utils.h
 │   ├── crc_utils.h
-│   ├── btd300_utils.h
 │   ├── dsp8100_utils.h
 │   ├── file_utils.h
+│   ├── g0872f1_utils.h
+│   ├── hc2a_utils.h
 │   ├── ptb330_utils.h
-│   ├── tss928_utils.h
-│   ├── q131.h
+│   ├── q1_31.h
 │   ├── serial_utils.h
 │   ├── skyvue8_utils.h
+│   ├── tss928_utils.h
 │   └── windobserver75_utils.h
 ├── common/               # Shared source files
 │   ├── atmosvue30_utils.c
+│   ├── btd300_utils.c
 │   ├── console_utils.c
 │   ├── crc_utils.c
-│   ├── btd300_utils.c
 │   ├── dsp8100_utils.c
 │   ├── file_utils.c
+│   ├── g0872f1_utils.c
+│   ├── hc2a_utils.c
 │   ├── ptb330_utils.c
-│   ├── tss928_utils.c
 │   ├── serial_utils.c
 │   ├── skyvue8_utils.c
+│   ├── tss928_utils.c
 │   └── windobserver75_utils.c
 ├── wind/                 # Gill WindObserver 75 emulator
 │   └── windobserver75.c
