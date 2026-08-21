@@ -224,7 +224,6 @@ void process_and_send(ParsedMessage *msg) {
                                                             msg->alarm_byte);
     char calc_checksum = checksum(msg_buffer);
     safe_serial_write(serial_fd, "%s%c\r\n", msg_buffer, calc_checksum);
-    DEBUG_PRINT("%s%c\r\n", msg_buffer, calc_checksum);
     
 }
 
