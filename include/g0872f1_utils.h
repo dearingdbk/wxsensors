@@ -23,16 +23,29 @@
 #define MAX_HEADER_STR 7
 #define MAX_SELF_TEST_FLAG 6
 #define NS_PER_SEC 1000000000LL
-#define TREND_SAMPLE_INTERVAL_S 10
-#define TREND_WINDOW_S          60
-#define TREND_HISTORY_LEN       (TREND_WINDOW_S / TREND_SAMPLE_INTERVAL_S + 1) // 7
-#define TREND_THRESHOLD         0.02f
-
+#define BASELINE_HZ 40000.0
+#define SLOPE_HZ_PER_MM 260.0  // approximation: 130 Hz / 0.5 mm
+#define DEICE_THRESHOLD_MM 0.5
+#define STULL_C1 0.151977
+#define STULL_C2 8.313659
+#define STULL_C3 1.676331
+#define STULL_C4 0.00391838
+#define STULL_C5 0.023101
+#define STULL_C6 4.686035
 
 typedef enum {
     SMODE_M1,  // Analog mode
     SMODE_M2   // ASCII Polled
 } G0872F1_SMode;
+
+
+typedef enum {
+    PRECIP_NONE = 0,
+    PRECIP_RAIN = 1,
+    PRECIP_FREEZE = 2,
+    PRECIP_ICE = 3,
+    PRECIP_SNOW = 4
+} Precip_Phase;
 
 typedef struct {
     // Identity
@@ -90,15 +103,18 @@ typedef struct {
 
 // Parsed message structure
 typedef struct {
-	uint8_t msg_address;
-	float rel_humidity;
-    float temperature;
-    uint8_t rh_alarm;
-    uint8_t temp_alarm;
-    uint8_t alarm_byte;
+	double rel_humidity;
+    double temperature;
+    Precip_Phase msg_phase;
+    double precip_rate;
+    double wb_temp;
+    bool is_icing;
+    double ilr;
 } ParsedMessage;
 
 // Function Prototypes
+double wet_bulb_temp_c(double temp_c, double rh_pct);
 int init_G0872F1_sensor(G0872F1_sensor **ptr);
 bool G0872F1_is_ready_to_send(G0872F1_sensor *sensor);
+float generate_jitter();
 #endif

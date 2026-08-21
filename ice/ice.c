@@ -82,30 +82,50 @@
 #include "console_utils.h"
 #include "file_utils.h"
 #include "crc_utils.h"
+#include "g0872f1_utils.h"
 
 #define SERIAL_PORT "/dev/ttyUSB0"   // Adjust as needed, main has logic to take arguments for a new location
 #define BAUD_RATE   B2400	     // Adjust as needed, main has logic to take arguments for a new baud rate
 #define MAX_LINE_LENGTH 1024
-// #define MAX_PACKET_LENGTH 25
+#define MAX_CMD_LENGTH 256
+
+#define DEBUG_MODE // Comment this line out to disable all debug prints
+
+#ifdef DEBUG_MODE
+    #define DEBUG_PRINT(fmt, ...) printf("DEBUG: " fmt, ##__VA_ARGS__)
+#else
+    #define DEBUG_PRINT(fmt, ...) // Becomes empty space during compilation
+#endif
 
 FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
 
 // Shared state
-int sampling = 0; // Is the sensor in sampling mode or not, the default for the sensor will be yes i.e. 1.
+// int sampling = 0; // Is the sensor in sampling mode or not, the default for the sensor will be yes i.e. 1.
 volatile sig_atomic_t terminate = 0;
 //volatile sig_atomic_t kill_flag = 0;
 
 int serial_fd = -1;
+const char *program_name = "unknown";
+// This needs to be freed upon exit.
+G0872F1_sensor *sensor_one = NULL; // Global pointer to struct for G0872F1 sensor.
 
 /* Synchronization primitives */
-static pthread_mutex_t file_mutex  = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
+static pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // protects file_ptr / file access
+static pthread_mutex_t sensor_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  sensor_cond; // Moved initialization down to main, to change REALTIME Clock to MONOTONIC.
 
-pthread_t sig_thread, recv_thread;
-bool sig_thread_created = false;
+// Global pointers to receiver and sender threads.
+pthread_t recv_thread, send_thread, sig_thread;
+
+
 bool recv_thread_created = false;
+bool send_thread_created = false;
+bool sig_thread_created = false;
 
-const char *program_name = "unknown";
+bool sensor_cond_init = false;
+
+bool heater_enabled = false; 
 
 /*
  * Name:         cleanup_and_exit
@@ -177,13 +197,55 @@ char* prepend_to_buffer(const char* original) {
 
 // ---------------- Command handling ----------------
 
-typedef enum {
+/*typedef enum {
     CMD_UNKNOWN,
     CMD_Z1,	// "Z1" received from the terminal - Send Frequency Data.
     CMD_Z3, // "Z3" received from the terminal - De-ice strut and probe.
     CMD_Z4, // "Z4" recieved from the terminal - Perform extended diagnostics.
     CMD_F4  // "F4" received from the terminal - Perform Field Calibration.
-} CommandType;
+} CommandType;*/
+
+
+/*
+ * Name:         parse_message
+ * Purpose:      Tokenizes a space-delimited sensor string and populates a ParsedMessage struct.
+ * Arguments:    msg: the raw input string to be parsed (modified by strtok_r).
+ *               p_message: pointer to the struct where parsed data will be stored.
+ *
+ * Output:       None (internal debug prints to console only).
+ * Modifies:     p_message: overwrites with new data.
+ *               msg: the input string is modified (nulls inserted by strtok_r).
+ * Returns:      None
+ * Assumptions:  msg is a valid space-delimited string matching the sensor protocol.
+ *               p_message has been allocated by the caller.
+ *
+ * Bugs:         None known.
+ * Notes:        Uses a local macro NEXT_T to sequence through 32 expected fields.
+ *               Ensures string fields (METAR, BLM) are safely null-terminated.
+ */
+void parse_message(char *msg, ParsedMessage *p_message) {
+    memset(p_message, 0, sizeof(ParsedMessage)); // zero out the ParsedMessage struct.
+    char *saveptr; // Our place keeper in the msg string.
+    char *token; // Where we temporarily store each token.
+    
+    // These are pulled from a text file in this format:
+    // 45.37,-27.0,2,23.8
+    // RH, temp, Precip Phase, MM per hour
+    if ((token = strtok_r(msg, ",", &saveptr))) p_message->rel_humidity = (double)strtod(token, NULL);  // Set Relative Humidity.
+    #define NEXT_T strtok_r(NULL, ",", &saveptr) // Small macro to keep the code below cleaner.
+    if ((token = NEXT_T)) p_message->temperature = (double)strtod(token, NULL); // Set Temperature.
+    if ((token = NEXT_T)) p_message->msg_phase = (uint8_t)atoi(token);          // Set Precipitation Phase 0=none, 1=rain, 2=freezing_rain, 3=ice, 4=snow.
+    if ((token = NEXT_T)) p_message->precip_rate = (double)strtod(token, NULL); // Set Precipitation Rate MM/HR.
+    #undef NEXT_T
+
+    p_message->wb_temp = wet_bulb_temp_c(p_message->temperature, p_message->rel_humidity);
+    p_message->is_icing = (p_message->msg_phase == PRECIP_FREEZE) && (p_message->wb_temp <= 0.0);
+    p_message->ilr = (p_message->wb_temp < -2.8) ? 0.80 : 0.66;
+    // liquid_mm = precip_rate * (dt_seconds / 3600) // dt_seconds should be the 
+    // if (is_icing) ice_accum_mm += liquid_mm * ILR;
+    // if (ice_accum_mm >= DEICE_THRESHOLD_MM) ice_accum_mm = 0.0;
+    // freq_hz = BASELINE_HZ - (ice_accum_mm * SLOPE_HZ_PER_MM);
+}
 
 
 /*
@@ -199,7 +261,21 @@ typedef enum {
  * Bugs:         None known.
  * Notes:
  */
-CommandType parse_command(const char *buf) {
+CommandType parse_command(const char *buf, ParsedCommand *cmd) {
+    memset(cmd, 0, sizeof(ParsedCommand));
+    cmd->type = CMD_UNKNOWN;
+    if (buf == NULL) return CMD_UNKNOWN;
+    char local_buf[MAX_CMD_LENGTH];
+    strncpy(local_buf, buf, MAX_CMD_LENGTH - 1);
+    local_buf[MAX_CMD_LENGTH - 1] = '\0';
+
+    char *p = local_buf;
+    char* residual_ptr = NULL;
+    char *saveptr = NULL; // Our place keeper in the msg string.
+    char *token = NULL; // Where we temporarily store each token.
+    
+    // Commands come in the format Z1 or Z3## (0-60) 
+    
     if (buf[0] == 'Z' && buf[1] == '1' && buf[2] == '\0')						return CMD_Z1;
     if (buf[0] == 'Z' && buf[1] == '3' && isdigit(buf[2]) && isdigit(buf[3]))	return CMD_Z3;
     if (buf[0] == 'Z' && buf[1] == '4' && buf[2] == '\0')						return CMD_Z4;
@@ -221,17 +297,20 @@ CommandType parse_command(const char *buf) {
  * Bugs:         None known.
  * Notes:
  */
-void handle_command(CommandType cmd) {
+void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
+    (void) p_cmd;
     char *resp_copy = NULL;
+    char msg_buffer[MAX_CMD_LENGTH] = {0}; // 512
     switch (cmd) {
         case CMD_Z1: {
             resp_copy = get_next_line_copy(file_ptr, &file_mutex);
             if (resp_copy) {
-				char *msg = prepend_to_buffer(resp_copy);
-				uint8_t crc = checksum_m256((const uint8_t *)msg, strlen(msg));
-		    	safe_serial_write(serial_fd, "%s%02X\x03\r\n", msg, crc);
-				free(msg);
-				msg = NULL;
+		    int len = snprintf(msg_buffer, sizeof(msg_buffer), "\x02\x0D\x0A%c%c%s", 'Z', 'P', resp_copy); // TODO: Insert Function to determine if Heater is active. 
+                //char *msg = prepend_to_buffer(resp_copy);
+				uint8_t crc = checksum_m256((const uint8_t *)msg_buffer, len);
+		    	safe_serial_write(serial_fd, "%s%02X\x03\r\n", msg_buffer, crc);
+				//free(msg);
+				//msg = NULL;
 			} else {
 				// safe_write_response("%s\r\n", "OK");
 			}
@@ -312,55 +391,39 @@ void* signal_thread(void* arg) {
  */
 void* receiver_thread(void* arg) {
     (void)arg;
-    char line[5]; // Buffer for 1 letter + 3 digits + null terminator
+    char line[MAX_CMD_LENGTH];
     size_t len = 0;
 
     while (!terminate) {
         char c;
-        // n=0 means VTIME (0.1s) reached. n=1 means a byte arrived.
         int n = read(serial_fd, &c, 1);
-
-        if (n == 1) { // n will be 1 for a single byte
-            // Start of new command, detected by a letter (Z, F, etc.)
-            if (isalpha(c)) {
-                // If we have an existing command, process it before starting the new one
-                if (len >= 2) {
-                    line[len] = '\0';
-                    handle_command(parse_command(line));
-                }
-                line[0] = c;
-                len = 1;
-            }
-            // Collect up to 3 digits, i.e. Z360
-            else if (isdigit(c) && len > 0) {
-                line[len++] = c;
-
-                // trigger if we hit the absolute maximum length (e.g., Z3XX)
-                if (len == 4) {
-                    line[len] = '\0';
-                    handle_command(parse_command(line));
+        if (n > 0) {
+            if (c == '\r' || c == '\n') { // The AERO Server does not send \r \n characters at the end of the string for G0872F1 ice sensors. 
+                if (len > 0) {
+                    line[len] = '\0'; // Terminate with NULL for safety.
+                    ParsedCommand local_cmd;
+                    CommandType cmd_type = parse_command(line, &local_cmd);
+                    handle_command(cmd_type, &local_cmd); // handle received command here.
                     len = 0;
                 }
+            } else if (len < sizeof(line) - 1) {
+                line[len++] = c;
+            } else len = 0;
+        } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+            perror("read");
+        } else {
+            // n == 0 here means termios VTIME (100ms) has expired
+            if (len > 0) {
+                line[len] = '\0'; // Terminate with NULL.
+                ParsedCommand local_cmd;
+                CommandType cmd_type = parse_command(line, &local_cmd);
+                handle_command(cmd_type, &local_cmd);
+                len = 0; // Reset buffer for the next message
+            } else {
+                // Only sleep if the buffer was already empty,
+                // preventing a 100% CPU busy-loop when idle.
+                usleep(10000);
             }
-            // Ignore anything else (\r, \n, spaces, nulls)
-        }
-        else if (n == 0) {
-            // Timeout Trigger: The line went silent (Handles Z1, Z4, F5)
-            if (len >= 2) {
-                line[len] = '\0';
-                handle_command(parse_command(line));
-                len = 0;
-            }
-        }
-		else
-		{
-            if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-                perror("Serial Read Error");
-            }
-			else {
-            	// avoid busy loop
-               	usleep(1000);
-			}
         }
     }
     return NULL;
@@ -397,8 +460,8 @@ int main(int argc, char *argv[]) {
         cleanup_and_exit(1);
     }
 
-    file_path = argv[1];
     program_name = argv[0]; // Global variable to hold the program name for console errors.
+    file_path = argv[1];
     file_ptr = fopen(file_path, "r");
     if (!file_ptr) {
         safe_console_error("Failed to open file: %s\n", strerror(errno));
@@ -417,6 +480,11 @@ int main(int argc, char *argv[]) {
     if (serial_fd < 0) {
         cleanup_and_exit(1);
     }
+    
+    if (init_G0872F1_sensor(&sensor_one) != 0) {
+        safe_console_error("Failed to initialize sensor_one\n");
+        cleanup_and_exit(1);
+    }
     // define a signal handler, to capture kill signals and instead set our volatile bool 'terminate' to true,
     // allowing our c program, to close its loop, join threads, and close our serial device.
 	sigset_t block_set;
@@ -426,19 +494,27 @@ int main(int argc, char *argv[]) {
 	sigaddset(&block_set, SIGQUIT);
 	pthread_sigmask(SIG_BLOCK, &block_set, NULL);
 
-	// create the signal thread
 
-	if (pthread_create(&sig_thread, NULL, signal_thread, NULL) != 0) {
-        perror("Failed to create signal thread");
-        terminate = 1;
-		cleanup_and_exit(1);
-	} else sig_thread_created = true;
+    // Initialize the send condition to use CLOCK_MONOTONIC
+    pthread_condattr_t attr;
+    pthread_condattr_init(&attr);
+    pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+    pthread_cond_init(&sensor_cond, &attr); // Initialize the global variable here
+    sensor_cond_init = true;
+    pthread_condattr_destroy(&attr);
+
+	// create the signal thread
+    if (pthread_create(&sig_thread, NULL, signal_thread, NULL) != 0) {
+        safe_console_error("Failed to create signal thread: %s\n", strerror(errno));
+        terminate = 1;          // <- symmetrical, but not required
+        cleanup_and_exit(1);
+    } else sig_thread_created = true;
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
-        perror("Failed to create receiver thread");
-        terminate = 1;
-		cleanup_and_exit(1);
-	} else recv_thread_created = true;
+        safe_console_error("Failed to create receiver thread: %s\n", strerror(errno));
+        terminate = 1;          // <- needed because sig_thread is running
+        cleanup_and_exit(1);
+    } else recv_thread_created = true;
 
     safe_console_print("Press 'ctrl-c' to quit.\n");
 

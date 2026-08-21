@@ -83,4 +83,16 @@ bool G0872F1_is_ready_to_send(G0872F1_sensor *sensor) {
     return false;
 }
 
+double wet_bulb_temp_c(double temp_c, double rh_pct) {
+    double wb_temp; // Wet Bulb Temperature
+    wb_temp = temp_c * atan(STULL_C1 * sqrt(rh_pct + STULL_C2))
+            + atan(temp_c + rh_pct)
+            - atan(rh_pct - STULL_C3)
+            + STULL_C4 * pow(rh_pct, 1.5)
+            * atan(STULL_C5 * rh_pct) - STULL_C6;
+    return wb_temp;
+}
 
+float generate_jitter() {
+    return ((float)rand() / (float)RAND_MAX) * 60.0f - 30.0f;
+}
