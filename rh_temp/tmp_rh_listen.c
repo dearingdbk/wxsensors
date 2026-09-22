@@ -42,6 +42,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -73,9 +74,8 @@
 FILE *file_ptr = NULL; // Global File pointer
 char *file_path = NULL; // path to file
 // Shared state
-volatile sig_atomic_t terminate = 0;
-//volatile sig_atomic_t kill_flag = 0;
-// volatile bool running = false;
+//volatile sig_atomic_t terminate = 0;
+atomic_bool terminate = ATOMIC_VAR_INIT(false);
 int serial_fd = -1;
 const char *program_name = "unknown";
 // This needs to be freed upon exit.
@@ -112,7 +112,7 @@ bool sensor_cond_init = false;
  */
 void cleanup_and_exit(int exit_code) {
     pthread_mutex_lock(&sensor_mutex);
-    terminate = 1;
+    atomic_store(&terminate, true);
     if (sensor_cond_init) pthread_cond_broadcast(&sensor_cond);
     pthread_mutex_unlock(&sensor_mutex);
 
@@ -207,7 +207,7 @@ void process_and_send(ParsedMessage *msg) {
     local_sensor = *sensor_one;
     pthread_mutex_unlock(&sensor_mutex);
 
-    snprintf(msg_buffer, sizeof(msg_buffer), "{%c%02urdd %03u; %.2f;%%rh;%03u;%c; %.2f;°C;%03u;%c;nc;---.-;°C;000; ;%03u;%s;%s;%s ;%03u;",
+    snprintf(msg_buffer, sizeof(msg_buffer), "{%c%02urdd %03u; %.2f;%%rh;%03u;%c; %.2f;\xB0C;%03u;%c;nc;---.-;\xB0C;000; ;%03u;%s;%s;%s ;%03u;",
                                                             (char)local_sensor.unit_ident,  // Unit Identifier 'F'
                                                             (unsigned int)local_sensor.address,
                                                             (unsigned int)local_sensor.probe_type,
@@ -367,7 +367,7 @@ void* signal_thread(void* arg) {
 
     sigwait(&wait_set, &sig);     // Blocks until a signal arrives
 
-    terminate = 1;
+    atomic_store(&terminate, true);
 
     // safely wake threads
     pthread_mutex_lock(&sensor_mutex);
@@ -398,7 +398,7 @@ void* receiver_thread(void* arg) {
     char line[MAX_CMD_LENGTH];
     size_t len = 0;
 
-    while (!terminate) {
+    while (!atomic_load(&terminate)) {
         char c;
         int n = read(serial_fd, &c, 1);
         if (n > 0) {
@@ -445,7 +445,7 @@ void* sender_thread(void* arg) {
     bool should_send = false;
     int interval = 0;
 
-    while (!terminate) {
+    while (!atomic_load(&terminate)) {
         pthread_mutex_lock(&sensor_mutex);
 
         // Determine if we should wait for a specific time or indefinitely
@@ -463,7 +463,7 @@ void* sender_thread(void* arg) {
             pthread_cond_wait(&sensor_cond, &sensor_mutex);
         }
 
-        if (terminate) {
+        if (!atomic_load(&terminate)) {
             pthread_mutex_unlock(&sensor_mutex);
             break;
         }
@@ -574,20 +574,20 @@ int main(int argc, char *argv[]) {
 
     if (pthread_create(&sig_thread, NULL, signal_thread, NULL) != 0) {
         safe_console_error("Failed to create signal thread: %s\n", strerror(errno));
-        terminate = 1;          // <- symmetrical, but not required
+        atomic_store(&terminate, true); //= 1;          // <- symmetrical, but not required
         cleanup_and_exit(1);
     } else sig_thread_created = true;
 
     if (pthread_create(&recv_thread, NULL, receiver_thread, NULL) != 0) {
         safe_console_error("Failed to create receiver thread: %s\n", strerror(errno));
-        terminate = 1;          // <- needed because sig_thread is running
+        atomic_store(&terminate, true); // atomic_flag_clear(&terminate); //terminate = 1;          // <- needed because sig_thread is running
         cleanup_and_exit(1);
     } else recv_thread_created = true;
 
 
     if (pthread_create(&send_thread, NULL, sender_thread, NULL) != 0) {
         safe_console_error("Failed to create sender thread: %s\n", strerror(errno));
-        terminate = 1;          // <- needed because recv_thread is running
+        atomic_store(&terminate, true); // atomic_flag_clear(&terminate); // terminate = 1;          // <- needed because recv_thread is running
         cleanup_and_exit(1);
     } else send_thread_created = true;
 
