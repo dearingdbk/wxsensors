@@ -207,7 +207,7 @@ void process_and_send(ParsedMessage *msg) {
     local_sensor = *sensor_one;
     pthread_mutex_unlock(&sensor_mutex);
 
-    snprintf(msg_buffer, sizeof(msg_buffer), "{%c%02urdd %03u; %.2f;%%rh;%03u;%c; %.2f;\xB0C;%03u;%c;nc;---.- ;\xB0C;000; ;%03u;%s;%s;%s        ;%03u;",
+    snprintf(msg_buffer, sizeof(msg_buffer), "{%c%02urdd\x20%03u;\x20%.2f;%%rh;%03u;%c;\x20%.2f;\xB0" "C;%03u;%c;nc;---.-\x20;\xB0" "C;000;\x20;%03u;%s;%s;%s\x20\x20\x20\x20\x20\x20\x20\x20;%03u;",
                                                             (char)local_sensor.unit_ident,  // Unit Identifier 'F'
                                                             (unsigned int)local_sensor.address,
                                                             (unsigned int)local_sensor.probe_type,
@@ -223,7 +223,7 @@ void process_and_send(ParsedMessage *msg) {
                                                             local_sensor.device_name,
                                                             (unsigned int)msg->alarm_byte);
     char calc_checksum = checksum(msg_buffer);
-    safe_serial_write(serial_fd, "%s%c\r\n", msg_buffer, calc_checksum);
+    safe_serial_write(serial_fd, "%s%c\r", msg_buffer, calc_checksum);
     
 }
 
