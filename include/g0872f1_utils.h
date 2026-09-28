@@ -2,18 +2,25 @@
  * File:     g0872f1_utils.h
  * Author:   Bruce Dearing
  * Date:     17/08/2026
- * Version:  1.0
+ * Version:  1.1
  * Purpose:  Structures and prototypes for Goodrich 0872F1 ice Sensor emulation.
+ *
+ * Mods:     1.1 - added <pthread.h>/<stddef.h>; SharedState now holds icing flag,
+ *                 baseline (F4 calibration) and heater end time; ParsedCommand
+ *                 now carries the Z3 de-ice duration.
  */
 
 #ifndef G0872F1_UTILS_H
 #define G0872F1_UTILS_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
+#include <pthread.h>
 #include <time.h>
 
 #define MAX_FORM_STR 128
+#define MAX_MSG_LENGTH 512
 #define MAX_SN_LEN 16
 #define MAX_NAME_STR 20
 #define MAX_FIRM_VER 10
@@ -24,7 +31,7 @@
 #define MAX_SELF_TEST_FLAG 6
 #define NS_PER_SEC 1000000000LL
 #define BASELINE_HZ 40000.0
-#define SLOPE_HZ_PER_MM 260.0  // approximation: 130 Hz / 0.5 mm
+#define SLOPE_HZ_PER_MM 262.47  // approximation: 130 Hz / 0.5 mm (== 1 / (0.00015 in/Hz * 25.4 mm/in))
 #define DEICE_THRESHOLD_MM 0.5
 #define STULL_C1 0.151977
 #define STULL_C2 8.313659
@@ -38,6 +45,17 @@ typedef enum {
     SMODE_M2   // ASCII Polled
 } G0872F1_SMode;
 
+// State shared between the simulation tick thread and the receiver thread.
+// Everything in here is protected by rwlock.
+typedef struct {
+    double ice_accum_mm;
+    double ilr;
+    double precip_rate;        // mm/h liquid-equivalent, from the CSV
+    double baseline_hz;        // nominal probe frequency; F4 resets it to BASELINE_HZ
+    bool   is_icing;           // freezing precip AND wet-bulb <= 0 C
+    struct timespec heater_end;// CLOCK_MONOTONIC; heater is on while now < heater_end
+    pthread_rwlock_t rwlock;
+} SharedState;
 
 typedef enum {
     PRECIP_NONE = 0,
@@ -50,8 +68,8 @@ typedef enum {
 typedef struct {
     // Identity
     char unit_ident;     // A-F, default is F.
-	uint8_t address;     // 0-99
-	uint8_t probe_type;  // 0-3
+    uint8_t address;     // 0-99
+    uint8_t probe_type;  // 0-3
     uint8_t device_type; // 0-255
     char serial_number[MAX_SN_LEN];
     char device_name[MAX_NAME_STR];
@@ -62,7 +80,7 @@ typedef struct {
     // Timing
     struct timespec last_send_time;
     struct timespec sensor_start_time;
-	struct tm sensor_time;
+    struct tm sensor_time;
     bool initialized;
 } G0872F1_sensor;
 
@@ -78,12 +96,12 @@ typedef enum {
 typedef struct {
     const char *name;
     CommandType type;
-	size_t len;
+    size_t len;
 } CommandMap;
 
 #define CMD_ENTRY(str, enum_val) { str, enum_val, sizeof(str) - 1 }
 
-static const CommandMap cmd_table[] = {
+static const CommandMap cmd_table[] __attribute__((unused)) = {
     CMD_ENTRY("Z1",		CMD_Z1),
     CMD_ENTRY("Z3",    	CMD_Z3),
     CMD_ENTRY("Z4",    	CMD_Z4),
@@ -96,14 +114,15 @@ static const CommandMap cmd_table[] = {
 typedef struct {
     CommandType type;
     char cmd_unit_ident;
-    uint8_t sensor_id;  // Target sensor ID (A-Z)
+    uint8_t sensor_id;      // Target sensor ID (A-Z)
+    uint8_t deice_seconds;  // Z3## duration, 1-60
     char raw_params[MAX_FORM_STR];
 } ParsedCommand;
 
 
 // Parsed message structure
 typedef struct {
-	double rel_humidity;
+    double rel_humidity;
     double temperature;
     Precip_Phase msg_phase;
     double precip_rate;
@@ -116,5 +135,5 @@ typedef struct {
 double wet_bulb_temp_c(double temp_c, double rh_pct);
 int init_G0872F1_sensor(G0872F1_sensor **ptr);
 bool G0872F1_is_ready_to_send(G0872F1_sensor *sensor);
-float generate_jitter();
+float generate_jitter(void);
 #endif
