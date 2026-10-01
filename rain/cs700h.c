@@ -60,7 +60,7 @@
 #define MAX_MSG_LENGTH 512
 #define CPU_WAIT_USEC 10000
 
-#define GPIO_CHIP		"/dev/gpiochip4"  // Pi 4 and earlier gpiochip0, Pi 5 gpiochip4
+#define GPIO_CHIP		"/dev/gpiochip15" // Pi 4 and earlier gpiochip0, Pi 5 used gpiochip4 until Sep 2026, it now uses gpiochip15.
 #define GPIO_PIN    	17                // BCM pin 17, physical pin 11
 #define MM_PER_TIP      0.254             // CS700H: 0.254mm per tip
 #define PULSE_WIDTH_NS  50000000LL        // Reed switch closure duration in nanoseconds
@@ -209,8 +209,9 @@ static void sleep_ns(long long ns) {
 
 /*
  * Name:        simulate_tip
- * Purpose:     Drives the output pin low for PULSE_WIDTH_MS then returns
- *              high — simulating one reed switch closure (one bucket tip).
+ * Purpose:     Drives the output pin high for PULSE_WIDTH_MS turning on the ULN2803A channel.
+ *              Its open collector output pulls the CR10000Xe P terminal low then returns
+ *              low — simulating one reed switch closure (one bucket tip).
  * Arguments:   line: the open gpiod line to drive.
  */
 static void simulate_tip() {
@@ -435,6 +436,7 @@ int main(int argc, char *argv[]) {
 #ifdef GPIOD_V2
     settings = gpiod_line_settings_new();
     if (!settings) { perror("settings"); cleanup_and_exit(1); }
+    gpiod_line_settings_set_active_low(settings, false); // Sets Active high to 3.3V 
     gpiod_line_settings_set_direction(settings, GPIOD_LINE_DIRECTION_OUTPUT);
     gpiod_line_settings_set_output_value(settings, GPIOD_LINE_VALUE_INACTIVE);
 
@@ -446,6 +448,8 @@ int main(int argc, char *argv[]) {
 
     request = gpiod_chip_request_lines(chip, NULL, line_cfg);
     if (!request) { perror("request lines"); cleanup_and_exit(1); }
+    gpiod_line_config_free(line_cfg); // Free this struct, as it are no longer needed.
+    gpiod_line_config_free(settings); // Free this struct, as it is no longer needed.
 #else
     gpio_line = gpiod_chip_get_line(chip, offset);
     if (!gpio_line) { perror("get line"); cleanup_and_exit(1); }
