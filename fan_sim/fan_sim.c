@@ -62,7 +62,7 @@
 #include <gpiod.h>
 #include "console_utils.h"
 
-#define GPIO_CHIP           "/dev/gpiochip4"   // Pi 4 and earlier gpiochip0, Pi 5 gpiochip4
+#define GPIO_CHIP           "/dev/gpiochip15"  // Pi 4 and earlier gpiochip0, Pi 5 gpiochip4, until Sep 2026, now uses gpiochip15.
 #define GPIO_PIN            27                 // BCM pin 27, physical pin 13
 
 #define PULSES_PER_REV      2                  // Typical 3/4-wire PC fan tach output
@@ -225,9 +225,9 @@ static void sleep_ns(long long ns) {
 
 /*
  * Name:        simulate_pulse
- * Purpose:     Drives the output pin active for PULSE_WIDTH_NS then returns
- *              inactive — simulating one fan tach pulse via the NPN transistor
- *              sinking the tach line.
+ * Purpose:     Drives the output pin high for PULSE_WIDTH_NS turning on the ULN2803A channel.
+ *              Its open collector output pulls the CR1000Xe P terminal low, then returns
+ *              low — simulating one fan tach pulse via the ULN2803A sinking the tach line.
  * Arguments:   None.
  */
 static void simulate_pulse(void) {
@@ -538,6 +538,7 @@ int main(int argc, char *argv[]) {
 #ifdef GPIOD_V2
     settings = gpiod_line_settings_new();
     if (!settings) { perror("settings"); cleanup_and_exit(1); }
+    gpiod_line_settings_set_active_low(settings, false); // Sets active high to 3.3V.
     gpiod_line_settings_set_direction(settings, GPIOD_LINE_DIRECTION_OUTPUT);
     gpiod_line_settings_set_output_value(settings, GPIOD_LINE_VALUE_INACTIVE);
 
@@ -549,12 +550,15 @@ int main(int argc, char *argv[]) {
 
     request = gpiod_chip_request_lines(chip, NULL, line_cfg);
     if (!request) { perror("request lines"); cleanup_and_exit(1); }
+    gpiod_line_config_free(line_cfg); // Free this struct.
+    gpiod_line_settings_free(settings); // Free this struct.
 #else
     gpio_line = gpiod_chip_get_line(chip, offset);
     if (!gpio_line) { perror("get line"); cleanup_and_exit(1); }
 
     req_ret = gpiod_line_request_output(gpio_line, "fan_rpm_sim", 0); // 0 = initial low
     if (req_ret) { perror("request output"); cleanup_and_exit(1); }
+
 #endif
 
     if (enable_raw_mode() != 0) {
