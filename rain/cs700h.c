@@ -449,7 +449,7 @@ int main(int argc, char *argv[]) {
     request = gpiod_chip_request_lines(chip, NULL, line_cfg);
     if (!request) { perror("request lines"); cleanup_and_exit(1); }
     gpiod_line_config_free(line_cfg); // Free this struct, as it are no longer needed.
-    gpiod_line_config_free(settings); // Free this struct, as it is no longer needed.
+    gpiod_line_settings_free(settings); // Free this struct, as it is no longer needed.
 #else
     gpio_line = gpiod_chip_get_line(chip, offset);
     if (!gpio_line) { perror("get line"); cleanup_and_exit(1); }
