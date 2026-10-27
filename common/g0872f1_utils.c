@@ -102,6 +102,13 @@ double wet_bulb_temp_c(double temp_c, double rh_pct) {
     return (wb_temp > temp_c) ? temp_c : wb_temp;
 }
 
+double get_ilr(double wet_bulb_temp) {
+    double wb_3 = pow(wet_bulb_temp, 3);
+    double wb_2 = pow(wet_bulb_temp, 2);
+
+    return (-0.0071 * wb_3) - (0.1039 * wb_2) - (0.3904 * wet_bulb_temp) + 0.5545;
+}
+
 /*
  * Name:         generate_jitter
  * Purpose:      jitters the Hz of the ice accretion sensor, to real-life scenarios.

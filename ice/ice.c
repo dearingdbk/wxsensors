@@ -272,7 +272,8 @@ void parse_message(char *msg, ParsedMessage *p_message) {
 
     p_message->wb_temp = wet_bulb_temp_c(p_message->temperature, p_message->rel_humidity);
     p_message->is_icing = (p_message->msg_phase == PRECIP_FREEZE) && (p_message->wb_temp <= 0.0);
-    p_message->ilr = (p_message->wb_temp < ILR_WB_SPLIT_C) ? ILR_COLD : ILR_WARM;
+    p_message->ilr = get_ilr(p_message->wb_temp);
+    //p_message->ilr = (p_message->wb_temp < ILR_WB_SPLIT_C) ? ILR_COLD : ILR_WARM;
 
     pthread_rwlock_wrlock(&sh_state.rwlock);
     sh_state.precip_rate = p_message->precip_rate;
@@ -357,7 +358,7 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
             pthread_rwlock_unlock(&sh_state.rwlock);
             break;
         default:
-            safe_console_print("BAD CMD:%d\r\n", (int)cmd);
+            safe_console_print("BAD CMD:%d\r\n", cmd);
             break;
     }
 }
@@ -480,10 +481,10 @@ void* sender_thread(void* arg) {
             if (sh_state.is_icing) {
                 sh_state.ice_accum_mm += sh_state.precip_rate * ((double)TICK_SECONDS / 3600.0) * sh_state.ilr;
             }
-            if (sh_state.ice_accum_mm >= DEICE_THRESHOLD_MM) {
+            /*if (sh_state.ice_accum_mm >= DEICE_THRESHOLD_MM) {
                 sh_state.heater_end = now;
                 sh_state.heater_end.tv_sec += AUTO_DEICE_SECONDS; // probe clears on next tick
-            }
+            }*/
         }
         pthread_rwlock_unlock(&sh_state.rwlock);
     }

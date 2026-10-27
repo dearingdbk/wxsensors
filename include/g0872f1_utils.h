@@ -31,7 +31,7 @@
 #define MAX_SELF_TEST_FLAG 6
 #define NS_PER_SEC 1000000000LL
 #define BASELINE_HZ 40000.0
-#define SLOPE_HZ_PER_MM 262.47  // approximation: 130 Hz / 0.5 mm (== 1 / (0.00015 in/Hz * 25.4 mm/in))
+#define SLOPE_HZ_PER_MM 259.0  // approximation: 130 Hz / 0.5 mm (== 1 / (0.000152 in/Hz * 25.4 mm/in))
 #define DEICE_THRESHOLD_MM 0.5
 #define STULL_C1 0.151977
 #define STULL_C2 8.313659
@@ -136,4 +136,5 @@ double wet_bulb_temp_c(double temp_c, double rh_pct);
 int init_G0872F1_sensor(G0872F1_sensor **ptr);
 bool G0872F1_is_ready_to_send(G0872F1_sensor *sensor);
 float generate_jitter(void);
+double get_ilr(double wet_bulb_temp);
 #endif
