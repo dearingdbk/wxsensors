@@ -1,5 +1,3 @@
-ASSUMPTIONS: Circular averaging for direction; status 60 valid.
-SENSOR DATA
 A,090,010.00,60
 A,090,011.00,60
 A,090,012.00,60

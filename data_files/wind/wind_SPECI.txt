@@ -1,8 +1,3 @@
-BecomingVariable-R2 Start 4161 End 4680 SPECI=SPECI Expected
-Increase10KT-R2 Start 4681 End 5200 SPECI=SPECI Expected
-GustAbove25-R2 Start 5201 End 5720 SPECI=SPECI Expected
-ThresholdFlipFlop-R2 Start 5721 End 6240 SPECI=Bench confirmation required
-SENSOR DATA
 A,180,010.00,60
 A,180,010.00,60
 A,180,010.00,60
