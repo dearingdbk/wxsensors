@@ -163,7 +163,7 @@ speed_t get_baud_rate(const char *baud_rate) {
 int is_valid_tty(const char *str) {
     regex_t regex;
     int reti;
-    const char *pattern = "^/dev/tty(S|USB|ACM)[0-9]+$";
+    const char *pattern = "^/dev/tty(S|USB|ACM|V|v|pts/)[0-9]+$";
 
     // Compile the regular expression
     reti = regcomp(&regex, pattern, REG_EXTENDED);
