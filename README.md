@@ -4,7 +4,7 @@ Weather Sensor Emulation Scripts and Programs
 
 ## Overview
 
-wxsensors is a collection of C programs designed to emulate various meteorological sensors over RS-485/RS-422/RS-232/SDI-12 serial connections. These emulators read pre-recorded sensor data from files and transmit it over serial ports, mimicking the behavior and protocols of real weather instrumentation.
+wxsensors is a collection of C programs designed to emulate various meteorological sensors over RS-485/RS-422/RS-232/SDI-12 serial connections. These emulators read pre-recorded sensor data from text files and transmit it over serial ports, mimicking the behavior and protocols of real weather instrumentation.
 
 This project is useful for:
 - Testing data acquisition systems without physical sensors
@@ -143,7 +143,7 @@ TO BE POPULATED WITH COMMAND SETS PER SENSOR
 
 ## Output Format
 
-Sensor data is transmitted using standard framing:
+Sensor data is transmitted using standard framing based on sensor specific formatting, see wxsensors.xlsx:
 ```
 <STX>data<ETX>checksum<CR><LF>
 data checksum <CR><LF>
@@ -205,7 +205,7 @@ Executables are output to the `bin/` directory, organized by sensor type.
 ```bash
 # General usage pattern
 <sensor> <data_file> [serial_port] [baud_rate] [RS232|RS422|RS485|SDI-12]
-<sesnor> <gpio_chip> [gpio_pin] [max_rpm]
+<sensor> <gpio_chip> [gpio_pin] [max_rpm]
 
 # Timing
 <sensor> <data_file> [serial_port] [baud_rate] [RS232|RS422|RS485|SDI-12] | ts '[%Y-%m-%d %H:%M:%.S]'
@@ -308,10 +308,13 @@ wxsensors/
 │   └── sensor_control.c
 ├── fan_sim/              # Aspirated Shield Fan Tachometer Signal emulator
 │   └── fan_sim.c
+├── hc2s3/                # Analog version of Rotronic HC2A-S3 Emulator (not used)
+│   └── hc2s3.c
 ├── data_files/           # Sample sensor data files
 ├── bin/                  # Compiled executables (generated)
 ├── obj/                  # Object files (generated)
-├── Makefile
+├── images/               # Related images of analog connections and Raspberry Pi pinout.
+├── makefile
 ├── LICENSE.md
 └── README.md
 ```
