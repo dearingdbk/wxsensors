@@ -177,7 +177,7 @@ void record_overhead_strike(StrikeBin *bin, uint8_t strike_count);
 void record_cloud_strike(StrikeBin *bin, uint8_t strike_count);
 void advance_one_minute(StrikeBin *bin);
 void conduct_self_test(TSS928_sensor *sensor);
-
 int update_sensor_time(const char *time_str, struct tm *sensor_time);
+void set_aging_interval(StrikeBin *bin, uint8_t new_interval);
 
 #endif

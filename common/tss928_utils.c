@@ -117,6 +117,7 @@ bool TSS928_is_ready_to_send(TSS928_sensor *sensor) {
 void record_ground_strike(StrikeBin *bin, uint8_t ring_index, uint8_t quadrant_index, uint8_t strike_count){
 	bin->ground_history[ring_index][quadrant_index][bin->current_minute_index]+= strike_count;
 	bin->ground_totals[ring_index][quadrant_index]+= strike_count;
+    bin->total_strikes_since_reset += strike_count;
 }
 
 /*
@@ -137,8 +138,8 @@ void record_ground_strike(StrikeBin *bin, uint8_t ring_index, uint8_t quadrant_i
 void record_overhead_strike(StrikeBin *bin, uint8_t strike_count){
 	bin->overhead_history[bin->current_minute_index]+= strike_count;
 	bin->overhead_total+= strike_count;
+    bin->total_strikes_since_reset += strike_count;
 }
-
 
 /*
  * Name:         record_cloud_strike()
@@ -156,8 +157,9 @@ void record_overhead_strike(StrikeBin *bin, uint8_t strike_count){
  *
  */
 void record_cloud_strike(StrikeBin *bin, uint8_t strike_count){
-	bin->cloud_history[bin->current_minute_index]+= strike_count;
-	bin->cloud_total+= strike_count;
+	bin->cloud_history[bin->current_minute_index] += strike_count;
+	bin->cloud_total += strike_count;
+    bin->total_strikes_since_reset += strike_count;
 }
 
 
@@ -176,7 +178,8 @@ void record_cloud_strike(StrikeBin *bin, uint8_t strike_count){
  *
  */
 void advance_one_minute(StrikeBin *bin){
-	uint8_t stale_index = bin->current_minute_index; // Set the stale index to the current minute index.
+	bin->current_minute_index = (bin->current_minute_index + 1) % bin->aging_interval;
+    uint8_t stale_index = bin->current_minute_index; // Set the stale index to the current minute index.
 
 	for (int i = 0; i < RANGE_RINGS; i++) {
 		for (int j = 0; j < QUADRANTS; j++) {
@@ -191,7 +194,7 @@ void advance_one_minute(StrikeBin *bin){
 	bin->cloud_total -= bin->cloud_history[stale_index];
 	bin->cloud_history[stale_index] = 0;
 
-	bin->current_minute_index = (bin->current_minute_index + 1) % bin->aging_interval;
+    // bin->current_minute_index = (bin->current_minute_index + 1) % bin->aging_interval;
 }
 
 
@@ -228,6 +231,7 @@ void conduct_self_test(TSS928_sensor *sensor) {
  */
 void reset_sensor(TSS928_sensor *sensor) {
 	memset(&sensor->strikes, 0, sizeof(sensor->strikes)); // zero out the strike struct
+    sensor->strikes.aging_interval = 15;
 	clock_gettime(CLOCK_MONOTONIC, &sensor->sensor_start_time); // Reset the runtime of the sensor.
 }
 
@@ -285,4 +289,37 @@ int update_sensor_time(const char *time_str, struct tm *sensor_time) {
 void restore_sensor(TSS928_sensor *sensor) {
 	sensor->rotation_angle = 0;
 	sensor->strikes.aging_interval = 15;
+}
+
+void set_aging_interval(StrikeBin *bin, uint8_t new_interval) {
+    if (!bin || new_interval == 0 || new_interval > MAX_HISTORY_MINS) return;
+
+    for (uint8_t m = new_interval; m < MAX_HISTORY_MINS; m++) {
+        for (int i = 0; i < RANGE_RINGS; i++) {
+            for (int j = 0; j < QUADRANTS; j++){
+                bin->ground_history[i][j][m] = 0;
+            }    
+       }
+        bin->overhead_history[m] = 0;
+        bin->cloud_history[m] = 0; 
+    } 
+
+    memset(bin->ground_totals, 0, sizeof(bin->ground_totals));
+    bin->overhead_total = 0;
+    bin->cloud_total = 0;
+
+    for (uint8_t m = 0; m < new_interval; m++) {
+        for (int i = 0; i < RANGE_RINGS; i++) {
+            for (int j = 0; j < QUADRANTS; j++) {
+                bin->ground_totals[i][j] += bin->ground_history[i][j][m];
+            }
+        }
+        bin->overhead_total += bin->overhead_history[m];
+        bin->cloud_total += bin->cloud_history[m];
+    }
+
+    bin->aging_interval = new_interval;
+    if (bin->current_minute_index >= new_interval) {
+        bin->current_minute_index = 0;
+    }
 }

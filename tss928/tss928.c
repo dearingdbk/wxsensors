@@ -201,7 +201,7 @@ int serial_fd = -1;
 const char *program_name = "unknown";
 
 // This needs to be freed upon exit.
-TSS928_sensor *sensor_one = NULL; // Global pointer to struct for skyvue8 sensor .
+TSS928_sensor *sensor_one = NULL; // Global pointer to struct for TSS-928 Lightning sensor .
 
 // Synchronization primitives
 /*	MUTEX		|	OWNS
@@ -520,25 +520,30 @@ void handle_command(CommandType cmd, ParsedCommand *p_cmd) {
 			//TODO: Implement a handler for handling diagnostics.
 			break;
 		case CMD_AGING:{
-			uint8_t new_interval = (uint8_t)atoi(p_cmd->raw_params);
-			pthread_mutex_lock(&sensor_mutex);
-			switch (new_interval) {
+			uint8_t arg = (uint8_t)atoi(p_cmd->raw_params);
+            uint8_t new_interval = 0;
+			switch (arg) {
 				case 1:
-					sensor_one->strikes.aging_interval = 15;
+					new_interval = 15;
 					break;
 				case 2:
-					sensor_one->strikes.aging_interval = 10;
+					new_interval = 10;
 					break;
 				case 3:
-					sensor_one->strikes.aging_interval = 5;
+					new_interval = 5;
 					break;
 				case 4:
-					sensor_one->strikes.aging_interval = 30;
+					new_interval = 30;
 					break;
 				default:
 					break;
 			}
-			safe_serial_write(serial_fd,"A%u\r\n", sensor_one->strikes.aging_interval);
+
+			pthread_mutex_lock(&sensor_mutex);
+			if (new_interval > 0) {
+                set_aging_interval(&sensor_one->strikes, new_interval);
+            }
+            safe_serial_write(serial_fd,"A%u\r\n", sensor_one->strikes.aging_interval);
 			pthread_mutex_unlock(&sensor_mutex);
 			break;
 		}
